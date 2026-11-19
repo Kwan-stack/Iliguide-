@@ -171,7 +171,7 @@ export async function loadSites(includeUnpublished = false): Promise<Site[]> {
   const reviews = new Map(
     ((reviewResult.data ?? []) as Array<Record<string, any>>).map((row) => [
       row.site_id as string,
-      { average: Number(row.average_rating), count: Number(row.review_count) },
+      { average: row.average_rating == null ? null : Number(row.average_rating), count: Number(row.review_count) },
     ]),
   );
 

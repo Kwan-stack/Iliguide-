@@ -63,7 +63,7 @@ export default function App() {
       const permitted = nextRole === 'visitor' ? rows : rows.filter((site) =>
         nextRole === 'tourism_office' || nextAssignments.some((assignment) => assignment.site_id === site.id),
       );
-      setSiteId((current) => permitted.some((site) => site.id === current) ? current : permitted[0]?.id ?? rows[0]?.id ?? '');
+      setSiteId((current) => permitted.some((site) => site.id === current) ? current : permitted[0]?.id ?? '');
     } catch (error) {
       setDataError(error instanceof Error ? error.message : 'Could not load destinations.');
     }
@@ -168,6 +168,15 @@ export default function App() {
   const permittedSites = useMemo(() => role === 'visitor' || role === 'tourism_office'
     ? sites
     : sites.filter((site) => assignments.some((assignment) => assignment.site_id === site.id)), [assignments, role, sites]);
+  useEffect(() => {
+    if (role === 'gatekeeper' && !['Discover', 'Overview', 'Scan and exit', 'Walk-in registration', "Today's list"].includes(page)) {
+      setPage('Discover');
+    } else if (role === 'site_admin' && page === 'Sites and staff') {
+      setPage('Overview');
+    } else if (role === 'visitor' && isStaffPage(page)) {
+      setPage('Discover');
+    }
+  }, [page, role]);
   const categories = useMemo(() => ['All', ...new Set(sites.map((site) => site.category))], [sites]);
   const visibleSites = useMemo(() => permittedSites.filter((site) =>
     (category === 'All' || site.category === category) &&
@@ -317,7 +326,6 @@ export default function App() {
             <img className={index === 0 ? 'gallery-main' : ''} key={image.id} src={image.public_url} alt={image.alt_text || activeSite.name}/>) :
             destinationPhoto(activeSite.slug) ? <img className="gallery-main" src={destinationPhoto(activeSite.slug)} alt={activeSite.name}/> :
               <div className="gallery-empty"><Compass size={32}/><span>Photos will appear here when this destination adds them.</span></div>}</div>
-          <div className="detail-tabs"><button className="selected">Overview</button><button>Fees</button><button>Visitor notes</button><button>Reviews ({activeSite.review_count})</button></div>
           <div className="detail-copy"><h3>About this place</h3><p>{activeSite.description || 'The destination manager has not added a description yet.'}</p>
             <p><MapPin size={14}/> {activeSite.address || 'Location details not provided'}</p>
             <div className="fee-table"><div><b>VISITOR</b><b>ADMISSION</b><b>FEE</b></div><div><span>Adult</span><span>Standard admission</span><b>{money(activeSite.adult_fee)}</b></div><div><span>Child</span><span>Child admission</span><b>{money(activeSite.child_fee)}</b></div></div>
