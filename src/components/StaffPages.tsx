@@ -33,7 +33,7 @@ const localEnd = (day: string) => new Date(day + 'T23:59:59.999+08:00').toISOStr
 export function StaffPages(props: Props) {
   const staffScopeKey = `${props.user?.id ?? 'staff'}:${props.role}:${props.siteId}`;
   if (props.role === 'gatekeeper') {
-    if (!assignedGatekeeperSite(props)) return <StaffConsole {...props}><section className="dashboard-page"><div className="empty-card"><ShieldCheck size={30}/><h3>Destination assignment needs review</h3><p>Gatekeeper access stays disabled until the Tourism Office assigns exactly one active destination.</p></div></section></StaffConsole>;
+    if (!assignedGatekeeperSite(props)) return <StaffConsole {...props}><section className="dashboard-page"><div className="empty-card"><ShieldCheck size={30}/><h3>No destination assigned</h3><p>Gatekeeper access stays disabled until the Tourism Office assigns exactly one active destination.</p></div></section></StaffConsole>;
     let content = <AccessNotice/>;
     if (props.page === 'Overview') content = <OverviewPage {...props}/>;
     if (props.page === 'Reservations') content = <ReservationsPage {...props}/>;
@@ -256,7 +256,7 @@ function ReservationsPage(props: Props) {
     <span className="eyebrow"><span className="eyebrow-line"/> {site?.name ?? 'DESTINATION'} · RESERVATIONS</span>
     <h1>Reservation <em>records.</em></h1><p>Search and review bookings assigned to this destination.</p>
   </div><button className="btn btn-outline" onClick={() => setRefreshKey((current) => current + 1)} aria-label="Refresh reservations"><RefreshCw size={15}/> Refresh</button></div>
-    {!site && <div className="empty-card"><ShieldCheck size={28}/><h3>Destination assignment needs review</h3><p>Ask the Tourism Office to assign this Gatekeeper to exactly one destination.</p></div>}
+    {!site && <div className="empty-card"><ShieldCheck size={28}/><h3>No destination assigned</h3><p>Ask the Tourism Office to assign this Gatekeeper to exactly one destination.</p></div>}
     {site && <><div className="gatekeeper-filters">
       <label>Booking reference or contact name<input value={search} onChange={(event) => updateFilter(setSearch)(event.target.value)} placeholder="Search bookings"/></label>
       <label>Visit date<input type="date" value={visitDate} onChange={(event) => updateFilter(setVisitDate)(event.target.value)}/></label>
@@ -510,6 +510,7 @@ function PeoplePage(props: Props) {
   const [supportRequests, setSupportRequests] = useState<Array<Record<string, any>>>([]);
   const [supportReplies, setSupportReplies] = useState<Record<string, string>>({});
   const [staff, setStaff] = useState<Array<Record<string, any>>>([]);
+  const [staffLoadError, setStaffLoadError] = useState('');
   const [email, setEmail] = useState('');
   const [inviteRole, setInviteRole] = useState(props.role === 'site_admin' ? 'gatekeeper' : 'site_admin');
   const [decisionNotes, setDecisionNotes] = useState<Record<string, string>>({});
@@ -520,24 +521,40 @@ function PeoplePage(props: Props) {
     if (!siteIds.length && props.role !== 'tourism_office') {
       setCancellations([]); setStaff([]); setSupportRequests([]); finishLoading(); return;
     }
-    try {
-      const [cancellationResult, staffResult] = await Promise.all([
+    const errors: string[] = [];
+    const [cancellationLoad, staffLoad] = await Promise.allSettled([
         db().from('cancellation_requests').select('id,booking_id,site_id,reason,request_status,created_at,decision_note,booking:bookings(booking_reference,visitor_name,total_amount,payment_status),tourism_sites(name)')
           .in('site_id', siteIds).order('created_at', { ascending: false }).limit(100),
         db().from('staff_assignments').select('id,profile_id,site_id,staff_role,is_active,profiles(full_name,email),tourism_sites(name)')
           .in('site_id', siteIds).order('created_at', { ascending: false }).limit(100),
       ]);
-      for (const result of [cancellationResult, staffResult]) if (result.error) throw result.error;
-      setCancellations(cancellationResult.data ?? []);
-      setStaff(staffResult.data ?? []);
-      if (props.role === 'tourism_office') {
+    const cancellationResult = cancellationLoad.status === 'fulfilled' ? cancellationLoad.value : null;
+    if (cancellationResult && !cancellationResult.error) setCancellations(cancellationResult.data ?? []);
+    else {
+      setCancellations([]);
+      errors.push('Cancellation requests: ' + (cancellationResult?.error.message ?? String(cancellationLoad.status === 'rejected' ? cancellationLoad.reason : 'load failed')));
+    }
+    const staffResult = staffLoad.status === 'fulfilled' ? staffLoad.value : null;
+    if (staffResult && !staffResult.error) { setStaff(staffResult.data ?? []); setStaffLoadError(''); }
+    else {
+      setStaff([]);
+      const message = staffResult?.error.message ?? String(staffLoad.status === 'rejected' ? staffLoad.reason : 'load failed');
+      setStaffLoadError(message);
+      errors.push('Staff assignments: ' + message);
+    }
+    if (props.role === 'tourism_office') {
+      try {
         const { data, error } = await db().from('support_requests').select('id,user_id,booking_id,subject,message,status,staff_response,created_at,profiles(full_name,email),booking:bookings(booking_reference),tourism_sites(name)')
           .order('created_at', { ascending: false }).limit(100);
         if (error) throw error;
         setSupportRequests(data ?? []);
-      } else setSupportRequests([]);
-    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not load staff records.'); }
-    finally { finishLoading(); }
+      } catch (error) {
+        setSupportRequests([]);
+        errors.push('Support requests: ' + (error instanceof Error ? error.message : typeof error === 'object' && error !== null && 'message' in error ? String(error.message) : String(error)));
+      }
+    } else setSupportRequests([]);
+    if (errors.length) props.notify(errors.join(' · '));
+    finishLoading();
   }, [finishLoading, props.notify, props.role, siteIds.join(',')]);
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -549,7 +566,7 @@ function PeoplePage(props: Props) {
       const result = await invokeFunction<{ existing_account: boolean }>('invite-staff', {
         email: email.trim(), staff_role: inviteRole, site_id: inviteRole === 'tourism_office' ? null : props.siteId,
       });
-      props.notify(result.existing_account ? 'Existing visitor account was assigned the selected staff role.' : 'Staff invitation sent by Supabase Auth email.');
+      props.notify(result.existing_account ? 'Existing account was assigned the selected staff role and destination.' : 'Staff invitation sent by Supabase Auth email.');
       setEmail('');
       await refresh();
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not invite staff.'); }
@@ -609,7 +626,7 @@ function PeoplePage(props: Props) {
           <td>{assignment.is_active && (props.role === 'tourism_office' || assignment.staff_role === 'gatekeeper') && <button className="link-btn" disabled={actionBusy} onClick={() => void disableAssignment(assignment)}>Disable</button>}</td>
         </tr>; })}
         {loading && <tr><td colSpan={5}>Loading staff…</td></tr>}
-        {!loading && !staff.length && <tr><td colSpan={5}>No site staff assignments.</td></tr>}
+        {!loading && !staff.length && <tr><td colSpan={5}>{staffLoadError ? 'Could not load assignments: ' + staffLoadError : 'No site staff assignments.'}</td></tr>}
       </tbody></table></div>
     </div>
     <SiteImagesManager {...props}/>
