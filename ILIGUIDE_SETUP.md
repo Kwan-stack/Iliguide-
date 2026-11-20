@@ -68,3 +68,9 @@ The guest ticket and checkout functions accept requests without a user JWT becau
 ```powershell
 pnpm run build
 ```
+
+## Deploy to Vercel
+
+Import this GitHub repository as a Vite project. Use `pnpm run build` and the `dist` output directory. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in Vercel's project environment variables for each deployment environment. The local `.env` is ignored by Git and is not uploaded.
+
+In Supabase Auth URL Configuration, set the Site URL to the production domain and allow each deployment URL used for email confirmation and password reset. The `vercel.json` rewrite serves the app for direct visits to nested routes.
