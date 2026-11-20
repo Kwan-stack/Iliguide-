@@ -8,7 +8,8 @@ export type GatekeeperPage =
   | 'Capacity map'
   | 'Duty details'
   | 'Reports'
-  | 'Activity';
+  | 'Activity'
+  | 'Change password';
 
 const pageBySection: Record<string, GatekeeperPage> = {
   dashboard: 'Overview',
@@ -21,6 +22,7 @@ const pageBySection: Record<string, GatekeeperPage> = {
   duty: 'Duty details',
   reports: 'Reports',
   activity: 'Activity',
+  'change-password': 'Change password',
 };
 
 const sectionByPage = Object.fromEntries(

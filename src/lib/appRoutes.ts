@@ -1,8 +1,12 @@
-import type { AppPage } from './actorRoutes';
+import type { AccountRole, AppPage } from './actorRoutes';
 import { isGatekeeperPath, parseGatekeeperRoute } from './gatekeeperRoutes';
 
 export const VISITOR_LOGIN_PATH = '/login';
 export const STAFF_LOGIN_PATH = '/staff/login';
+
+export function passwordRecoveryPath(role: AccountRole): string {
+  return role === 'visitor' ? `${VISITOR_LOGIN_PATH}?mode=reset` : `${STAFF_LOGIN_PATH}?mode=reset`;
+}
 
 export const workspaceRoutePaths: Partial<Record<AppPage, string>> = {
   Overview: '/workspace', Reservations: '/workspace/reservations',
@@ -12,6 +16,7 @@ export const workspaceRoutePaths: Partial<Record<AppPage, string>> = {
   Reports: '/workspace/reports', Activity: '/workspace/activity',
   'Slots and closures': '/workspace/schedule', 'Staff and accounts': '/workspace/team',
   'Sites and staff': '/workspace/sites', 'Duty roster': '/workspace/duty-roster',
+  'Change password': '/workspace/account/password',
 };
 
 export const visitorRoutePaths: Partial<Record<AppPage, string>> = {

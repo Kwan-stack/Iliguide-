@@ -16,7 +16,7 @@ import OccupancyPanel from './components/OccupancyPanel';
 import './components/DestinationMap.css';
 import { gatekeeperPath, isGatekeeperPath, parseGatekeeperRoute, type GatekeeperPage } from './lib/gatekeeperRoutes';
 import { staffPageForRole, type AppPage } from './lib/actorRoutes';
-import { authSuccessPath, canShowVisitorAuthModal, destinationSlugFromPath, isAuthPath, isKnownAppPath, isWorkspacePath, pageFromPath, staffLoginUrl, staffReturnPath, visitorAuthDismissPath, visitorLoginUrl, visitorReturnPath, visitorRoutePaths, workspaceRoutePaths, STAFF_LOGIN_PATH, VISITOR_LOGIN_PATH } from './lib/appRoutes';
+import { authSuccessPath, canShowVisitorAuthModal, destinationSlugFromPath, isAuthPath, isKnownAppPath, isWorkspacePath, pageFromPath, passwordRecoveryPath, staffLoginUrl, staffReturnPath, visitorAuthDismissPath, visitorLoginUrl, visitorReturnPath, visitorRoutePaths, workspaceRoutePaths, STAFF_LOGIN_PATH, VISITOR_LOGIN_PATH } from './lib/appRoutes';
 const VisitorPages = lazy(() => import('./components/VisitorPages').then((module) => ({ default: module.VisitorPages })));
 const StaffPages = lazy(() => import('./components/StaffPages').then((module) => ({ default: module.StaffPages })));
 const DestinationMap = lazy(() => import('./components/DestinationMap'));
@@ -34,6 +34,8 @@ const destinationPhotos: Record<string, { src: string; author: string; source: s
   'maria-christina-falls': { src: '/falls/maria-cristina-falls.jpg', author: 'Rolly Magpayo', source: 'https://commons.wikimedia.org/wiki/File:Maria_Cristina_Falls_Agus_River.jpg', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/' },
 };
 const destinationPhoto = (slug: string) => destinationPhotos[slug];
+const isPasswordRecoveryUrl = () => new URLSearchParams(window.location.search).get('type') === 'recovery'
+  || new URLSearchParams(window.location.hash.slice(1)).get('type') === 'recovery';
 const heroSlides = [
   { src: '/carousel/carousel1.webp', name: 'Tinago Falls', alt: 'Tinago Falls flowing through a forested gorge' },
   { src: '/carousel/carousel2.webp', name: 'Timoga Cold Spring', alt: 'Clear spring water at Timoga Cold Spring' },
@@ -48,7 +50,7 @@ const readSavedSiteIds = (userId: string | null): string[] => {
       typeof id === 'string' && /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(id))) ] : [];
   } catch { return []; }
 };
-const isStaffPage = (page: Page): page is StaffPage => ['Overview', 'Reservations', 'Visitor Management', 'Scan and exit', 'Walk-in registration', 'Visitor Logbook', 'Capacity map', 'Duty details', 'Reports', 'Activity', 'Slots and closures', 'Staff and accounts', 'Sites and staff', 'Duty roster'].includes(page);
+const isStaffPage = (page: Page): page is StaffPage => ['Overview', 'Reservations', 'Visitor Management', 'Scan and exit', 'Walk-in registration', 'Visitor Logbook', 'Capacity map', 'Duty details', 'Reports', 'Activity', 'Slots and closures', 'Staff and accounts', 'Sites and staff', 'Duty roster', 'Change password'].includes(page);
 
 export default function App() {
   const location = useLocation();
@@ -72,7 +74,8 @@ export default function App() {
   const [selectedTravelerId, setSelectedTravelerId] = useState('');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
-  const [authMode, setAuthMode] = useState<AuthMode>(() => new URLSearchParams(window.location.search).get('mode') === 'reset' ? 'reset' : null);
+  const [authMode, setAuthMode] = useState<AuthMode>(() => new URLSearchParams(window.location.search).get('mode') === 'reset' || isPasswordRecoveryUrl() ? 'reset' : null);
+  const [passwordRecovery, setPasswordRecovery] = useState(isPasswordRecoveryUrl);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState('');
   const [dataError, setDataError] = useState('');
@@ -229,6 +232,8 @@ export default function App() {
         authUserId.current = session?.user.id ?? null;
         setAccountReady(false);
         if (event === 'SIGNED_IN') setAuthMode(null);
+        if (event === 'PASSWORD_RECOVERY') { setPasswordRecovery(true); setAuthMode('reset'); }
+        if (event === 'SIGNED_OUT') setPasswordRecovery(false);
         window.setTimeout(() => { if (active) void applyUser(session?.user ?? null); }, 0);
       }
     });
@@ -256,6 +261,14 @@ export default function App() {
 
   useEffect(() => {
     if (!accountReady) return;
+    if (passwordRecovery && user) {
+      const recoveryRole = profile?.role ?? 'visitor';
+      const resetPath = passwordRecoveryPath(recoveryRole);
+      setAuthMode('reset');
+      setPage(recoveryRole === 'visitor' ? 'Visitor login' : 'Staff login');
+      if (`${location.pathname}${location.search}` !== resetPath) navigate(resetPath, { replace: true });
+      return;
+    }
     if (staffPasswordReset) { setPage('Staff login'); return; }
     const path = location.pathname;
     const workspacePath = isWorkspacePath(path);
@@ -358,7 +371,7 @@ export default function App() {
     setPage(nextPage);
     const nextPath = workspaceRoutePaths[nextPage] ?? '/workspace';
     if (nextPath !== path) navigate(nextPath, { replace: true });
-  }, [accountReady, assignedGatekeeperSite, gatekeeperAssignments.length, location.pathname, location.search, navigate, notify, profile, role, sites, sitesLoaded, staffPasswordReset, user]);
+  }, [accountReady, assignedGatekeeperSite, gatekeeperAssignments.length, location.pathname, location.search, navigate, notify, passwordRecovery, profile, role, sites, sitesLoaded, staffPasswordReset, user]);
 
   useEffect(() => {
     const slug = destinationSlugFromPath(location.pathname);
@@ -550,6 +563,7 @@ export default function App() {
   const authNext = new URLSearchParams(location.search).get('next');
   const authReturnTo = `${window.location.origin}${location.pathname}${location.search}`;
   const visitorAuthModalOpen = canShowVisitorAuthModal(location.pathname) && !staffRole
+    && (!passwordRecovery || profile?.role === 'visitor')
     && (authMode !== null || (!user && visitorLoginRoute));
 
   if (!accountReady && !user && (isWorkspacePath(location.pathname) || isGatekeeperPath(location.pathname))) {
@@ -617,9 +631,13 @@ export default function App() {
             <button className="btn btn-primary btn-wide" onClick={() => void signOut()}>Sign out and switch account <ArrowRight size={16}/></button>
           </section></section>
         : <AuthDialog mode={authMode ?? (staffPasswordReset ? 'reset' : 'login')} audience="staff" presentation="page"
-            onClose={() => navigate(staffRole === 'gatekeeper' && assignedGatekeeperSite
-              ? gatekeeperPath(assignedGatekeeperSite.slug, 'Overview')
-              : authSuccessPath('staff', authNext), { replace: true })}
+            onClose={() => {
+              setPasswordRecovery(false);
+              setAuthMode(null);
+              navigate(staffRole === 'gatekeeper' && assignedGatekeeperSite
+                ? gatekeeperPath(assignedGatekeeperSite.slug, 'Overview')
+                : authSuccessPath('staff', authNext), { replace: true });
+            }}
             onMode={setAuthMode} initialVisitor={visitor} redirectTo={authReturnTo}/>
       : <Suspense fallback={<section className="section-wrap loading-screen">Loading workspace…</section>}>
       {page === 'Landing' && <LandingPage onExplore={() => go('Discover')}/>}
@@ -712,9 +730,11 @@ export default function App() {
     {toast && <div className="toast" role="status"><Check size={16}/>{toast}</div>}
     {visitorAuthModalOpen && <AuthDialog mode={authMode ?? 'login'} onClose={() => {
       setAuthMode(null);
+      setPasswordRecovery(false);
       if (visitorLoginRoute) navigate(visitorAuthDismissPath(authNext), { replace: true });
     }} onSuccess={() => {
       setAuthMode(null);
+      setPasswordRecovery(false);
       if (visitorLoginRoute) navigate(authSuccessPath('visitor', authNext), { replace: true });
     }} onMode={setAuthMode}
       audience="visitor" presentation="dialog"

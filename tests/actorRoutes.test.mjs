@@ -17,11 +17,13 @@ test('visitors stay on visitor pages and leave staff routes', () => {
 
 test('gatekeepers can use operational pages only', () => {
   assert.equal(staffPageForRole('gatekeeper', 'Scan and exit'), 'Scan and exit');
+  assert.equal(staffPageForRole('gatekeeper', 'Change password'), 'Change password');
   assert.equal(staffPageForRole('gatekeeper', 'Staff and accounts'), 'Overview');
   assert.equal(staffPageForRole('gatekeeper', 'Tickets'), 'Overview');
 });
 
 test('site administrators cannot enter Tourism Office only pages', () => {
+  assert.equal(staffPageForRole('site_admin', 'Change password'), 'Change password');
   assert.equal(staffPageForRole('site_admin', 'Staff and accounts'), 'Staff and accounts');
   assert.equal(staffPageForRole('site_admin', 'Sites and staff'), 'Overview');
   assert.equal(staffPageForRole('site_admin', 'Activity'), 'Overview');
@@ -30,7 +32,12 @@ test('site administrators cannot enter Tourism Office only pages', () => {
 });
 
 test('Tourism Office gets office pages and no visitor account pages', () => {
+  assert.equal(staffPageForRole('tourism_office', 'Change password'), 'Change password');
   assert.equal(staffPageForRole('tourism_office', 'Sites and staff'), 'Sites and staff');
   assert.equal(staffPageForRole('tourism_office', 'Activity'), 'Activity');
   assert.equal(staffPageForRole('tourism_office', 'Bookings'), 'Overview');
+});
+
+test('visitors cannot enter the staff password page', () => {
+  assert.equal(staffPageForRole('visitor', 'Change password'), 'Discover');
 });

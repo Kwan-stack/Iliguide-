@@ -4,6 +4,7 @@ import { ArrowDownToLine, ArrowRight, CalendarDays, Clock3, Heart, LogOut, Searc
 import type { User } from '@supabase/supabase-js';
 import { db, dateLabel, exportCsv, invokeFunction, loadOwnBookings, money, timeLabel, type Booking, type Profile, type Site, type Ticket, type TravelerProfile } from '../lib/iliguide';
 import { supabase } from '../lib/supabase';
+import { ChangePasswordForm } from './ChangePasswordForm';
 import { filterVisitorBookings, matchesBookingTab, type BookingTab } from '../lib/visitorBookingFilters';
 import { paymentStatusLabel } from '../lib/paymentStatus';
 import { useSilentLoad } from '../lib/useSilentLoad';
@@ -252,13 +253,9 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
   const [travelerEmail, setTravelerEmail] = useState('');
   const [travelerPhone, setTravelerPhone] = useState('');
   const [editingTravelerId, setEditingTravelerId] = useState('');
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [emailBusy, setEmailBusy] = useState(false);
-  const [securityBusy, setSecurityBusy] = useState(false);
   const [accountBusy, setAccountBusy] = useState(false);
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
   const upcomingCount = props.bookings.filter((item) => item.booking_status === 'confirmed' && item.slot_date >= today).length;
@@ -367,21 +364,6 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not send the verification email.'); }
     finally { setBusy(false); }
   };
-  const changePassword = async () => {
-    if (!supabase || !props.user?.email) return;
-    if (newPassword.length < 8) { props.notify('New password must be at least 8 characters.'); return; }
-    if (newPassword !== confirmNewPassword) { props.notify('New passwords do not match.'); return; }
-    setSecurityBusy(true);
-    try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email: props.user.email, password: currentPassword });
-      if (signInError) throw signInError;
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw error;
-      setCurrentPassword(''); setNewPassword(''); setConfirmNewPassword('');
-      props.notify('Password changed.');
-    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not change password.'); }
-    finally { setSecurityBusy(false); }
-  };
   const saveTraveler = async () => {
     if (!props.user) return;
     const fullName = travelerName.trim();
@@ -444,11 +426,8 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
         <div className="profile-photo-preview">{avatarUrl ? <img src={avatarUrl} alt="Profile photo"/> : <UserRound size={42}/>}</div>
         <div className="profile-identity"><b>{props.profile?.full_name || props.user.email}</b><small>{props.user.email}</small><span className={props.user.email_confirmed_at ? 'verified-label' : 'verification-pending'}><BadgeCheck size={13}/>{props.user.email_confirmed_at ? 'Email verified' : 'Verification pending'}</span></div>
         <label className="profile-upload-control"><span>Upload profile photo</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void uploadAvatar(event)}/><small>JPEG, PNG, WebP · up to 2 MiB</small></label>
-        <details className="profile-security-panel" open><summary>Password and security</summary><p>Change your password using your current password.</p>
-          <label>Current password<input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password"/></label>
-          <label>New password<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} autoComplete="new-password"/></label>
-          <label>Confirm new password<input type="password" value={confirmNewPassword} onChange={(event) => setConfirmNewPassword(event.target.value)} autoComplete="new-password"/></label>
-          <button className="btn btn-primary profile-password-submit" disabled={securityBusy || !currentPassword || !newPassword || !confirmNewPassword} onClick={() => void changePassword()}>{securityBusy ? 'Updating…' : 'Change password'}</button>
+        <details className="profile-security-panel" open><summary>Password and security</summary>
+          {props.user && <ChangePasswordForm user={props.user} notify={props.notify}/>}
           <button className="link-btn" onClick={props.onPasswordReset}>Forgot password?</button>
         </details>
         <button className="btn btn-outline profile-logout" onClick={props.onSignOut}><LogOut size={15}/> Log out</button>

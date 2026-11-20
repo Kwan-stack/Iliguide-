@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Building2, CalendarClock, CalendarDays, Camera, ChartNoAxesCombined, Check, History, ImagePlus, LayoutDashboard, MapPin, MapPinned, Plus, Printer, RefreshCw, ScanLine, ShieldCheck, Ticket as TicketIcon, Users, UserRound, X, type LucideIcon } from 'lucide-react';
+import { Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Building2, CalendarClock, CalendarDays, Camera, ChartNoAxesCombined, Check, History, ImagePlus, KeyRound, LayoutDashboard, MapPin, MapPinned, Plus, Printer, RefreshCw, ScanLine, ShieldCheck, Ticket as TicketIcon, Users, UserRound, X, type LucideIcon } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { db, dateLabel, exportCsv, invokeFunction, loadLiveOccupancy, loadMyActiveGatekeeperDuty, loadSlots, money, timeLabel, type GatekeeperDuty, type LiveOccupancy, type Profile, type Site, type Slot, type StaffAssignment } from '../lib/iliguide';
 import { emptyVisitorInformation, requiredVisitorFields, resizeVisitorInformation, visitorInformationComplete, visitorInformationPayload } from '../lib/visitorInformation';
@@ -8,6 +8,7 @@ import { bookingContactError } from '../lib/bookingValidation';
 import { paymentStatusLabel } from '../lib/paymentStatus';
 import { useSilentLoad } from '../lib/useSilentLoad';
 import { VisitorInformationForm } from './VisitorInformationForm';
+import { ChangePasswordForm } from './ChangePasswordForm';
 import DestinationMap from './DestinationMap';
 import type { GatekeeperPage } from '../lib/gatekeeperRoutes';
 import './DutyRoster.css';
@@ -32,6 +33,7 @@ const localEnd = (day: string) => new Date(day + 'T23:59:59.999+08:00').toISOStr
 
 export function StaffPages(props: Props) {
   const staffScopeKey = `${props.user?.id ?? 'staff'}:${props.role}:${props.siteId}`;
+  if (props.page === 'Change password') return <StaffConsole {...props}><ChangePasswordPage {...props}/></StaffConsole>;
   if (props.role === 'gatekeeper') {
     if (!assignedGatekeeperSite(props)) return <StaffConsole {...props}><section className="dashboard-page"><div className="empty-card"><ShieldCheck size={30}/><h3>No destination assigned</h3><p>Gatekeeper access stays disabled until the Tourism Office assigns exactly one active destination.</p></div></section></StaffConsole>;
     let content = <AccessNotice/>;
@@ -65,6 +67,7 @@ function StaffConsole(props: Props & { children: ReactNode }) {
     : props.role === 'tourism_office'
       ? [['Overview', 'Overview', LayoutDashboard], ['Duty roster', 'Duty roster', CalendarClock], ['Destinations & staff', 'Sites and staff', Building2], ['Operating hours & slots', 'Slots and closures', CalendarDays], ['Staff & accounts', 'Staff and accounts', Users], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Activity', 'Activity', History]]
       : [['Overview', 'Overview', LayoutDashboard], ['Operating hours & slots', 'Slots and closures', CalendarDays], ['Staff & accounts', 'Staff and accounts', Users], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Duty roster', 'Duty roster', CalendarClock], ['Reports', 'Reports', ChartNoAxesCombined]];
+  items.push(['Change password', 'Change password', KeyRound]);
   const roleName = props.role === 'tourism_office' ? 'Tourism Office' : props.role === 'site_admin' ? 'Site administrator' : 'Site gatekeeper';
   const userName = String(props.user?.user_metadata?.full_name ?? props.user?.email ?? 'Staff account');
   return <div className={'staff-console staff-console-' + props.role}>
@@ -74,6 +77,15 @@ function StaffConsole(props: Props & { children: ReactNode }) {
     </aside>
     <div className="staff-console-main"><nav className="staff-mobile-nav" aria-label={`${roleName} navigation`}>{items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} onClick={() => props.go(target)}><Icon size={15}/>{label}</button>)}</nav>{props.children}</div>
   </div>;
+}
+
+function ChangePasswordPage(props: Props) {
+  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> ACCOUNT SECURITY</span><h1>Change <em>password.</em></h1><p>Verify your current password, then choose a new one for this account.</p></div>
+      <button className="btn btn-outline" onClick={() => props.go('Overview')}>Back to workspace</button></div>
+    <div className="schedule-card"><div className="schedule-head"><span><small>SECURE YOUR ACCOUNT</small><h3>Password</h3></span><KeyRound size={18}/></div>
+      {props.user ? <ChangePasswordForm user={props.user} notify={props.notify}/> : <div className="empty-inline" role="alert">Sign in to change your password.</div>}
+    </div>
+  </section>;
 }
 
 function GatekeeperDutyGate(props: Props & { content: ReactNode }) {

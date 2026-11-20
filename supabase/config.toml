@@ -1,5 +1,9 @@
 project_id = "xiyybsijpdrrkufwphuv"
 
+[auth]
+site_url = "https://iliguide.vercel.app/"
+additional_redirect_urls = ["https://iliguide.vercel.app/**", "http://localhost:3000/**"]
+
 [functions.paymongo-checkout]
 verify_jwt = false
 

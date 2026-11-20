@@ -9,13 +9,13 @@ export type AppPage =
 const staffPages: AppPage[] = [
   'Overview', 'Reservations', 'Visitor Management', 'Scan and exit', 'Walk-in registration',
   'Visitor Logbook', 'Capacity map', 'Duty details', 'Reports', 'Activity',
-  'Slots and closures', 'Staff and accounts', 'Sites and staff', 'Duty roster',
+  'Slots and closures', 'Staff and accounts', 'Sites and staff', 'Duty roster', 'Change password',
 ];
 
 export function staffPageForRole(role: AccountRole, page: AppPage): AppPage {
   if (role === 'visitor') return staffPages.includes(page) ? 'Discover' : page;
   if (role === 'gatekeeper') {
-    return ['Overview', 'Reservations', 'Visitor Management', 'Scan and exit', 'Walk-in registration', 'Visitor Logbook', 'Capacity map', 'Duty details', 'Reports', 'Activity'].includes(page) ? page : 'Overview';
+    return ['Overview', 'Reservations', 'Visitor Management', 'Scan and exit', 'Walk-in registration', 'Visitor Logbook', 'Capacity map', 'Duty details', 'Reports', 'Activity', 'Change password'].includes(page) ? page : 'Overview';
   }
   if (!staffPages.includes(page)) return 'Overview';
   if (role === 'site_admin' && ['Sites and staff', 'Activity'].includes(page)) return 'Overview';

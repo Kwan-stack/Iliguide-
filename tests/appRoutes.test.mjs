@@ -54,6 +54,13 @@ test('successful staff sign-in returns to its workspace, never the visitor home'
   assert.equal(routes.authSuccessPath('visitor', '/workspace'), '/');
 });
 
+test('password recovery returns to the matching account portal', () => {
+  assert.equal(routes.passwordRecoveryPath('visitor'), '/login?mode=reset');
+  assert.equal(routes.passwordRecoveryPath('gatekeeper'), '/staff/login?mode=reset');
+  assert.equal(routes.passwordRecoveryPath('site_admin'), '/staff/login?mode=reset');
+  assert.equal(routes.passwordRecoveryPath('tourism_office'), '/staff/login?mode=reset');
+});
+
 test('visitor auth modal never opens over staff sign-in or workspace routes', () => {
   assert.equal(routes.canShowVisitorAuthModal('/'), true);
   assert.equal(routes.canShowVisitorAuthModal('/login'), true);
@@ -66,6 +73,7 @@ test('route matching resolves workspace and destination pages', () => {
   assert.equal(routes.visitorRoutePaths.Discover, '/discover');
   assert.equal(routes.visitorRoutePaths.Destinations, '/destinations');
   assert.equal(routes.pageFromPath('/workspace/reservations'), 'Reservations');
+  assert.equal(routes.pageFromPath('/workspace/account/password'), 'Change password');
   assert.equal(routes.pageFromPath('/workspace/unrecognized'), 'Overview');
   assert.equal(routes.pageFromPath('/discover'), 'Discover');
   assert.equal(routes.pageFromPath('/destinations'), 'Destinations');
