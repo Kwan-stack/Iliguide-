@@ -726,7 +726,7 @@ export default function App() {
 
 function LandingPage({ onExplore }: { onExplore: () => void }) {
   return <section className="landing-page">
-    <img className="landing-photo" src="/iligan-city.jpg" alt="Iligan City landscape"/>
+    <img className="landing-photo" src="/tropical-waterfall-lagoon.png" alt="Tropical waterfall lagoon with a bamboo raft"/>
     <div className="landing-shade"/>
     <div className="landing-copy">
       <span className="eyebrow"><span className="eyebrow-line"/> ILIGAN CITY · ILIGUIDE</span>
@@ -749,7 +749,7 @@ function HomePage({ sites, destinationOptions, allCount, categories, category, s
       <p>Chase waterfalls, cool off in crystal springs, and find the quieter side of Iligan. Explore destinations and plan a visit.</p>
       <div className="search-panel"><label className="search-field"><MapPin size={17}/><span><small>DESTINATION</small><select aria-label="Destination" value={search} onChange={(event) => setSearch(event.target.value)}><option value="" disabled hidden>Where do you want to go?</option>{destinationOptions.map((site) => <option key={site.id} value={site.name}>{site.name}</option>)}</select></span><ChevronDown size={15}/></label>
         <label className="search-field date-field"><CalendarDays size={17}/><span><small>WHEN</small><input type="date" min={todayPh()} value={visitDate} onChange={(event) => setVisitDate(event.target.value)}/></span></label>
-        <button className="btn btn-primary" onClick={() => { const destination = destinationOptions.find((site) => site.name === search); if (destination) openSite(destination); else document.getElementById('destinations')?.scrollIntoView({ behavior: 'smooth' }); }}><Search size={17}/> Find a place</button></div>
+        <button className="btn btn-primary" onClick={() => { const destination = destinationOptions.find((site) => site.name === search); if (destination) openSite(destination); else document.getElementById('destinations')?.scrollIntoView({ behavior: 'smooth' }); }}><Search size={17}/> Search destination</button></div>
       <div className="hero-note"><div className="avatar-stack"><span>✦</span><span>✦</span><span>✦</span></div><span><b>{allCount} destinations listed</b><br/>Published by Iligan destination teams.</span></div>
     </div></section>
       <div className="trust-strip"><div className="trust-strip-inner"><span><ShieldCheck size={18}/> Capacity-checked reservations</span><span><BadgeCheck size={18}/> Admission fees published by each site</span><span><TicketIcon size={18}/> QR tickets after confirmation</span><span className="strip-location"><MapPin size={16}/> Iligan City, Philippines</span></div></div>
