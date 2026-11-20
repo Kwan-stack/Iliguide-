@@ -42,7 +42,7 @@ supabase functions deploy process-refund
 Set these **server-side Edge Function secrets** in the Supabase Dashboard or with `supabase secrets set`:
 
 - `APP_BASE_URL`: public application origin used for checkout return URLs.
-- `TICKET_SIGNING_SECRET`: random value with at least 32 characters.
+- `TICKET_SIGNING_SECRET`: server-only HMAC key, at least 32 characters. Generate 32 random bytes and encode them as unpadded Base64URL (43 characters). Do not use a `VITE_` variable.
 - `PAYMONGO_SECRET_KEY`: PayMongo secret API key.
 - `PAYMONGO_WEBHOOK_SECRET`: signing secret shown when the webhook endpoint is created.
 - `PAYMONGO_PAYMENT_METHODS`: optional comma-separated method list; default is `gcash,qrph,card`.
@@ -50,6 +50,14 @@ Set these **server-side Edge Function secrets** in the Supabase Dashboard or wit
 Create a PayMongo webhook at `https://<project-ref>.supabase.co/functions/v1/paymongo-webhook` and subscribe it to `checkout_session.payment.paid`, `checkout_session.payment.failed`, and `payment.refund.updated`. Copy its endpoint secret into `PAYMONGO_WEBHOOK_SECRET`. The frontend never treats the checkout redirect as payment confirmation.
 
 The guest ticket and checkout functions accept requests without a user JWT because they validate the private guest access code through the database. Scanner, invitation, and refund functions require an authenticated JWT. The webhook verifies PayMongo's signature.
+
+For local Edge Function development, put this in the ignored `supabase/.env.ticket` file:
+
+```env
+TICKET_SIGNING_SECRET=<43-character Base64URL secret>
+```
+
+Run `supabase functions serve --env-file supabase/.env.ticket`. For production, preserve any existing value. If none exists, set it once with `supabase secrets set --env-file supabase/.env.ticket --remote <project-ref>`. The same key must remain available to both `ticket` and `scan-ticket` so existing QR tokens keep verifying.
 
 ## Current behavior
 

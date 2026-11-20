@@ -40,8 +40,8 @@ Deno.serve(async (req) => {
 
     const { data: existingProfile } = await admin.from('profiles')
       .select('id, role, account_status').eq('email', email).maybeSingle();
-    if (existingProfile && existingProfile.role !== 'visitor') {
-      return json({ error: 'That account already has a staff role' }, 409);
+    if (existingProfile && existingProfile.role !== 'visitor' && existingProfile.role !== staffRole) {
+      return json({ error: 'That account already has a different staff role' }, 409);
     }
     if (existingProfile && existingProfile.account_status !== 'active') {
       return json({ error: 'That account is not active' }, 409);
@@ -59,11 +59,14 @@ Deno.serve(async (req) => {
     if (inviteRowError) return json({ error: 'An active invitation may already exist for this email' }, 409);
 
     if (existingProfile) {
-      const { error: profileUpdateError } = await admin.from('profiles')
-        .update({ role: staffRole }).eq('id', existingProfile.id);
-      if (profileUpdateError) {
-        await admin.from('staff_invitations').update({ status: 'revoked' }).eq('id', invitation.id);
-        return json({ error: 'Could not update the existing visitor role' }, 500);
+      const wasVisitor = existingProfile.role === 'visitor';
+      if (wasVisitor) {
+        const { error: profileUpdateError } = await admin.from('profiles')
+          .update({ role: staffRole }).eq('id', existingProfile.id);
+        if (profileUpdateError) {
+          await admin.from('staff_invitations').update({ status: 'revoked' }).eq('id', invitation.id);
+          return json({ error: 'Could not update the existing visitor role' }, 500);
+        }
       }
       if (siteId) {
         const { error: assignmentError } = await admin.from('staff_assignments').upsert({
@@ -78,6 +81,14 @@ Deno.serve(async (req) => {
           return json({ error: 'Could not assign the existing account to this site' }, 500);
         }
       }
+      if (!wasVisitor) {
+        const { error: acceptedError } = await admin.from('staff_invitations').update({
+          status: 'accepted',
+          accepted_profile_id: existingProfile.id,
+        }).eq('id', invitation.id);
+        if (acceptedError) return json({ error: 'Access was assigned, but the invitation record could not be updated' }, 503);
+        return json({ invitation, existing_account: true });
+      }
       const { data: assignedSite } = siteId
         ? await admin.from('tourism_sites').select('name').eq('id', siteId).maybeSingle()
         : { data: null };
@@ -89,7 +100,7 @@ Deno.serve(async (req) => {
         });
       } catch (sendError) {
         console.error('staff access email', sendError instanceof Error ? sendError.message : sendError);
-        await admin.from('profiles').update({ role: 'visitor' }).eq('id', existingProfile.id);
+        if (wasVisitor) await admin.from('profiles').update({ role: 'visitor' }).eq('id', existingProfile.id);
         if (siteId) await admin.from('staff_assignments').update({ is_active: false })
           .eq('profile_id', existingProfile.id).eq('site_id', siteId);
         await admin.from('staff_invitations').update({ status: 'revoked' }).eq('id', invitation.id);
