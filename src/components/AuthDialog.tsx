@@ -52,7 +52,7 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
     login: 'Good to see you.',
     signup: 'Make it yours.',
     forgot: 'Reset your password.',
-    reset: 'Choose a new password.',
+    reset: audience === 'staff' ? 'Set your staff password.' : 'Choose a new password.',
   }[mode];
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -137,7 +137,7 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
           ? 'Sign in with the account issued for your Tourism Office, site administrator, or gatekeeper role.'
           : 'Sign in to manage your visitor account, bookings, and tickets.'
         : mode === 'forgot' ? 'We will send a reset link to your email address.'
-        : 'Set a new password for your account.'}</p>
+        : audience === 'staff' ? 'Choose a password to finish setting up your staff access.' : 'Set a new password for your account.'}</p>
       <form onSubmit={submit}>
         {mode === 'signup' && !awaitingConfirmation && <>
           <div className="auth-name-grid"><label>First name<input required autoComplete="given-name" value={firstName} onChange={(event) => setFirstName(event.target.value)} maxLength={60}/></label>

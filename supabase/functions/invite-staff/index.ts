@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
     }
 
     const appBaseUrl = Deno.env.get('APP_BASE_URL');
-    const inviteOptions = appBaseUrl ? { redirectTo: new URL('/staff/login', appBaseUrl).toString() } : undefined;
+    const inviteOptions = appBaseUrl ? { redirectTo: new URL('/staff/login?mode=reset', appBaseUrl).toString() } : undefined;
     const { data: invited, error: authInviteError } = await admin.auth.admin.generateLink({
       type: 'invite', email, options: inviteOptions,
     });
