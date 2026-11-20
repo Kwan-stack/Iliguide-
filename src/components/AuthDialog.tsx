@@ -99,7 +99,9 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
         if (data.session) onSuccess();
         else { setAwaitingConfirmation(true); setNotice('If this address is new, check your inbox for a confirmation link. If no email arrives, try logging in or resetting your password.'); }
       } else if (mode === 'forgot') {
-        const resetRedirect = new URL(redirectTo);
+        const resetRedirect = audience === 'staff'
+          ? new URL('/staff/login', window.location.origin)
+          : new URL(redirectTo);
         resetRedirect.searchParams.set('mode', 'reset');
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
           redirectTo: resetRedirect.toString(),

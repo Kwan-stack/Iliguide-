@@ -53,6 +53,7 @@ const isStaffPage = (page: Page): page is StaffPage => ['Overview', 'Reservation
 export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
+  const staffPasswordReset = location.pathname === STAFF_LOGIN_PATH && new URLSearchParams(location.search).get('mode') === 'reset';
   const [user, setUser] = useState<User | null>(null);
   const authUserId = useRef<string | null>(null);
   const [savedSiteIds, setSavedSiteIds] = useState<string[]>(() => readSavedSiteIds(null));
@@ -71,7 +72,7 @@ export default function App() {
   const [selectedTravelerId, setSelectedTravelerId] = useState('');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
-  const [authMode, setAuthMode] = useState<AuthMode>(null);
+  const [authMode, setAuthMode] = useState<AuthMode>(() => new URLSearchParams(window.location.search).get('mode') === 'reset' ? 'reset' : null);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState('');
   const [dataError, setDataError] = useState('');
@@ -255,6 +256,7 @@ export default function App() {
 
   useEffect(() => {
     if (!accountReady) return;
+    if (staffPasswordReset) { setPage('Staff login'); return; }
     const path = location.pathname;
     const workspacePath = isWorkspacePath(path);
     const gatekeeperPathRequested = isGatekeeperPath(path);
@@ -356,7 +358,7 @@ export default function App() {
     setPage(nextPage);
     const nextPath = workspaceRoutePaths[nextPage] ?? '/workspace';
     if (nextPath !== path) navigate(nextPath, { replace: true });
-  }, [accountReady, assignedGatekeeperSite, gatekeeperAssignments.length, location.pathname, location.search, navigate, notify, profile, role, sites, sitesLoaded, user]);
+  }, [accountReady, assignedGatekeeperSite, gatekeeperAssignments.length, location.pathname, location.search, navigate, notify, profile, role, sites, sitesLoaded, staffPasswordReset, user]);
 
   useEffect(() => {
     const slug = destinationSlugFromPath(location.pathname);
@@ -417,10 +419,6 @@ export default function App() {
     setSavedSiteIds(next);
     try { localStorage.setItem(savedSitesKey(user?.id ?? null), JSON.stringify(next)); } catch { /* storage may be unavailable */ }
   };
-
-  useEffect(() => {
-    if (authMode === null && new URLSearchParams(window.location.search).get('mode') === 'reset') setAuthMode('reset');
-  }, [authMode]);
 
   useEffect(() => {
     if (!activeSite || page !== 'Destination') {
@@ -574,7 +572,7 @@ export default function App() {
       <button className="btn btn-primary" onClick={() => void signOut()}>Sign out</button></div>
   </div>;
 
-  if (user && staffRole) {
+  if (user && staffRole && !staffPasswordReset) {
     const staffPage = isStaffPage(page) ? page : 'Overview';
     const staffHomePath = staffRole === 'gatekeeper' && assignedGatekeeperSite
       ? gatekeeperPath(assignedGatekeeperSite.slug, 'Overview') : '/workspace';
@@ -611,15 +609,17 @@ export default function App() {
     {!supabaseConfigured && <div className="connection-banner"><ShieldCheck size={16}/><span>Add Supabase URL and publishable key to connect live data.</span></div>}
 
     <main>{authPage
-      ? user
+      ? user && !staffPasswordReset
         ? <section className="auth-page auth-page-staff"><section className="auth-page-card" aria-labelledby="staff-access-title">
             <span className="eyebrow"><span className="eyebrow-line"/> ILIGUIDE STAFF ACCESS</span>
             <h2 id="staff-access-title">This account has no office access.</h2>
             <p>{profile?.account_status === 'active' ? 'Sign out and use an account assigned by the Tourism Office.' : 'Staff access is inactive. Contact the Tourism Office to confirm your account.'}</p>
             <button className="btn btn-primary btn-wide" onClick={() => void signOut()}>Sign out and switch account <ArrowRight size={16}/></button>
           </section></section>
-        : <AuthDialog mode={authMode ?? 'login'} audience="staff" presentation="page"
-            onClose={() => navigate(authSuccessPath('staff', authNext), { replace: true })}
+        : <AuthDialog mode={authMode ?? (staffPasswordReset ? 'reset' : 'login')} audience="staff" presentation="page"
+            onClose={() => navigate(staffRole === 'gatekeeper' && assignedGatekeeperSite
+              ? gatekeeperPath(assignedGatekeeperSite.slug, 'Overview')
+              : authSuccessPath('staff', authNext), { replace: true })}
             onMode={setAuthMode} initialVisitor={visitor} redirectTo={authReturnTo}/>
       : <Suspense fallback={<section className="section-wrap loading-screen">Loading workspace…</section>}>
       {page === 'Landing' && <LandingPage onExplore={() => go('Discover')}/>}
