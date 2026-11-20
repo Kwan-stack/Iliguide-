@@ -17,7 +17,7 @@ Responsive visitor booking and destination operations for Iligan City. The React
    Older projects can use `VITE_SUPABASE_ANON_KEY`. Never put a Supabase service role key, PayMongo secret, or webhook secret in a `VITE_` variable.
 5. Run `pnpm dev` and open the printed local URL.
 
-The linked Supabase project already has the four migrations in `supabase/migrations`. For a different empty project, apply them in filename order using the Supabase CLI or SQL editor.
+The EcoTrack Supabase project is linked to this app, and the migrations in `supabase/migrations` are applied there. For a different empty project, apply all migrations in filename order using the Supabase CLI or SQL editor.
 
 ## First account and destination
 
@@ -27,7 +27,7 @@ Sign in as Tourism Office to create destination records, fees, and operating day
 
 ## Edge Functions and payment setup
 
-The Edge Functions are in `supabase/functions`; `supabase/config.toml` documents their JWT settings. The linked Supabase project already has all seven functions deployed. Deploy again after changing function code, or deploy them to another project with the Supabase CLI:
+The Edge Functions are in `supabase/functions`; `supabase/config.toml` documents their JWT settings. The linked Supabase project has the eight app functions deployed. Deploy again after changing function code, or deploy them to another project with the Supabase CLI:
 
 ```powershell
 supabase functions deploy paymongo-checkout
@@ -37,6 +37,7 @@ supabase functions deploy scan-ticket
 supabase functions deploy invite-staff
 supabase functions deploy accept-staff-invitation
 supabase functions deploy process-refund
+supabase functions deploy send-booking-email
 ```
 
 Set these **server-side Edge Function secrets** in the Supabase Dashboard or with `supabase secrets set`:
@@ -46,20 +47,20 @@ Set these **server-side Edge Function secrets** in the Supabase Dashboard or wit
 - `PAYMONGO_SECRET_KEY`: PayMongo secret API key.
 - `PAYMONGO_WEBHOOK_SECRET`: signing secret shown when the webhook endpoint is created.
 - `PAYMONGO_PAYMENT_METHODS`: optional comma-separated method list; default is `gcash,qrph,card`.
+- `BREVO_API_KEY`: server-side transactional email key. The four Brevo templates in `supabase/functions/_shared/email.ts` must exist with matching IDs.
 
 Create a PayMongo webhook at `https://<project-ref>.supabase.co/functions/v1/paymongo-webhook` and subscribe it to `checkout_session.payment.paid`, `checkout_session.payment.failed`, and `payment.refund.updated`. Copy its endpoint secret into `PAYMONGO_WEBHOOK_SECRET`. The frontend never treats the checkout redirect as payment confirmation.
 
-The guest ticket and checkout functions accept requests without a user JWT because they validate the private guest access code through the database. Scanner, invitation, and refund functions require an authenticated JWT. The webhook verifies PayMongo's signature.
+The ticket endpoint can validate a private guest access code. Scanner, invitation, refund, and booking-email endpoints require an authenticated JWT. The webhook verifies PayMongo's signature.
 
 ## Current behavior
 
 - Visitor registration, sign-in, password reset, profile, avatar, and notifications use Supabase Auth and Storage.
 - Public destination pages use published site details, fee settings, uploaded images, live slot capacity, and published review aggregates.
-- Booking holds last ten minutes and use database-side fee and capacity checks. Free bookings confirm through a database RPC. Paid bookings redirect to PayMongo Checkout and become confirmed only after a signed webhook.
-- Guest bookings can be recovered with both the booking reference and private access code.
-- Paid tickets contain an opaque signed QR token. Gatekeeper scans and manual lookups record entry and exit in the database.
+- Booking holds last ten minutes and use database-side fee and capacity checks. The current visitor flow confirms the reservation without online payment; displayed fees are estimates to be paid under the destination's own admission process. PayMongo checkout, webhook, and refund functions remain available but are not called by the current visitor interface.
+- Confirmed reservations receive an opaque signed QR ticket. Gatekeeper scans and manual lookups record entry and exit in the database.
 - Walk-ins record the onsite payment amount and validate current slot, capacity, and staff assignment.
-- Site teams manage operating hours, visit slots, closures, gatekeeper assignments, reviews, cancellations, refunds, and image uploads according to row-level security.
+- Site teams manage operating hours, visit slots, closures, gatekeeper assignments, reviews, cancellation requests, and image uploads according to row-level security. Request and decision emails use the linked Brevo templates.
 - Reports and audit activity come from database records and are scoped to staff permissions.
 - The PWA caches its app shell and same-origin assets for offline startup. Supabase data still needs an internet connection.
 

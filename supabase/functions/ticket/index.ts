@@ -7,7 +7,7 @@ Deno.serve(async (req) => {
 
   try {
     const { admin, user } = clients(req);
-    await authenticatedUser(req, user);
+    if (!await authenticatedUser(req, user)) return json({ error: 'Sign in to access this booking' }, 401);
     const body = await req.json();
     const reference = String(body.booking_reference ?? '').trim();
     const accessToken = typeof body.guest_access_token === 'string' ? body.guest_access_token : null;
@@ -23,8 +23,8 @@ Deno.serve(async (req) => {
     });
     const booking = Array.isArray(rows) ? rows[0] : null;
     if (error || !booking) return json({ error: 'Booking not found or access could not be verified' }, 404);
-    if (booking.payment_status !== 'paid' || !['confirmed', 'completed'].includes(booking.booking_status)) {
-      return json({ error: 'A paid and confirmed booking is required for a ticket' }, 409);
+    if (!['paid', 'not_required'].includes(booking.payment_status) || !['confirmed', 'completed'].includes(booking.booking_status)) {
+      return json({ error: 'A confirmed booking is required for a ticket' }, 409);
     }
 
     const signature = await hmacSha256(signingSecret, booking.booking_id);

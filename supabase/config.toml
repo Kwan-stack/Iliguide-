@@ -1,4 +1,4 @@
-project_id = "byukovhoswpwkgvezpkk"
+project_id = "xiyybsijpdrrkufwphuv"
 
 [functions.paymongo-checkout]
 verify_jwt = false
@@ -20,3 +20,6 @@ verify_jwt = true
 
 [functions.process-refund]
 verify_jwt = true
+
+[functions.send-booking-email]
+verify_jwt = false

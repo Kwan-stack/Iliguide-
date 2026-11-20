@@ -1,4 +1,5 @@
 import { clients, constantTimeEqual, hmacSha256, json, preflight } from '../_shared/http.ts';
+import { sendBookingEmail } from '../_shared/email.ts';
 
 Deno.serve(async (req) => {
   const options = preflight(req);
@@ -107,6 +108,17 @@ Deno.serve(async (req) => {
     if (error) {
       console.error('payment webhook database error', error.message);
       return json({ error: 'Payment event could not be recorded' }, 500);
+    }
+    if (expectedStatus === 'paid' || expectedStatus === 'failed') {
+      const { data: booking } = await admin.from('payments').select('booking_id')
+        .eq('provider', 'paymongo').eq('checkout_session_id', session.id).maybeSingle();
+      if (booking?.booking_id) {
+        try {
+          await sendBookingEmail(admin, booking.booking_id, expectedStatus === 'paid' ? 'confirmed' : 'payment_failed');
+        } catch (emailError) {
+          console.error('payment email', emailError instanceof Error ? emailError.message : emailError);
+        }
+      }
     }
     return json({ received: true, result: data });
   } catch (error) {

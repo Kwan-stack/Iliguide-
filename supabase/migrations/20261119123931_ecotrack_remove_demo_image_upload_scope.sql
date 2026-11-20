@@ -1,0 +1,2 @@
+-- Historical removal of the temporary upload scope. The current image policy
+-- is defined by 20261119123342_ecotrack_image_upload_path_fix.sql.

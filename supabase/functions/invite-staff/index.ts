@@ -1,4 +1,5 @@
 import { authenticatedUser, clients, json, preflight } from '../_shared/http.ts';
+import { escapeHtml, sendTemplate } from '../_shared/email.ts';
 
 Deno.serve(async (req) => {
   const options = preflight(req);
@@ -77,27 +78,51 @@ Deno.serve(async (req) => {
           return json({ error: 'Could not assign the existing account to this site' }, 500);
         }
       }
-      await admin.from('staff_invitations').update({
+      const { data: assignedSite } = siteId
+        ? await admin.from('tourism_sites').select('name').eq('id', siteId).maybeSingle()
+        : { data: null };
+      try {
+        await sendTemplate(email, 6, {
+          name: escapeHtml(email),
+          role: escapeHtml(staffRole.replaceAll('_', ' ')),
+          site_suffix: escapeHtml(assignedSite?.name ? ` for ${assignedSite.name}` : ''),
+        });
+      } catch (sendError) {
+        console.error('staff access email', sendError instanceof Error ? sendError.message : sendError);
+        await admin.from('profiles').update({ role: 'visitor' }).eq('id', existingProfile.id);
+        if (siteId) await admin.from('staff_assignments').update({ is_active: false })
+          .eq('profile_id', existingProfile.id).eq('site_id', siteId);
+        await admin.from('staff_invitations').update({ status: 'revoked' }).eq('id', invitation.id);
+        return json({ error: 'Could not deliver the Iliguide staff access email' }, 502);
+      }
+      const { error: acceptedError } = await admin.from('staff_invitations').update({
         status: 'accepted',
         accepted_profile_id: existingProfile.id,
       }).eq('id', invitation.id);
+      if (acceptedError) return json({ error: 'Access was assigned and emailed, but the invitation record could not be updated' }, 503);
       return json({ invitation, existing_account: true });
     }
 
     const appBaseUrl = Deno.env.get('APP_BASE_URL');
     const inviteOptions = appBaseUrl ? { redirectTo: appBaseUrl.replace(/\/+$/, '') + '/' } : undefined;
-    const { data: invited, error: authInviteError } = await admin.auth.admin.inviteUserByEmail(email, inviteOptions);
-    if (authInviteError) {
+    const { data: invited, error: authInviteError } = await admin.auth.admin.generateLink({
+      type: 'invite', email, options: inviteOptions,
+    });
+    if (authInviteError || !invited.user || !invited.properties?.action_link) {
       await admin.from('staff_invitations').update({ status: 'revoked' }).eq('id', invitation.id);
-      return json({ error: 'Could not send the invitation. Check Supabase Auth email settings and try again.' }, 502);
+      return json({ error: 'Could not create a secure invitation link' }, 502);
     }
     const invitedProfileId = invited.user?.id;
-    if (!invitedProfileId) return json({ error: 'Invitation was sent but no account id was returned' }, 502);
+    const { data: invitedSite } = siteId
+      ? await admin.from('tourism_sites').select('name').eq('id', siteId).maybeSingle()
+      : { data: null };
     const { error: roleError } = await admin.from('profiles')
       .update({ role: staffRole, account_status: 'active' }).eq('id', invitedProfileId);
     if (roleError) {
       console.error('invited profile provisioning error', roleError.message);
-      return json({ error: 'Invitation was sent but the staff account role could not be assigned' }, 503);
+      await admin.from('staff_invitations').update({ status: 'revoked' }).eq('id', invitation.id);
+      await admin.auth.admin.deleteUser(invitedProfileId);
+      return json({ error: 'Could not assign the staff account role' }, 503);
     }
     if (siteId) {
       const { error: assignmentError } = await admin.from('staff_assignments').upsert({
@@ -109,8 +134,23 @@ Deno.serve(async (req) => {
       }, { onConflict: 'profile_id,site_id' });
       if (assignmentError) {
         console.error('invited assignment provisioning error', assignmentError.message);
-        return json({ error: 'Invitation was sent but the site assignment could not be created' }, 503);
+        await admin.from('staff_invitations').update({ status: 'revoked' }).eq('id', invitation.id);
+        await admin.auth.admin.deleteUser(invitedProfileId);
+        return json({ error: 'Could not create the site assignment' }, 503);
       }
+    }
+    try {
+      await sendTemplate(email, 5, {
+        role: escapeHtml(staffRole.replaceAll('_', ' ')),
+        site_suffix: escapeHtml(invitedSite?.name ? ` for ${invitedSite.name}` : ''),
+        email: escapeHtml(email),
+        url: escapeHtml(invited.properties.action_link),
+      });
+    } catch (sendError) {
+      console.error('staff invite email', sendError instanceof Error ? sendError.message : sendError);
+      await admin.from('staff_invitations').update({ status: 'revoked' }).eq('id', invitation.id);
+      await admin.auth.admin.deleteUser(invitedProfileId);
+      return json({ error: 'Could not deliver the Iliguide staff invitation' }, 502);
     }
     return json({ invitation, existing_account: false });
   } catch (error) {

@@ -1,0 +1,2 @@
+.request-decision-note{flex:1;min-width:190px;display:grid;gap:6px;color:#526471;font-size:10px;font-weight:700}.request-decision-note textarea{width:100%;min-height:52px;padding:9px 10px;resize:vertical;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink);font-size:11px;line-height:1.5;outline-color:var(--teal)}
+@media(max-width:760px){.request-row{align-items:stretch;flex-wrap:wrap}.request-decision-note{min-width:100%}.request-actions{width:100%}.request-actions .btn{flex:1}}

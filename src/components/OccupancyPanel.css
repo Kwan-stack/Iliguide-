@@ -1,0 +1,18 @@
+.occupancy-panel { display: grid; gap: .65rem; margin: 1rem 0; padding: 1rem; border: 1px solid #cde3e9; border-radius: 12px; background: #f7fcfd; }
+.occupancy-panel > small { color: var(--deep, #006f93); font-size: .66rem; font-weight: 800; letter-spacing: .12em; }
+.occupancy-number { display: flex; align-items: center; gap: .55rem; color: var(--deep, #006f93); }
+.occupancy-number span { display: flex; align-items: baseline; flex-wrap: wrap; gap: .35rem; }
+.occupancy-number b { font-size: 1.8rem; line-height: 1; color: var(--navy, #123047); }
+.occupancy-number em { font-size: .78rem; font-style: normal; font-weight: 700; color: #425f6d; }
+.occupancy-breakdown { display: flex; justify-content: space-between; gap: .5rem; color: #5d7380; font-size: .75rem; }
+.occupancy-breakdown b { color: var(--navy, #123047); }
+.occupancy-progress { height: .5rem; overflow: hidden; border-radius: 999px; background: #dce8eb; }
+.occupancy-progress i { display: block; height: 100%; border-radius: inherit; background: var(--teal, #009bce); }
+.occupancy-panel p { margin: 0; color: #56707d; font-size: .75rem; line-height: 1.35; }
+.occupancy-update { font-weight: 700; }
+.occupancy-source { color: #708892 !important; }
+.occupancy-limit { display: flex; gap: .45rem; padding: .65rem; border-radius: 8px; color: #864700; background: #fff1dc; font-size: .76rem; font-weight: 700; }
+.occupancy-alternatives { display: grid; gap: .35rem; padding-top: .15rem; }
+.occupancy-alternatives > b { color: var(--navy, #123047); font-size: .78rem; }
+.occupancy-alternatives button { display: flex; justify-content: space-between; gap: .5rem; padding: .45rem 0; color: var(--deep, #006f93); border: 0; border-top: 1px solid #dbe9ed; background: transparent; text-align: left; font-weight: 700; }
+.occupancy-alternatives span { color: #67808b; font-size: .72rem; font-weight: 600; }
