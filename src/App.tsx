@@ -65,7 +65,6 @@ export default function App() {
   const [siteId, setSiteId] = useState('');
   const [date, setDate] = useState(todayPh());
   const [slots, setSlots] = useState<Slot[]>([]);
-  const [selectedSlot, setSelectedSlot] = useState('');
   const [party, setParty] = useState<Party>({ adults: 1, children: 0, pwd: 0 });
   const [visitorInformation, setVisitorInformation] = useState<VisitorInformation[]>(() => emptyVisitorInformation(1));
   const [visitor, setVisitor] = useState({ name: '', email: '', phone: '' });
@@ -128,7 +127,6 @@ export default function App() {
   useEffect(() => {
     if (previousSlotScope.current !== slotScope) setSlots([]);
     previousSlotScope.current = slotScope;
-    setSelectedSlot('');
   }, [slotScope]);
 
   const reloadSites = useCallback(async (nextRole: Profile['role'] = 'visitor', nextAssignments: StaffAssignment[] = []) => {
@@ -449,12 +447,12 @@ export default function App() {
   ), [category, permittedSites, search]);
   const destinationSites = useMemo(() => permittedSites.filter((site) => category === 'All' || site.category === category), [category, permittedSites]);
   const today = todayPh();
-  const availableSlots = (slotsLoading ? [] : slots).filter((slot) => slot.status === 'open' && slot.remaining_capacity > 0
+  const availableSlots = (slotsLoading ? [] : slots).filter((slot) => slot.status === 'open' && slot.remaining_capacity >= party.adults + party.children
     && (slot.slot_date > today || (slot.slot_date === today && slot.ends_at.slice(0, 5) > timePh())));
+  const selectedSlot = availableSlots[0]?.slot_id ?? '';
 
   const openSite = (site: Site) => {
     setSiteId(site.id);
-    setSelectedSlot('');
     setParty({ adults: 1, children: 0, pwd: 0 });
     setVisitorInformation(emptyVisitorInformation(1));
     setPage('Destination');
@@ -466,7 +464,7 @@ export default function App() {
     if (!supabaseConfigured || !supabase) { notify('Add the Supabase project URL and publishable key to .env.local first.'); return; }
     if (!user) { navigate(visitorLoginUrl(location.pathname)); return; }
     if (profile?.account_status !== 'active' || profile.role !== 'visitor') { notify('Only active visitor accounts can make a reservation.'); return; }
-    if (!activeSite || !selectedSlot) { notify('Choose an available time slot first.'); return; }
+    if (!activeSite || !selectedSlot) { notify('No booking capacity is available for this date.'); return; }
     if (!activeSite.fee_information_confirmed) { notify('Reservations are unavailable until this destination confirms its current fees.'); return; }
     if (!visitorInformationComplete(visitorInformation, activeSite.slug)) { notify('Complete visitor information for everyone in the reservation.'); return; }
     if (party.adults < 1 || party.adults + party.children > activeSite.max_per_booking || party.pwd > party.adults + party.children) {
@@ -667,13 +665,9 @@ export default function App() {
           : !activeSite.fee_information_confirmed ? <div className="booking-gate" role="status"><p>Reservations are unavailable until destination management confirms current admission fees.</p></div>
           : <>
           <p className="price-intro">Starting at <b>{money(activeSite.adult_fee)}</b> / adult</p>
-          <label className="field-label">Visit date<input type="date" min={todayPh()} value={date} onChange={(event) => { setDate(event.target.value); setSelectedSlot(''); }}/></label>
+          <label className="field-label">Visit date<input type="date" min={todayPh()} value={date} onChange={(event) => setDate(event.target.value)}/></label>
           <div className="slot-heading"><span>Daily booking limit</span><small>{activeSite.daily_capacity == null ? 'No daily limit published' : `${activeSite.daily_capacity} visitors total`}</small></div>
-          <label className="field-label slot-select-label">Time slot<select value={selectedSlot} disabled={slotsLoading} onChange={(event) => setSelectedSlot(event.target.value)}>
-            <option value="">Choose a time slot</option>
-            {availableSlots.map((slot) => <option key={slot.slot_id} value={slot.slot_id}>{timeLabel(slot.starts_at)} – {timeLabel(slot.ends_at)}</option>)}
-          </select></label>
-          {slotsLoading ? <div className="empty-inline" role="status">Checking available times…</div> : !availableSlots.length && <div className="empty-inline">No available slots for this date.</div>}
+          {slotsLoading ? <div className="empty-inline" role="status">Checking booking capacity…</div> : !availableSlots.length && <div className="empty-inline">No booking capacity is available for this date.</div>}
           <div className="party-count"><span><b>Visitors</b><small>Adults + children</small></span><span>
             <button className="mini-counter" aria-label="Fewer adults" onClick={() => setParty((current) => { const adults = Math.max(1, current.adults - 1); return { ...current, adults, pwd: Math.min(current.pwd, adults + current.children) }; })}>−</button>
             <b>{party.adults}</b><button className="mini-counter" aria-label="More adults" onClick={() => setParty((current) => ({ ...current, adults: Math.min(activeSite.max_per_booking - current.children, current.adults + 1) }))}>+</button>
@@ -694,7 +688,7 @@ export default function App() {
             <label>Email<input type="email" value={visitor.email} onChange={(event) => { setSelectedTravelerId(''); setVisitor({ ...visitor, email: event.target.value }); }} maxLength={254}/></label>
             <label>Phone<input type="tel" value={visitor.phone} onChange={(event) => { setSelectedTravelerId(''); setVisitor({ ...visitor, phone: event.target.value }); }} maxLength={40}/></label></div>
           <div className="booking-total"><span>Estimated fees<small>Estimate only; no payment collected.</small></span><b>{money(activeSite.adult_fee * party.adults + activeSite.child_fee * party.children - activeSite.adult_fee * activeSite.pwd_discount_percent / 100 * party.pwd)}</b></div>
-          <button className="btn btn-primary btn-wide" disabled={busy || !selectedSlot || !availableSlots.some((slot) => slot.slot_id === selectedSlot) || completedVisitorCount(visitorInformation, activeSite.slug) !== visitorInformation.length} onClick={() => void reserve()}>{busy ? 'Please wait…' : 'Confirm reservation'} <ArrowRight size={16}/></button>
+          <button className="btn btn-primary btn-wide" disabled={busy || slotsLoading || !selectedSlot || completedVisitorCount(visitorInformation, activeSite.slug) !== visitorInformation.length} onClick={() => void reserve()}>{busy ? 'Please wait…' : 'Confirm reservation'} <ArrowRight size={16}/></button>
           <p className="secure-note"><ShieldCheck size={14}/> Your reservation is recorded after the database confirms it. No online payment is collected.</p>
           </>}
         </aside></div>
