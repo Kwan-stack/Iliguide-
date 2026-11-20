@@ -525,7 +525,7 @@ function PeoplePage(props: Props) {
     const [cancellationLoad, staffLoad] = await Promise.allSettled([
         db().from('cancellation_requests').select('id,booking_id,site_id,reason,request_status,created_at,decision_note,booking:bookings(booking_reference,visitor_name,total_amount,payment_status),tourism_sites(name)')
           .in('site_id', siteIds).order('created_at', { ascending: false }).limit(100),
-        db().from('staff_assignments').select('id,profile_id,site_id,staff_role,is_active,profiles(full_name,email),tourism_sites(name)')
+        db().from('staff_assignments').select('id,profile_id,site_id,staff_role,is_active,profiles!staff_assignments_profile_id_fkey(full_name,email),tourism_sites(name)')
           .in('site_id', siteIds).order('created_at', { ascending: false }).limit(100),
       ]);
     const cancellationResult = cancellationLoad.status === 'fulfilled' ? cancellationLoad.value : null;
@@ -1143,7 +1143,7 @@ function DutyRosterPanel(props: Props & { site: Site }) {
   const refresh = useCallback(async () => {
     try {
       const [staff, roster] = await Promise.all([
-        db().from('staff_assignments').select('profile_id, profiles(full_name,account_status,role)')
+        db().from('staff_assignments').select('profile_id, profiles!staff_assignments_profile_id_fkey(full_name,account_status,role)')
           .eq('site_id', props.site.id).eq('staff_role', 'gatekeeper').eq('is_active', true),
         db().from('site_gatekeeper_duties').select(
           'id,duty_date,shift_start_at,shift_end_at,status,primary_gatekeeper_id,primary:profiles!site_gatekeeper_duties_primary_gatekeeper_id_fkey(full_name),supports:site_gatekeeper_duty_support(gatekeeper_id,gatekeeper:profiles(full_name))',

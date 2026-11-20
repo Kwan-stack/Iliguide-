@@ -120,8 +120,10 @@ Deno.serve(async (req) => {
       type: 'invite', email, options: inviteOptions,
     });
     if (authInviteError || !invited.user || !invited.properties?.action_link) {
+      const reason = authInviteError?.message ?? 'Supabase Auth returned no invitation link';
+      console.error('staff invite link generation failed', reason);
       await admin.from('staff_invitations').update({ status: 'revoked' }).eq('id', invitation.id);
-      return json({ error: 'Could not create a secure invitation link' }, 502);
+      return json({ error: `Could not create a secure invitation link: ${reason}` }, 502);
     }
     const invitedProfileId = invited.user?.id;
     const { data: invitedSite } = siteId
