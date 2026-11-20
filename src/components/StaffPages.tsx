@@ -512,7 +512,7 @@ function PeoplePage(props: Props) {
   const [staff, setStaff] = useState<Array<Record<string, any>>>([]);
   const [staffLoadError, setStaffLoadError] = useState('');
   const [email, setEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState(props.role === 'site_admin' ? 'gatekeeper' : 'site_admin');
+  const [inviteRole, setInviteRole] = useState('gatekeeper');
   const [decisionNotes, setDecisionNotes] = useState<Record<string, string>>({});
   const siteIds = props.role === 'tourism_office' ? props.sites.map((site) => site.id) : [props.siteId].filter(Boolean);
   const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${siteIds.join(',')}`);
