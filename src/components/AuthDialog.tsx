@@ -34,6 +34,12 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
 
   useEffect(() => {
+    setError('');
+    setNotice('');
+    setPassword('');
+    setConfirmPassword('');
+    setNewPassword('');
+    setShowPassword(false);
     setEmail((current) => current || initialVisitor.email);
     if (mode !== 'signup') setAwaitingConfirmation(false);
     if (mode === 'signup') {
@@ -48,6 +54,20 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
     if (audience === 'staff' && mode === 'signup') onMode('login');
   }, [audience, mode, onMode]);
 
+  useEffect(() => {
+    if (!mode || presentation !== 'dialog') return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [mode, onClose, presentation]);
+
   if (!mode) return null;
   const title = mode === 'signup' && awaitingConfirmation ? 'Check your email.' : {
     login: 'Good to see you.',
@@ -61,15 +81,41 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
     setBusy(true);
     setError('');
     setNotice('');
-    if (mode === 'signup' && !awaitingConfirmation && password !== confirmPassword) {
-      setError('Passwords do not match.');
-      setBusy(false);
-      return;
+    if (mode === 'signup' && !awaitingConfirmation) {
+      if (!firstName.trim() || !lastName.trim()) {
+        setError('Enter both your first and last name.');
+        setBusy(false);
+        return;
+      }
+      const trimmedPhone = phone.trim();
+      const phoneDigits = trimmedPhone.replace(/\D/g, '').length;
+      if (trimmedPhone && (phoneDigits < 7 || phoneDigits > 15)) {
+        setError('Enter a phone number with 7 to 15 digits, or leave it blank.');
+        setBusy(false);
+        return;
+      }
+      if (!password.trim() || password.length < 8) {
+        setError('Password must be at least 8 characters and cannot be blank.');
+        setBusy(false);
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('Passwords do not match.');
+        setBusy(false);
+        return;
+      }
     }
-    if (mode === 'reset' && newPassword !== confirmPassword) {
-      setError('New passwords do not match.');
-      setBusy(false);
-      return;
+    if (mode === 'reset') {
+      if (!newPassword.trim() || newPassword.length < 8) {
+        setError('New password must be at least 8 characters and cannot be blank.');
+        setBusy(false);
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setError('New passwords do not match.');
+        setBusy(false);
+        return;
+      }
     }
     if (!supabase) {
       setError('Add the Supabase project URL and publishable key to .env.local first.');
@@ -118,9 +164,10 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
         const callbackParams = new URLSearchParams(window.location.search);
         await completePasswordReset(supabase.auth, callbackParams.get('code'), newPassword, callbackParams.get('token_hash'));
         const callbackUrl = new URL(window.location.href);
-        for (const key of ['code', 'token_hash', 'type']) callbackUrl.searchParams.delete(key);
+        for (const key of ['code', 'token_hash', 'type', 'mode']) callbackUrl.searchParams.delete(key);
         window.history.replaceState(window.history.state, '', callbackUrl.toString());
         setNewPassword('');
+        setConfirmPassword('');
         setPassword('');
         onSuccess();
       }
@@ -137,7 +184,7 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
   };
 
   const card = <section className={presentation === 'page' ? 'auth-page-card' : 'modal auth-modal'} role={presentation === 'dialog' ? 'dialog' : undefined} aria-modal={presentation === 'dialog' ? 'true' : undefined} aria-labelledby="auth-title">
-      {presentation === 'dialog' && <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18}/></button>}
+      {presentation === 'dialog' && <button type="button" className="modal-close" onClick={onClose} aria-label="Close"><X size={18}/></button>}
       <span className="eyebrow"><span className="eyebrow-line"/> ILIGUIDE {audience === 'staff' ? 'STAFF ACCESS' : 'VISITOR ACCOUNT'}</span>
       <h2 id="auth-title">{title}</h2>
       <p>{mode === 'signup' && awaitingConfirmation
@@ -153,10 +200,10 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
         {mode === 'signup' && !awaitingConfirmation && <>
           <div className="auth-name-grid"><label><span>First name <span className="required-mark" aria-hidden="true">*</span></span><input required pattern=".*\S.*" autoComplete="given-name" value={firstName} onChange={(event) => setFirstName(event.target.value)} maxLength={60}/></label>
             <label><span>Last name <span className="required-mark" aria-hidden="true">*</span></span><input required pattern=".*\S.*" autoComplete="family-name" value={lastName} onChange={(event) => setLastName(event.target.value)} maxLength={60}/></label></div>
-          <label>Phone <span className="field-optional">optional</span><input autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={40}/></label>
+          <label><span>Phone <span className="field-optional">optional</span></span><input type="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={40}/></label>
         </>}
         {mode !== 'reset' && <label><span>Email{mode === 'signup' && !awaitingConfirmation && <> <span className="required-mark" aria-hidden="true">*</span></>}</span><input required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={254} readOnly={mode === 'signup' && awaitingConfirmation}/></label>}
-        {mode === 'login' && <label>Password<span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)}/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>}
+        {mode === 'login' && <label><span>Password</span><span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)}/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>}
         {mode === 'signup' && !awaitingConfirmation && <>
           <label><span>Password <span className="required-mark" aria-hidden="true">*</span></span><span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters"/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
           <label><span>Confirm password <span className="required-mark" aria-hidden="true">*</span></span><span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)}/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
@@ -178,14 +225,14 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
       </form>
       <div className="auth-switch">
         {mode === 'login' && <>
-          <button onClick={() => onMode('forgot')}>Forgot password?</button>
-          {audience === 'visitor' && <span>New here? <button onClick={() => onMode('signup')}>Create account</button></span>}
+          <button type="button" onClick={() => onMode('forgot')}>Forgot password?</button>
+          {audience === 'visitor' && <span>New here? <button type="button" onClick={() => onMode('signup')}>Create account</button></span>}
         </>}
         {mode === 'signup' && (awaitingConfirmation
           ? <><button type="button" onClick={() => { setAwaitingConfirmation(false); setNotice(''); setError(''); }}>Change details</button><span>Already have an account? <button type="button" onClick={() => onMode('login')}>Log in</button></span></>
-          : <span>Already have an account? <button onClick={() => onMode('login')}>Log in</button></span>)}
-        {mode === 'forgot' && <span>Remember your password? <button onClick={() => onMode('login')}>Log in</button></span>}
-        {mode === 'reset' && <span><button onClick={() => onMode('login')}>Return to log in</button></span>}
+          : <span>Already have an account? <button type="button" onClick={() => onMode('login')}>Log in</button></span>)}
+        {mode === 'forgot' && <span>Remember your password? <button type="button" onClick={() => onMode('login')}>Log in</button></span>}
+        {mode === 'reset' && <span><button type="button" onClick={() => onMode('login')}>Return to log in</button></span>}
       </div>
     </section>;
 

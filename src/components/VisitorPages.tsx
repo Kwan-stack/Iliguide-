@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { QRCodeSVG } from 'qrcode.react';
 import { ArrowDownToLine, ArrowRight, CalendarDays, Clock3, Heart, LogOut, Search, ShieldCheck, Ticket as TicketIcon, UserRound, BadgeCheck } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
-import { db, dateLabel, exportCsv, invokeFunction, loadOwnBookings, money, type Booking, type Profile, type Site, type Ticket, type TravelerProfile } from '../lib/iliguide';
+import { db, dateLabel, exportCsv, invokeFunction, isValidOptionalPhone, loadOwnBookings, money, type Booking, type Profile, type Site, type Ticket, type TravelerProfile } from '../lib/iliguide';
 import { supabase } from '../lib/supabase';
 import { ChangePasswordForm } from './ChangePasswordForm';
 import { filterVisitorBookings, matchesBookingTab, type BookingTab } from '../lib/visitorBookingFilters';
@@ -42,7 +42,8 @@ export function VisitorPages(props: Props) {
   const bookingScope = `${props.user?.id ?? 'visitor'}:${props.configured}`;
   const previousBookingScope = useRef(bookingScope);
   const [loading, finishLoading] = useSilentLoad(bookingScope);
-  const [cancellationReason, setCancellationReason] = useState('');
+  const [cancellationReasons, setCancellationReasons] = useState<Record<string, string>>({});
+  const [bookingsReloadKey, setBookingsReloadKey] = useState(0);
   const [actionBusy, setActionBusy] = useState(false);
   const [bookingTab, setBookingTab] = useState<BookingTab>('all');
   const [bookingSearch, setBookingSearch] = useState('');
@@ -75,16 +76,22 @@ export function VisitorPages(props: Props) {
       .catch((error) => { if (active) props.notify(error instanceof Error ? error.message : 'Could not load bookings.'); })
       .finally(() => { if (active) finishLoading(); });
     return () => { active = false; };
-  }, [bookingScope, props.user?.id, props.configured, props.booking?.booking_status, finishLoading]);
+  }, [bookingScope, props.user?.id, props.configured, props.booking?.booking_status, bookingsReloadKey, finishLoading]);
+
+  const setReasonForBooking = (bookingId: string, value: string) => {
+    setCancellationReasons((current) => ({ ...current, [bookingId]: value }));
+  };
 
   const requestCancel = async (booking = props.booking, token = props.guestAccessToken) => {
     if (!booking) return;
+    const reason = (cancellationReasons[booking.booking_id] ?? '').trim();
+    if (!reason) return;
     setActionBusy(true);
     try {
       const { data: requestId, error } = await db().rpc('request_cancellation', {
         p_booking_id: booking.booking_id,
         p_guest_access_token: token || null,
-        p_reason: cancellationReason.trim(),
+        p_reason: reason,
       });
       if (error) throw error;
       if (requestId && booking.visitor_email) void invokeFunction('send-booking-email', {
@@ -94,7 +101,12 @@ export function VisitorPages(props: Props) {
         guest_access_token: token || undefined,
       }).catch(() => props.notify('Cancellation request was submitted, but its email could not be sent.'));
       props.notify('Cancellation request submitted for the destination team to review.');
-      setCancellationReason('');
+      setCancellationReasons((current) => {
+        const next = { ...current };
+        delete next[booking.booking_id];
+        return next;
+      });
+      setBookingsReloadKey((current) => current + 1);
     } catch (error) {
       props.notify(error instanceof Error ? error.message : 'Could not submit the cancellation request.');
     } finally { setActionBusy(false); }
@@ -117,8 +129,9 @@ export function VisitorPages(props: Props) {
     </div>{props.user && <button className="btn btn-outline" onClick={() => void exportCsv('iliguide-bookings.csv', bookings.map(({ starts_at: _startsAt, ends_at: _endsAt, ...booking }) => booking as unknown as Record<string, unknown>))} disabled={loading || !bookings.length}><ArrowDownToLine size={15}/> Export bookings</button>}</div>
     <p className="config-note">Reservations and tickets here do not grant admission at the destination.</p>
     {props.booking && <BookingRecord booking={props.booking} token={props.guestAccessToken} onTicket={props.onTicket}
-      cancellationReason={cancellationReason} setCancellationReason={setCancellationReason}
-      onCancel={requestCancel} cancelBusy={actionBusy}/>}
+      cancellationReason={cancellationReasons[props.booking.booking_id] ?? ''}
+      setCancellationReason={(value) => setReasonForBooking(props.booking!.booking_id, value)}
+      onCancel={() => void requestCancel(props.booking, props.guestAccessToken)} cancelBusy={actionBusy}/>}
     {props.page === 'Tickets' && props.ticket && props.booking && <TicketView booking={props.booking} ticket={props.ticket} notify={props.notify}/>}
     <div className="bookings-list-heading"><h2>My bookings</h2><span>{loading ? 'Loading…' : bookings.length + ' records'}</span></div>
     {!props.user && <div className="empty-card"><UserRound size={30}/><h3>Sign in to see your bookings</h3><p>Reservations are linked to your visitor account.</p><button className="btn btn-primary" onClick={props.onLogin}>Log in <ArrowRight size={15}/></button></div>}
@@ -139,7 +152,8 @@ export function VisitorPages(props: Props) {
       {ticketReady(item) &&
         <button className="btn btn-outline" onClick={() => props.onTicket(item, '')}>Open ticket <TicketIcon size={15}/></button>}
       {expandedBooking === item.booking_id && <div className="booking-record-expanded"><BookingRecord booking={item} token="" onTicket={props.onTicket}
-        cancellationReason={cancellationReason} setCancellationReason={setCancellationReason}
+        cancellationReason={cancellationReasons[item.booking_id] ?? ''}
+        setCancellationReason={(value) => setReasonForBooking(item.booking_id, value)}
         onCancel={() => void requestCancel(item, '')} cancelBusy={actionBusy}/></div>}</article>)}
       {!visibleBookings.length && <div className="empty-inline">No bookings match these filters.</div>}
     </>}
@@ -310,6 +324,8 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
         if (path) {
           const result = await db().storage.from('visitor-avatars').createSignedUrl(path, 3600);
           if (active && result.data?.signedUrl) setAvatarUrl(result.data.signedUrl);
+        } else if (active) {
+          setAvatarUrl('');
         }
       } catch (error) { if (active) props.notify(error instanceof Error ? error.message : 'Could not load account activity.'); }
     })();
@@ -319,7 +335,7 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
     if (!props.user) { props.notify('Sign in to update your account.'); return; }
     const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
     if (!firstName.trim() || !lastName.trim() || fullName.length > 120) { props.notify('Enter first and last names, up to 120 characters total.'); return; }
-    if (phone.trim() && phone.trim().length < 7) { props.notify('Enter a valid phone number or leave it blank.'); return; }
+    if (!isValidOptionalPhone(phone)) { props.notify('Enter a valid phone number (7–15 digits) or leave it blank.'); return; }
     setBusy(true);
     try {
       const { error } = await db().from('profiles').update({ full_name: fullName, phone: phone.trim() || null }).eq('id', props.user.id);

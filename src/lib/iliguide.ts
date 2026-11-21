@@ -1,4 +1,7 @@
 import { supabase } from './supabase';
+import { calculateBookingTotal, dateLabel, escapeCsvCell, isValidOptionalPhone, money, monthDateRange, timeLabel } from './formatHelpers';
+
+export { calculateBookingTotal, dateLabel, escapeCsvCell, isValidOptionalPhone, money, monthDateRange, timeLabel };
 
 export type Role = 'visitor' | 'gatekeeper' | 'site_admin' | 'tourism_office';
 export type Profile = {
@@ -135,29 +138,6 @@ export function message(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
   return 'Something went wrong. Please try again.';
-}
-
-export function money(value: number | string | null | undefined): string {
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-    maximumFractionDigits: 2,
-  }).format(Number(value ?? 0));
-}
-
-export function dateLabel(value: string): string {
-  return new Intl.DateTimeFormat('en-PH', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(new Date(value + 'T12:00:00'));
-}
-
-export function timeLabel(value: string): string {
-  const [hour, minute] = value.split(':').map(Number);
-  return new Intl.DateTimeFormat('en-PH', { hour: 'numeric', minute: '2-digit' })
-    .format(new Date(2000, 0, 1, hour, minute));
 }
 
 export async function loadProfile(userId: string): Promise<Profile | null> {
@@ -352,15 +332,14 @@ export async function issueTicket(reference: string, guestAccessToken?: string |
 
 export async function exportCsv(filename: string, rows: Array<Record<string, unknown>>): Promise<void> {
   const keys = [...new Set(rows.flatMap((row) => Object.keys(row)))];
-  const quote = (value: unknown) => '"' + String(value ?? '').replace(/"/g, '""') + '"';
   const content = [
-    keys.map(quote).join(','),
-    ...rows.map((row) => keys.map((key) => quote(row[key])).join(',')),
+    keys.map(escapeCsvCell).join(','),
+    ...rows.map((row) => keys.map((key) => escapeCsvCell(row[key])).join(',')),
   ].join('\r\n');
   const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }));
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
   anchor.click();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

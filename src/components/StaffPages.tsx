@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState, type ChangeEvent, t
 import { QRCodeSVG } from 'qrcode.react';
 import { Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Building2, CalendarClock, CalendarDays, Camera, ChartNoAxesCombined, Check, History, ImagePlus, KeyRound, LayoutDashboard, MapPin, MapPinned, Pencil, Plus, Printer, RefreshCw, ScanLine, ShieldCheck, Ticket as TicketIcon, Users, UserRound, X, type LucideIcon } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
-import { db, dateLabel, exportCsv, invokeFunction, loadLiveOccupancy, loadMyActiveGatekeeperDuty, loadSlots, money, timeLabel, type GatekeeperDuty, type LiveOccupancy, type Profile, type Site, type Slot, type StaffAssignment } from '../lib/iliguide';
+import { calculateBookingTotal, db, dateLabel, exportCsv, invokeFunction, loadLiveOccupancy, loadMyActiveGatekeeperDuty, loadSlots, money, monthDateRange, timeLabel, type GatekeeperDuty, type LiveOccupancy, type Profile, type Site, type Slot, type StaffAssignment } from '../lib/iliguide';
 import { emptyVisitorInformation, requiredVisitorFields, resizeVisitorInformation, visitorInformationComplete, visitorInformationPayload } from '../lib/visitorInformation';
 import { bookingContactError } from '../lib/bookingValidation';
 import { paymentStatusLabel } from '../lib/paymentStatus';
@@ -196,7 +196,7 @@ function OverviewPage(props: Props) {
         if (props.siteId && props.role !== 'tourism_office') query = query.eq('site_id', props.siteId);
         const attendanceQuery = db().from('attendance_logs').select('site_id,scanned_at,booking:bookings!attendance_logs_booking_id_fkey(visitor_count)')
           .eq('action', 'entry').gte('scanned_at', new Date(`${monthStart}T00:00:00+08:00`).toISOString())
-          .lt('scanned_at', new Date(`${monthDate}-${String(monthEnd).padStart(2, '0')}T00:00:00+08:00`).toISOString());
+          .lt('scanned_at', new Date(Date.parse(`${monthDate}-${String(monthEnd).padStart(2, '0')}T00:00:00+08:00`) + 86400000).toISOString());
         if (props.siteId && props.role !== 'tourism_office') attendanceQuery.eq('site_id', props.siteId);
         if (props.role === 'tourism_office' && networkSiteId !== 'all') {
           query = query.eq('site_id', networkSiteId);
@@ -416,6 +416,7 @@ function ScannerPage(props: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
   const lockRef = useRef(false);
+  const [scanMode, setScanMode] = useState<'camera' | 'manual'>('camera');
   const [manual, setManual] = useState('');
   const [cameraOn, setCameraOn] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
@@ -478,12 +479,14 @@ function ScannerPage(props: Props) {
 
   return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> {site?.name ?? 'GATEKEEPER'} · SCAN & EXIT</span><h1>One scan at a <em>time.</em></h1><p>Camera scans verify signed tickets. Manual lookup records the same entry or exit action.</p></div></div>
     {!props.siteId && <div className="empty-card"><ShieldCheck size={30}/><h3>No site assignment</h3><p>Ask the Tourism Office to assign your gatekeeper account.</p></div>}
-    {!!props.siteId && <div className="scan-layout"><article className="scan-card"><div className="scan-mode"><button className={!manual ? 'active' : ''} onClick={() => { setManual(''); setScanError(''); }}>Camera</button><button className={manual ? 'active' : ''} onClick={() => { stopCamera(); setManual(' '); setScanError(''); }}>Manual reference</button></div>
-      <div className="camera-box"><video ref={videoRef} muted playsInline className={cameraOn ? 'scanner-video visible' : 'scanner-video'}/>{!cameraOn && <div className="camera-placeholder"><Camera size={31}/><p>Point the camera at the visitor’s QR ticket.</p><small>Camera permission is requested only after you start the scanner.</small></div>}</div>
-      <div className="scan-controls">{cameraOn ? <button className="btn btn-outline" onClick={stopCamera}><X size={15}/> Stop camera</button>
-        : <button className="btn btn-primary" onClick={() => void startCamera()} disabled={!props.siteId}><Camera size={15}/> Start camera</button>}
-        <span>{site?.name ?? 'Select a site'}</span></div>
-      {Boolean(manual.trim()) && <form className="manual-scan-form" onSubmit={(event) => void manualLookup(event)}><label>Booking reference<input value={manual} onChange={(event) => setManual(event.target.value)} autoFocus placeholder="ILG-…" autoCapitalize="characters"/></label><button className="btn btn-primary" disabled={scanBusy}>{scanBusy ? 'Checking…' : 'Record scan'} <ArrowRight size={15}/></button></form>}
+    {!!props.siteId && <div className="scan-layout"><article className="scan-card"><div className="scan-mode"><button type="button" className={scanMode === 'camera' ? 'selected' : ''} aria-pressed={scanMode === 'camera'} onClick={() => { setScanMode('camera'); setManual(''); setScanError(''); }}>Camera</button><button type="button" className={scanMode === 'manual' ? 'selected' : ''} aria-pressed={scanMode === 'manual'} onClick={() => { stopCamera(); setScanMode('manual'); setScanError(''); }}>Manual reference</button></div>
+      {scanMode === 'camera' && <>
+        <div className="camera-box"><video ref={videoRef} muted playsInline className={cameraOn ? 'scanner-video visible' : 'scanner-video'}/>{!cameraOn && <div className="camera-placeholder"><Camera size={31}/><p>Point the camera at the visitor’s QR ticket.</p><small>Camera permission is requested only after you start the scanner.</small></div>}</div>
+        <div className="scan-controls">{cameraOn ? <button type="button" className="btn btn-outline" onClick={stopCamera}><X size={15}/> Stop camera</button>
+          : <button type="button" className="btn btn-primary" onClick={() => void startCamera()} disabled={!props.siteId}><Camera size={15}/> Start camera</button>}
+          <span>{site?.name ?? 'Select a site'}</span></div>
+      </>}
+      {scanMode === 'manual' && <form className="manual-scan-form" onSubmit={(event) => void manualLookup(event)}><label>Booking reference<input value={manual} onChange={(event) => setManual(event.target.value)} autoFocus placeholder="ILG-…" autoCapitalize="characters" required/></label><button type="submit" className="btn btn-primary" disabled={scanBusy || !manual.trim()}>{scanBusy ? 'Checking…' : 'Record scan'} <ArrowRight size={15}/></button></form>}
       {scanError && <p className="form-error" role="alert">{scanError}</p>}
     </article><article className="scan-result-card"><div className="card-heading"><span><small>SCAN RESULT</small><h3>Entry & exit record</h3></span><ShieldCheck size={19}/></div>
       {!result && !scanError && <div className="empty-inline">A scan result will appear here after the server validates the ticket.</div>}
@@ -912,7 +915,7 @@ function VisitorLogbookPage(props: Props) {
       <label>Booking reference<input value={referenceQuery} onChange={(event) => { setPage(0); setReferenceQuery(event.target.value); }} placeholder="Search reference"/></label>
       <label>Visitor type<select value={visitorType} onChange={(event) => { setPage(0); setVisitorType(event.target.value); }}><option value="all">All visitors</option><option value="adult">Adults</option><option value="child">Children</option></select></label>
       <label>Check-in status<select value={checkInStatus} onChange={(event) => { setPage(0); setCheckInStatus(event.target.value); }}><option value="all">All statuses</option><option value="not_checked_in">Not checked in</option><option value="checked_in">Checked in</option></select></label>
-      <span aria-live="polite">{site?.name ?? 'No assigned destination'} · {dateLabel(visitDate)} · {loading ? 'Loading…' : refreshing ? 'Updating records…' : resultsCurrent ? `${total} visitors` : 'Showing previous results'}</span></div>
+      <span aria-live="polite">{site?.name ?? 'No assigned destination'} · {visitDate ? dateLabel(visitDate) : 'No date selected'} · {loading ? 'Loading…' : refreshing ? 'Updating records…' : resultsCurrent ? `${total} visitors` : 'Showing previous results'}</span></div>
     {!site && <div className="empty-inline">No single destination assignment is available.</div>}
     {site && !loading && !refreshing && resultsCurrent && !records.length && <div className="empty-inline">No visitor records match this destination, date, and filters.</div>}
     {loading && <div className="empty-inline">Loading visitor records…</div>}
@@ -938,10 +941,9 @@ function ReportsPage(props: Props) {
   const [loadedReportKey, setLoadedReportKey] = useState('');
   const reportCurrent = loadedReportKey === reportKey;
   const refresh = useCallback(async () => {
-    if (!siteIds.length) { setMetrics([]); setPaymentMetrics([]); setLoadedReportKey(reportKey); finishLoading(); return; }
-    const start = month + '-01';
-    const [year, monthNumber] = month.split('-').map(Number);
-    const end = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+    const range = monthDateRange(month);
+    if (!siteIds.length || !range) { setMetrics([]); setPaymentMetrics([]); setLoadedReportKey(reportKey); finishLoading(); return; }
+    const { start, end } = range;
     try {
       let metricQuery = props.role === 'gatekeeper'
         ? db().from('site_visit_daily_metrics').select('site_id,report_date,booking_count,pending_booking_count,confirmed_booking_count,cancelled_booking_count,expected_visitor_count,adult_count,child_count,checked_in_visitor_count')
@@ -972,7 +974,7 @@ function ReportsPage(props: Props) {
   const gatekeeperStats = props.role === 'gatekeeper';
   return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> {props.role === 'tourism_office' ? 'TOURISM OFFICE · NETWORK REPORT' : gatekeeperStats ? 'GATEKEEPER · DESTINATION REPORT' : 'SITE ADMIN · DESTINATION REPORT'}</span>
     <h1>{gatekeeperStats ? <>Track visitor <em>trends.</em></> : <>See the recorded <em>picture.</em></>}</h1><p>{gatekeeperStats ? 'Visit-date counts for your assigned destination only.' : 'Activity counts come from booking records. Fee amounts are estimates; payments are not processed here.'}</p></div>
-    <div className="header-actions"><label className="month-picker">Month<input type="month" value={month} onChange={(event) => setMonth(event.target.value)}/></label>
+    <div className="header-actions"><label className="month-picker">Month<input type="month" value={month} onChange={(event) => { if (event.target.value) setMonth(event.target.value); }}/></label>
       {props.role === 'tourism_office' && <SiteSelector {...props}/>}<button className="btn btn-outline" disabled={loading || !reportCurrent || !metrics.length} onClick={() => void exportCsv('iliguide-report-' + month + '.csv', metrics.map((row) => ({ ...row, site_name: siteName(row.site_id) })))}><ArrowDownToLine size={15}/> Export</button></div></div>
     <div className="stats-grid">{(gatekeeperStats
       ? [[summary('expected_visitor_count').toLocaleString(), 'Expected visitors'], [summary('checked_in_visitor_count').toLocaleString(), 'Checked in'], [summary('adult_count').toLocaleString(), 'Adults'], [summary('child_count').toLocaleString(), 'Children']]
@@ -994,7 +996,7 @@ function ReportsPage(props: Props) {
 
 function ActivityPage(props: Props) {
   const [events, setEvents] = useState<Array<Record<string, any>>>([]);
-  const site = assignedGatekeeperSite(props);
+  const site = props.role === 'gatekeeper' ? assignedGatekeeperSite(props) : props.sites.find((item) => item.id === props.siteId);
   const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${site?.id ?? 'unassigned'}`);
   useEffect(() => {
     let active = true;
@@ -1009,8 +1011,9 @@ function ActivityPage(props: Props) {
     return () => { active = false; };
   }, [finishLoading, props.notify, site?.id]);
   return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> {site?.name ?? 'DESTINATION'} · ACTIVITY</span>
-    <h1>Recorded <em>activity.</em></h1><p>Booking and check-in changes recorded for this destination.</p></div></div>
-    {!site && <div className="empty-inline">No single destination assignment is available.</div>}
+    <h1>Recorded <em>activity.</em></h1><p>Booking and check-in changes recorded for this destination.</p></div>
+    {props.role !== 'gatekeeper' && <div className="header-actions"><SiteSelector {...props}/></div>}</div>
+    {!site && <div className="empty-inline">{props.role === 'gatekeeper' ? 'No single destination assignment is available.' : 'Select a destination to view its recorded activity.'}</div>}
     {loading && <div className="empty-inline">Loading activity…</div>}
     {!loading && !events.length && <div className="empty-inline">No destination activity recorded yet.</div>}
     <div className="activity-card">{!loading && events.map((event) => <div className="audit-row" key={event.id}><span><b>{String(event.action).replace(/_/g, ' ')}</b><small>{event.entity_type} · {String(event.entity_id).slice(0, 8)}</small></span>
@@ -1556,7 +1559,9 @@ function WalkInPage(props: Props) {
   const [reference, setReference] = useState('');
   const site = props.sites.find((item) => item.id === props.siteId);
   const [slotsLoading, finishSlotsLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.siteId}`);
-  const total = site ? site.adult_fee * form.adults + site.child_fee * form.children - site.adult_fee * site.pwd_discount_percent / 100 * form.pwd : 0;
+  const total = site
+    ? calculateBookingTotal(site.adult_fee, site.child_fee, site.pwd_discount_percent, form.adults, form.children, form.pwd)
+    : 0;
   const maxWalkInVisitors = site?.slug === 'sikyop-agri-tourism-adventure' ? Math.min(19, site.max_per_booking) : site?.max_per_booking ?? 20;
   useEffect(() => {
     setVisitorRecords((current) => resizeVisitorInformation(current, form.adults + form.children));
@@ -1622,10 +1627,10 @@ function WalkInPage(props: Props) {
       {slotsLoading ? <p className="field-hint" role="status">Checking today’s visit slots…</p> : !slotOptions.length && <p className="field-hint">No available slots are listed for today.</p>}
       <label>Booking contact name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required maxLength={120}/></label>
       <div className="form-two"><label>Email<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} maxLength={254}/></label><label>Phone<input type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} maxLength={40}/></label></div>
-      <div className="form-two"><label>Adults<input type="number" min="1" max={maxWalkInVisitors} value={form.adults} onChange={(event) => { const adults = Math.max(1, Math.min(maxWalkInVisitors, Number(event.target.value))); const children = Math.min(form.children, maxWalkInVisitors - adults); setForm({ ...form, adults, children, pwd: Math.min(form.pwd, adults + children) }); }} required/></label><label>Children<input type="number" min="0" max={maxWalkInVisitors - form.adults} value={form.children} onChange={(event) => { const children = Math.max(0, Math.min(maxWalkInVisitors - form.adults, Number(event.target.value))); setForm({ ...form, children, pwd: Math.min(form.pwd, form.adults + children) }); }} required/></label></div>
+      <div className="form-two"><label>Adults<input type="number" min="1" max={maxWalkInVisitors} value={form.adults} onChange={(event) => { const parsed = Number.parseInt(event.target.value, 10); const adults = Math.max(1, Math.min(maxWalkInVisitors, Number.isNaN(parsed) ? 1 : parsed)); const children = Math.min(form.children, maxWalkInVisitors - adults); setForm({ ...form, adults, children, pwd: Math.min(form.pwd, adults + children) }); }} required/></label><label>Children<input type="number" min="0" max={maxWalkInVisitors - form.adults} value={form.children} onChange={(event) => { const parsed = Number.parseInt(event.target.value, 10); const children = Math.max(0, Math.min(maxWalkInVisitors - form.adults, Number.isNaN(parsed) ? 0 : parsed)); setForm({ ...form, children, pwd: Math.min(form.pwd, form.adults + children) }); }} required/></label></div>
       {site && <VisitorInformationForm siteSlug={site.slug} adults={form.adults} children={form.children} visitors={visitorRecords}
         onChange={(index, field, value) => setVisitorRecords((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item))}/>}
-      {site.pwd_discount_percent > 0 && <label>PWD visitors<input type="number" min="0" max={form.adults + form.children} value={form.pwd} onChange={(event) => setForm({ ...form, pwd: Math.max(0, Math.min(form.adults + form.children, Number(event.target.value))) })} required/><small>{site.pwd_discount_percent}% discount per PWD visitor. Verify eligibility at the gate.</small></label>}
+      {site.pwd_discount_percent > 0 && <label>PWD visitors<input type="number" min="0" max={form.adults + form.children} value={form.pwd} onChange={(event) => { const parsed = Number.parseInt(event.target.value, 10); setForm({ ...form, pwd: Math.max(0, Math.min(form.adults + form.children, Number.isNaN(parsed) ? 0 : parsed)) }); }} required/><small>{site.pwd_discount_percent}% discount per PWD visitor. Verify eligibility at the gate.</small></label>}
       <div className="booking-total"><span>Estimated fees<small>{form.adults} adults · {form.children} children · {form.pwd} PWD · not collected</small></span><b>{money(total)}</b></div>
       <button className="btn btn-primary btn-wide" disabled={props.busy || !slotOptions.length || !site || !visitorInformationComplete(visitorRecords, site.slug)}>{props.busy ? 'Saving…' : 'Record walk-in'} <Check size={16}/></button>
       <p className="secure-note"><ShieldCheck size={14}/> Database checks site assignment, slot time, and shared daily capacity. No payment is recorded.</p>

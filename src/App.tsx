@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, BadgeCheck, Banknote, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Compass, CreditCard, Filter, Heart, MapPin, Menu, Search, ShieldCheck, Ticket as TicketIcon, UserRound, X } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { supabase, supabaseConfigured } from './lib/supabase';
-import { createHold, db, invokeFunction, loadAssignments, loadProfile, loadSites, loadSlots, loadTravelerProfiles, money, timeLabel, type Booking, type CreatedHold, type Profile, type Site, type Slot, type StaffAssignment, type Ticket as IssuedTicket, type TravelerProfile } from './lib/iliguide';
+import { calculateBookingTotal, createHold, db, invokeFunction, loadAssignments, loadProfile, loadSites, loadSlots, loadTravelerProfiles, money, timeLabel, type Booking, type CreatedHold, type Profile, type Site, type Slot, type StaffAssignment, type Ticket as IssuedTicket, type TravelerProfile } from './lib/iliguide';
 import { type Party } from './lib/pendingReservation';
 import { completedVisitorCount, emptyVisitorInformation, resizeVisitorInformation, visitorInformationComplete, visitorInformationPayload, type VisitorInformation } from './lib/visitorInformation';
 import { bookingContactError } from './lib/bookingValidation';
@@ -101,9 +101,17 @@ export default function App() {
   const gatekeeperAssignments = assignments.filter((assignment) => assignment.staff_role === 'gatekeeper' && assignment.is_active);
   const assignedGatekeeperSite = gatekeeperAssignments.length === 1
     ? sites.find((site) => site.id === gatekeeperAssignments[0].site_id) ?? null : null;
+  const toastTimerRef = useRef<number | null>(null);
   const notify = useCallback((message: string) => {
     setToast(message);
-    window.setTimeout(() => setToast(''), 4000);
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => {
+      toastTimerRef.current = null;
+      setToast('');
+    }, 4000);
+  }, []);
+  useEffect(() => () => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
   }, []);
   const go = useCallback((next: Page) => {
     const allowed = staffPageForRole(role, next);
@@ -458,7 +466,9 @@ export default function App() {
   const availableSlots = (slotsLoading ? [] : slots).filter((slot) => slot.status === 'open' && slot.remaining_capacity >= party.adults + party.children
     && (slot.slot_date > today || (slot.slot_date === today && slot.ends_at.slice(0, 5) > timePh())));
   const selectedSlot = availableSlots[0]?.slot_id ?? '';
-  const bookingTotal = activeSite ? activeSite.adult_fee * party.adults + activeSite.child_fee * party.children - activeSite.adult_fee * activeSite.pwd_discount_percent / 100 * party.pwd : 0;
+  const bookingTotal = activeSite
+    ? calculateBookingTotal(activeSite.adult_fee, activeSite.child_fee, activeSite.pwd_discount_percent, party.adults, party.children, party.pwd)
+    : 0;
 
   const openSite = (site: Site) => {
     setSiteId(site.id);
@@ -695,15 +705,15 @@ export default function App() {
           <div className="slot-heading"><span>Daily booking limit</span><small>{activeSite.daily_capacity == null ? 'No daily limit published' : `${activeSite.daily_capacity} visitors total`}</small></div>
           {slotsLoading ? <div className="empty-inline" role="status">Checking booking capacity…</div> : !availableSlots.length && <div className="empty-inline">No booking capacity is available for this date.</div>}
           <div className="party-count"><span><b>Visitors</b><small>Adults + children</small></span><span>
-            <button className="mini-counter" aria-label="Fewer adults" onClick={() => setParty((current) => { const adults = Math.max(1, current.adults - 1); return { ...current, adults, pwd: Math.min(current.pwd, adults + current.children) }; })}>−</button>
-            <b>{party.adults}</b><button className="mini-counter" aria-label="More adults" onClick={() => setParty((current) => ({ ...current, adults: Math.min(activeSite.max_per_booking - current.children, current.adults + 1) }))}>+</button>
+            <button type="button" className="mini-counter" aria-label="Fewer adults" disabled={party.adults <= 1} onClick={() => setParty((current) => { const adults = Math.max(1, current.adults - 1); return { ...current, adults, pwd: Math.min(current.pwd, adults + current.children) }; })}>−</button>
+            <b>{party.adults}</b><button type="button" className="mini-counter" aria-label="More adults" disabled={party.adults + party.children >= activeSite.max_per_booking} onClick={() => setParty((current) => ({ ...current, adults: Math.min(activeSite.max_per_booking - current.children, current.adults + 1) }))}>+</button>
             <span className="counter-divider"/>
-            <button className="mini-counter" aria-label="Fewer children" onClick={() => setParty((current) => { const children = Math.max(0, current.children - 1); return { ...current, children, pwd: Math.min(current.pwd, current.adults + children) }; })}>−</button>
-            <b>{party.children}</b><button className="mini-counter" aria-label="More children" onClick={() => setParty((current) => ({ ...current, children: Math.min(activeSite.max_per_booking - current.adults, current.children + 1) }))}>+</button>
+            <button type="button" className="mini-counter" aria-label="Fewer children" disabled={party.children <= 0} onClick={() => setParty((current) => { const children = Math.max(0, current.children - 1); return { ...current, children, pwd: Math.min(current.pwd, current.adults + children) }; })}>−</button>
+            <b>{party.children}</b><button type="button" className="mini-counter" aria-label="More children" disabled={party.adults + party.children >= activeSite.max_per_booking} onClick={() => setParty((current) => ({ ...current, children: Math.min(activeSite.max_per_booking - current.adults, current.children + 1) }))}>+</button>
           </span></div>
           <VisitorInformationForm siteSlug={activeSite.slug} adults={party.adults} children={party.children} visitors={visitorInformation}
             onChange={(index, field, value) => setVisitorInformation((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item))}/>
-          {activeSite.pwd_discount_percent > 0 && <label className="field-label">PWD visitors<input type="number" min="0" max={party.adults + party.children} value={party.pwd} onChange={(event) => setParty((current) => ({ ...current, pwd: Math.max(0, Math.min(current.adults + current.children, Number(event.target.value))) }))}/><small>{activeSite.pwd_discount_percent}% discount per PWD visitor. Eligibility must be verified at the gate.</small></label>}
+          {activeSite.pwd_discount_percent > 0 && <label className="field-label">PWD visitors<input type="number" min="0" max={party.adults + party.children} value={party.pwd} onChange={(event) => { const parsed = Number.parseInt(event.target.value, 10); setParty((current) => ({ ...current, pwd: Math.max(0, Math.min(current.adults + current.children, Number.isNaN(parsed) ? 0 : parsed)) })); }}/><small>{activeSite.pwd_discount_percent}% discount per PWD visitor. Eligibility must be verified at the gate.</small></label>}
           {travelers.length > 0 && <label className="field-label">Use a saved traveler<select value={selectedTravelerId} onChange={(event) => {
             const id = event.target.value; setSelectedTravelerId(id);
             const traveler = travelers.find((item) => item.id === id);
@@ -833,7 +843,7 @@ function HeroSlideshow() {
   const moveSlide = (offset: number) => setActiveSlide((index) => (index + offset + heroSlides.length) % heroSlides.length);
 
   return <div className="hero-image" role="region" aria-roledescription="carousel" aria-label="Iligan City destinations" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocusCapture={() => setFocused(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false); }}>
-    {heroSlides.map((item, index) => <img key={item.src} className={`hero-slide-image hero-slide-image--${index + 1}${activeSlide === index ? ' active' : ''}`} src={item.src} alt={activeSlide === index ? item.alt : ''} aria-hidden={activeSlide !== index} loading={activeSlide === index ? 'eager' : 'lazy'} decoding="async" fetchPriority={activeSlide === index ? 'high' : 'low'}/>)}
+    {heroSlides.map((item, index) => <img key={item.src} className={`hero-slide-image hero-slide-image--${index + 1}${activeSlide === index ? ' active' : ''}`} src={item.src} alt={activeSlide === index ? item.alt : ''} aria-hidden={activeSlide !== index} loading={activeSlide === index ? 'eager' : 'lazy'} decoding="async" {...({ fetchpriority: activeSlide === index ? 'high' : 'low' } as Record<string, string>)}/>)}
     <div className="image-shade"/><div className="hero-image-label"><span className="live-dot"/> ILIGAN CITY</div>
     <div className="image-caption"><span>{slide.name}</span><i/><span>NORTHERN MINDANAO</span></div>
     <div className="hero-slider-controls" aria-label="Choose a featured destination">
