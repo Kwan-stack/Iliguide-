@@ -1181,14 +1181,14 @@ function DutyRosterPanel(props: Props & { site: Site }) {
         db().from('staff_assignments').select('profile_id, profiles!staff_assignments_profile_id_fkey(full_name,account_status,role)')
           .eq('site_id', props.site.id).eq('staff_role', 'gatekeeper').eq('is_active', true),
         db().from('site_gatekeeper_duties').select(
-          'id,duty_date,shift_start_at,shift_end_at,status,primary_gatekeeper_id,primary:profiles!site_gatekeeper_duties_primary_gatekeeper_id_fkey(full_name),supports:site_gatekeeper_duty_support(gatekeeper_id,gatekeeper:profiles(full_name))',
+          'id,duty_date,shift_start_at,shift_end_at,status,primary_gatekeeper_id,primary:profiles!site_gatekeeper_duties_primary_gatekeeper_id_fkey(full_name),supports:site_gatekeeper_duty_support!site_gatekeeper_duty_support_duty_id_fkey(gatekeeper_id,gatekeeper:profiles!site_gatekeeper_duty_support_gatekeeper_id_fkey(full_name))',
         ).eq('site_id', props.site.id).eq('duty_date', filterDate).order('shift_start_at').limit(100),
       ]);
       if (staff.error) throw staff.error;
-      if (roster.error) throw roster.error;
       setGatekeepers((staff.data ?? []) as unknown as GatekeeperOption[]);
+      if (roster.error) throw roster.error;
       setDuties((roster.data ?? []) as unknown as DutyRow[]);
-    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not load the duty roster.'); }
+    } catch (error) { props.notify(error instanceof Error ? error.message : typeof error === 'object' && error !== null && 'message' in error ? String(error.message) : 'Could not load the duty roster.'); }
     finally { finishLoading(); }
   }, [filterDate, finishLoading, props.notify, props.site.id]);
   useEffect(() => { void refresh(); }, [refresh]);
@@ -1246,11 +1246,11 @@ function DutyDetailsPage(props: Props) {
     if (!site) { setDuties([]); finishLoading(); return () => { active = false; }; }
     void (async () => {
       try {
-        const { data, error } = await db().from('site_gatekeeper_duties').select('id,duty_date,shift_start_at,shift_end_at,status,primary_gatekeeper_id,primary:profiles!site_gatekeeper_duties_primary_gatekeeper_id_fkey(full_name),supports:site_gatekeeper_duty_support(gatekeeper_id,gatekeeper:profiles(full_name))')
+        const { data, error } = await db().from('site_gatekeeper_duties').select('id,duty_date,shift_start_at,shift_end_at,status,primary_gatekeeper_id,primary:profiles!site_gatekeeper_duties_primary_gatekeeper_id_fkey(full_name),supports:site_gatekeeper_duty_support!site_gatekeeper_duty_support_duty_id_fkey(gatekeeper_id,gatekeeper:profiles!site_gatekeeper_duty_support_gatekeeper_id_fkey(full_name))')
           .eq('site_id', site.id).gte('duty_date', phToday()).in('status', ['scheduled', 'active']).order('shift_start_at').limit(30);
         if (error) throw error;
         if (active) setDuties((data ?? []) as unknown as DutyRow[]);
-      } catch (error) { if (active) props.notify(error instanceof Error ? error.message : 'Could not load your duty details.'); }
+      } catch (error) { if (active) props.notify(error instanceof Error ? error.message : typeof error === 'object' && error !== null && 'message' in error ? String(error.message) : 'Could not load your duty details.'); }
       finally { if (active) finishLoading(); }
     })();
     return () => { active = false; };
