@@ -537,7 +537,7 @@ function PeoplePage(props: Props) {
     const [cancellationLoad, staffLoad] = await Promise.allSettled([
         db().from('cancellation_requests').select('id,booking_id,site_id,reason,request_status,created_at,decision_note,booking:bookings(booking_reference,visitor_name,total_amount,payment_status),tourism_sites(name)')
           .in('site_id', siteIds).order('created_at', { ascending: false }).limit(100),
-        db().from('staff_assignments').select('id,profile_id,site_id,staff_role,is_active,profiles!staff_assignments_profile_id_fkey(full_name,email),tourism_sites(name)')
+        db().from('staff_assignments').select('id,profile_id,site_id,staff_role,is_active,profiles!staff_assignments_profile_id_fkey(full_name,email),tourism_sites!staff_assignments_site_id_fkey(name)')
           .in('site_id', siteIds).order('created_at', { ascending: false }).limit(100),
       ]);
     const cancellationResult = cancellationLoad.status === 'fulfilled' ? cancellationLoad.value : null;
@@ -556,7 +556,7 @@ function PeoplePage(props: Props) {
     }
     if (props.role === 'tourism_office') {
       try {
-        const { data, error } = await db().from('support_requests').select('id,user_id,booking_id,subject,message,status,staff_response,created_at,profiles(full_name,email),booking:bookings(booking_reference,site:tourism_sites(name))')
+        const { data, error } = await db().from('support_requests').select('id,user_id,booking_id,subject,message,status,staff_response,created_at,profiles!support_requests_user_id_fkey(full_name,email),booking:bookings!support_requests_booking_id_fkey(booking_reference,site:tourism_sites!bookings_site_id_fkey(name))')
           .order('created_at', { ascending: false }).limit(100);
         if (error) throw error;
         setSupportRequests(data ?? []);
