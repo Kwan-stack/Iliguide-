@@ -67,7 +67,7 @@ function StaffConsole(props: Props & { children: ReactNode }) {
     : props.role === 'tourism_office'
       ? [['Overview', 'Overview', LayoutDashboard], ['Duty roster', 'Duty roster', CalendarClock], ['Destinations & staff', 'Sites and staff', Building2], ['Operating hours & slots', 'Slots and closures', CalendarDays], ['Staff & accounts', 'Staff and accounts', Users], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Activity', 'Activity', History]]
       : [['Overview', 'Overview', LayoutDashboard], ['Operating hours & slots', 'Slots and closures', CalendarDays], ['Staff & accounts', 'Staff and accounts', Users], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Duty roster', 'Duty roster', CalendarClock], ['Reports', 'Reports', ChartNoAxesCombined]];
-  items.push(['Change password', 'Change password', KeyRound]);
+  items.push(['Account & security', 'Change password', KeyRound]);
   const roleName = props.role === 'tourism_office' ? 'Tourism Office' : props.role === 'site_admin' ? 'Site administrator' : 'Site gatekeeper';
   const userName = String(props.user?.user_metadata?.full_name ?? props.user?.email ?? 'Staff account');
   return <div className={'staff-console staff-console-' + props.role}>
@@ -80,9 +80,25 @@ function StaffConsole(props: Props & { children: ReactNode }) {
 }
 
 function ChangePasswordPage(props: Props) {
-  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> ACCOUNT SECURITY</span><h1>Change <em>password.</em></h1><p>Verify your current password, then choose a new one for this account.</p></div>
+  const [account, setAccount] = useState<{ full_name: string; email: string | null; role: Role; account_status: string } | null>(null);
+  useEffect(() => {
+    if (!props.user) { setAccount(null); return; }
+    let active = true;
+    void db().from('profiles').select('full_name,email,role,account_status').eq('id', props.user.id).maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) props.notify(error.message);
+        else setAccount(data as typeof account);
+      });
+    return () => { active = false; };
+  }, [props.user?.id, props.notify]);
+  const roleLabel = props.role === 'tourism_office' ? 'Tourism Office' : props.role === 'site_admin' ? 'Site administrator' : 'Gatekeeper';
+  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> ACCOUNT</span><h1>Account & <em>security.</em></h1><p>Review your account details and change the password used to sign in.</p></div>
       <button className="btn btn-outline" onClick={() => props.go('Overview')}>Back to workspace</button></div>
-    <div className="schedule-card"><div className="schedule-head"><span><small>SECURE YOUR ACCOUNT</small><h3>Password</h3></span><KeyRound size={18}/></div>
+    <div className="schedule-card"><div className="schedule-head"><span><small>ACCOUNT INFORMATION</small><h3>Your account</h3></span><UserRound size={18}/></div>
+      <div className="staff-account-details"><div><small>Full name</small><b>{account?.full_name || props.user?.user_metadata?.full_name || 'Name not available'}</b></div><div><small>Email</small><b>{props.user?.email || account?.email || 'Email not available'}</b></div><div><small>Account role</small><b>{roleLabel}</b></div><div><small>Status</small><b>{account?.account_status ?? 'Loading…'}</b></div></div>
+    </div>
+    <div className="schedule-card"><div className="schedule-head"><span><small>SECURE YOUR ACCOUNT</small><h3>Password and security</h3></span><KeyRound size={18}/></div>
       {props.user ? <ChangePasswordForm user={props.user} notify={props.notify}/> : <div className="empty-inline" role="alert">Sign in to change your password.</div>}
     </div>
   </section>;
@@ -1209,7 +1225,7 @@ function DutyRosterPanel(props: Props & { site: Site }) {
       props.notify('Gatekeeper duty scheduled.');
       setForm((current) => ({ ...current, primary: '', supports: [] }));
       await refresh();
-    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not schedule gatekeeper duty.'); }
+    } catch (error) { props.notify(error instanceof Error ? error.message : typeof error === 'object' && error !== null && 'message' in error ? String(error.message) : 'Could not schedule gatekeeper duty.'); }
     finally { setSaving(false); }
   };
   const supportOptions = gatekeepers.filter((person) => person.profile_id !== form.primary && person.profile_id !== props.user?.id);
