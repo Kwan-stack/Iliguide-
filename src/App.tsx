@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowRight, BadgeCheck, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Compass, Filter, Heart, MapPin, Menu, Search, ShieldCheck, Ticket as TicketIcon, UserRound, X } from 'lucide-react';
+import { ArrowRight, BadgeCheck, Banknote, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Compass, CreditCard, Filter, Heart, MapPin, Menu, Search, ShieldCheck, Ticket as TicketIcon, UserRound, X } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { supabase, supabaseConfigured } from './lib/supabase';
 import { createHold, db, invokeFunction, loadAssignments, loadProfile, loadSites, loadSlots, loadTravelerProfiles, money, timeLabel, type Booking, type CreatedHold, type Profile, type Site, type Slot, type StaffAssignment, type Ticket as IssuedTicket, type TravelerProfile } from './lib/iliguide';
@@ -69,6 +69,7 @@ export default function App() {
   const [date, setDate] = useState(todayPh());
   const [slots, setSlots] = useState<Slot[]>([]);
   const [party, setParty] = useState<Party>({ adults: 1, children: 0, pwd: 0 });
+  const [paymentMethod, setPaymentMethod] = useState<'online' | 'onsite'>('online');
   const [visitorInformation, setVisitorInformation] = useState<VisitorInformation[]>(() => emptyVisitorInformation(1));
   const [visitor, setVisitor] = useState({ name: '', email: '', phone: '' });
   const [selectedTravelerId, setSelectedTravelerId] = useState('');
@@ -457,6 +458,7 @@ export default function App() {
   const availableSlots = (slotsLoading ? [] : slots).filter((slot) => slot.status === 'open' && slot.remaining_capacity >= party.adults + party.children
     && (slot.slot_date > today || (slot.slot_date === today && slot.ends_at.slice(0, 5) > timePh())));
   const selectedSlot = availableSlots[0]?.slot_id ?? '';
+  const bookingTotal = activeSite ? activeSite.adult_fee * party.adults + activeSite.child_fee * party.children - activeSite.adult_fee * activeSite.pwd_discount_percent / 100 * party.pwd : 0;
 
   const openSite = (site: Site) => {
     setSiteId(site.id);
@@ -495,14 +497,24 @@ export default function App() {
         visitors: visitorInformationPayload(visitorInformation, activeSite.slug),
       });
       createdHold = hold;
-      setVisitorInformation(emptyVisitorInformation(party.adults + party.children));
       const token = hold.guest_access_token ?? '';
       setActiveGuestCode(token);
-      const { error } = await db().rpc('confirm_reservation_without_payment', {
-        p_booking_id: hold.booking_id,
-      });
-      if (error) throw error;
-      confirmed = true;
+      if (hold.total_amount <= 0) {
+        const { error } = await db().rpc('confirm_reservation_without_payment', { p_booking_id: hold.booking_id });
+        if (error) throw error;
+        confirmed = true;
+      } else if (paymentMethod === 'onsite') {
+        const { error } = await db().rpc('confirm_onsite_booking', { p_booking_id: hold.booking_id });
+        if (error) throw error;
+        confirmed = true;
+      } else {
+        const { checkout_url } = await invokeFunction<{ checkout_url: string }>('paymongo-checkout', {
+          booking_reference: hold.booking_reference, guest_access_token: token || null,
+        });
+        window.location.assign(checkout_url);
+        return;
+      }
+      setVisitorInformation(emptyVisitorInformation(party.adults + party.children));
       if (visitor.email.trim()) void invokeFunction('send-booking-email', {
         booking_reference: hold.booking_reference, event: 'confirmed',
       }).catch(() => notify('Reservation confirmed, but the confirmation email could not be sent.'));
@@ -515,7 +527,7 @@ export default function App() {
       if (!booking) throw new Error('Reservation confirmed, but booking details could not be loaded.');
       setActiveBooking(booking);
       go('Bookings');
-      notify('Reservation confirmed.');
+      notify(hold.total_amount <= 0 ? 'Free reservation confirmed.' : 'Reservation confirmed. Pay at the destination when you arrive.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not create the booking hold.';
       if (confirmed) { setActiveBooking(null); go('Bookings'); }
@@ -701,9 +713,13 @@ export default function App() {
           <div className="price-fields"><label>Your name<input value={visitor.name} onChange={(event) => { setSelectedTravelerId(''); setVisitor({ ...visitor, name: event.target.value }); }} maxLength={120}/></label>
             <label>Email<input type="email" value={visitor.email} onChange={(event) => { setSelectedTravelerId(''); setVisitor({ ...visitor, email: event.target.value }); }} maxLength={254}/></label>
             <label>Phone<input type="tel" value={visitor.phone} onChange={(event) => { setSelectedTravelerId(''); setVisitor({ ...visitor, phone: event.target.value }); }} maxLength={40}/></label></div>
-          <div className="booking-total"><span>Estimated fees<small>Estimate only; no payment collected.</small></span><b>{money(activeSite.adult_fee * party.adults + activeSite.child_fee * party.children - activeSite.adult_fee * activeSite.pwd_discount_percent / 100 * party.pwd)}</b></div>
-          <button className="btn btn-primary btn-wide" disabled={busy || slotsLoading || !selectedSlot || completedVisitorCount(visitorInformation, activeSite.slug) !== visitorInformation.length} onClick={() => void reserve()}>{busy ? 'Please wait…' : 'Confirm reservation'} <ArrowRight size={16}/></button>
-          <p className="secure-note"><ShieldCheck size={14}/> Your reservation is recorded after the database confirms it. No online payment is collected.</p>
+          {bookingTotal > 0 && <div className="visitor-payment-choice"><div className="reservation-contact-heading"><h4>Choose Payment Method</h4><p>Choose how you want to pay for {activeSite.name}.</p></div>
+            <div className="visitor-payment-options"><button type="button" className={'visitor-payment-option' + (paymentMethod === 'online' ? ' selected' : '')} aria-pressed={paymentMethod === 'online'} onClick={() => setPaymentMethod('online')}><CreditCard size={22}/><b>Pay Online</b><span>Secure PayMongo checkout with card, GCash, or QR Ph where enabled. Confirmation follows provider verification.</span></button>
+              <button type="button" className={'visitor-payment-option' + (paymentMethod === 'onsite' ? ' selected' : '')} aria-pressed={paymentMethod === 'onsite'} onClick={() => setPaymentMethod('onsite')}><Banknote size={22}/><b>Pay Onsite</b><span>Reserve now and pay at the destination under its payment policy.</span></button></div>
+          </div>}
+          <div className="visitor-booking-summary"><b>Booking summary</b><span>{activeSite.name} · {date}</span><span>{availableSlots[0]?.starts_at ? timeLabel(availableSlots[0].starts_at) : 'Time slot unavailable'} · {party.adults + party.children} visitors</span><span>Admission · {money(activeSite.adult_fee)} / adult · {money(activeSite.child_fee)} / child</span><strong>Total amount · {money(bookingTotal)}</strong>{bookingTotal > 0 && <small>Payment method · {paymentMethod === 'online' ? 'Pay Online' : 'Pay Onsite'}</small>}</div>
+          <button className="btn btn-primary btn-wide" disabled={busy || slotsLoading || !selectedSlot || completedVisitorCount(visitorInformation, activeSite.slug) !== visitorInformation.length} onClick={() => void reserve()}>{busy ? 'Please wait…' : bookingTotal <= 0 ? 'Confirm free reservation' : paymentMethod === 'online' ? 'Continue to secure payment' : 'Confirm and pay onsite'} <ArrowRight size={16}/></button>
+          <p className="secure-note"><ShieldCheck size={14}/>{bookingTotal <= 0 ? 'No payment is due for this reservation.' : paymentMethod === 'online' ? 'Payment is confirmed only after PayMongo verifies it.' : 'Your reservation is confirmed now. Payment remains due at the destination.'}</p>
           </>}
         </aside></div>
       </section>}

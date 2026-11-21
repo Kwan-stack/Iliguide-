@@ -90,6 +90,7 @@ export type Booking = {
   total_amount: number;
   currency: string;
   payment_status: string;
+  payment_method: 'online' | 'onsite';
   booking_status: string;
   booking_source: string;
   site_id: string;
@@ -270,7 +271,7 @@ export async function loadOwnBookings(): Promise<Booking[]> {
   const { data, error } = await db().from('bookings')
     .select(
       'id, booking_reference, visitor_name, visitor_email, visitor_phone, visitor_count,' +
-      ' adult_count, child_count, pwd_count, total_amount, currency, payment_status, booking_status,' +
+      ' adult_count, child_count, pwd_count, total_amount, currency, payment_status, payment_method, booking_status,' +
       ' booking_source, site_id, cancellation_cutoff_at, hold_expires_at, created_at,' +
       ' tourism_sites(name), site_slots(slot_date, starts_at, ends_at)',
     )
@@ -289,6 +290,7 @@ export async function loadOwnBookings(): Promise<Booking[]> {
     total_amount: Number(row.total_amount),
     currency: row.currency,
     payment_status: row.payment_status,
+    payment_method: row.payment_method,
     booking_status: row.booking_status,
     booking_source: row.booking_source,
     site_id: row.site_id,

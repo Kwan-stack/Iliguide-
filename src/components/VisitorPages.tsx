@@ -52,6 +52,18 @@ export function VisitorPages(props: Props) {
   const [expandedBooking, setExpandedBooking] = useState('');
 
   useEffect(() => {
+    const url = new URL(window.location.href);
+    const result = url.searchParams.get('payment');
+    if (!result) return;
+    props.notify(result === 'success'
+      ? 'Online payment submitted. Booking confirmation waits for PayMongo verification.'
+      : 'Checkout cancelled. No payment was recorded; the reservation hold expires in ten minutes.');
+    url.searchParams.delete('payment');
+    url.searchParams.delete('reference');
+    window.history.replaceState(window.history.state, '', url.toString());
+  }, [props.notify]);
+
+  useEffect(() => {
     if (previousBookingScope.current !== bookingScope) {
       setBookings([]);
       previousBookingScope.current = bookingScope;
@@ -121,7 +133,7 @@ export function VisitorPages(props: Props) {
       {visibleBookings.map((item) => <article className="booking-record" key={item.booking_id}><div className="booking-record-icon"><CalendarDays size={19}/></div>
       <div className="booking-record-main"><span className="booking-reference">{item.booking_reference}</span><h3>{item.site_name}</h3>
         <p>{dateLabel(item.slot_date)} · {timeLabel(item.starts_at)} – {timeLabel(item.ends_at)} · {item.visitor_count} visitors</p>
-        <small>{money(item.total_amount)} estimated · {paymentStatusLabel(item.payment_status, item.total_amount)} · {item.booking_status.replace('_', ' ')}</small></div>
+        <small>{money(item.total_amount)} estimated · {item.payment_method === 'onsite' ? 'Pay onsite' : 'Online'} · {paymentStatusLabel(item.payment_status, item.total_amount)} · {item.booking_status.replace('_', ' ')}</small></div>
       <span className="status-tag">{item.booking_status.replace('_', ' ')}</span>
       <button className="link-btn" aria-expanded={expandedBooking === item.booking_id} onClick={() => setExpandedBooking(expandedBooking === item.booking_id ? '' : item.booking_id)}>{expandedBooking === item.booking_id ? 'Hide details' : 'View details'}</button>
       {ticketReady(item) &&
@@ -144,8 +156,9 @@ function BookingRecord({ booking, token, onTicket, cancellationReason, setCancel
     <div className="booking-detail-head"><div><span className="eyebrow"><span className="eyebrow-line"/> BOOKING {booking.booking_reference}</span><h2>{booking.site_name}</h2>
       <p>{dateLabel(booking.slot_date)} · {timeLabel(booking.starts_at)} – {timeLabel(booking.ends_at)}</p></div>
       <span className={booking.payment_status === 'paid' ? 'status-tag paid' : 'status-tag'}>{booking.booking_status.replace('_', ' ')} · {paymentStatusLabel(booking.payment_status, booking.total_amount)}</span></div>
-    <div className="booking-detail-facts"><span><small>VISITORS</small><b>{booking.adult_count} adults, {booking.child_count} children{booking.pwd_count ? `, ${booking.pwd_count} PWD` : ''}</b></span>
+    <div className="booking-detail-facts"><span><small>VISITORS</small><b>{booking.adult_count} adults, {booking.child_count} children{booking.pwd_count ? `, ${booking.pwd_count} PWD` : ''}</b></span><span><small>PAYMENT METHOD</small><b>{booking.payment_method === 'onsite' ? 'Pay onsite' : 'Online'}</b></span>
       <span><small>{booking.payment_status === 'not_required' ? 'ESTIMATED FEES' : 'TOTAL'}</small><b>{money(booking.total_amount)}</b></span><span><small>REFERENCE</small><b>{booking.booking_reference}</b></span></div>
+    {booking.payment_method === 'onsite' && booking.payment_status === 'pending' && <p className="config-note">Pay at the destination before entry. Your QR ticket will be available after staff record payment.</p>}
     {booking.payment_status === 'not_required' && <p className="config-note">Fees are estimates; no payment was collected.</p>}
     {booking.booking_status === 'awaiting_payment' && <p className="config-note"><Clock3 size={16}/> This reservation is not confirmed and will expire when its hold ends.</p>}
     {ticketReady(booking) &&
@@ -238,7 +251,7 @@ function TicketView({ booking, ticket, notify }: { booking: Booking; ticket: Tic
 }
 
 function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: boolean }) {
-  const [accountTab, setAccountTab] = useState<'profile' | 'travelers' | 'saved' | 'notifications' | 'support'>('profile');
+  const [accountTab, setAccountTab] = useState<'profile' | 'travelers' | 'saved' | 'notifications' | 'support' | 'security'>('profile');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState(props.profile?.phone ?? '');
@@ -266,6 +279,7 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
     { id: 'profile', label: 'Profile information' }, { id: 'travelers', label: 'Travelers' },
     { id: 'saved', label: 'Saved places' },
     { id: 'notifications', label: 'Notifications' }, { id: 'support', label: 'Support' },
+    { id: 'security', label: 'Password and security' },
   ] as const;
   useEffect(() => {
     const [given = '', ...family] = (props.profile?.full_name ?? '').trim().split(/\s+/);
@@ -426,10 +440,6 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
         <div className="profile-photo-preview">{avatarUrl ? <img src={avatarUrl} alt="Profile photo"/> : <UserRound size={42}/>}</div>
         <div className="profile-identity"><b>{props.profile?.full_name || props.user.email}</b><small>{props.user.email}</small><span className={props.user.email_confirmed_at ? 'verified-label' : 'verification-pending'}><BadgeCheck size={13}/>{props.user.email_confirmed_at ? 'Email verified' : 'Verification pending'}</span></div>
         <label className="profile-upload-control"><span>Upload profile photo</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void uploadAvatar(event)}/><small>JPEG, PNG, WebP · up to 2 MiB</small></label>
-        <details className="profile-security-panel" open><summary>Password and security</summary>
-          {props.user && <ChangePasswordForm user={props.user} notify={props.notify}/>}
-          <button className="link-btn" onClick={props.onPasswordReset}>Forgot password?</button>
-        </details>
         <button className="btn btn-outline profile-logout" onClick={props.onSignOut}><LogOut size={15}/> Log out</button>
       </aside>
       <div className="profile-content-panel">
@@ -457,6 +467,10 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
             <div className="support-faq"><details><summary>How do I find a booking?</summary><p>Sign in with the visitor account used to reserve, then open My bookings.</p></details><details><summary>When is a ticket available?</summary><p>After the reservation is confirmed. Present its QR code at the destination for gate validation. Admission remains subject to the destination’s current rules.</p></details><details><summary>How do I change or cancel a reservation?</summary><p>Open the reservation in My bookings and submit a request when the option is available.</p></details></div>
             <form className="support-form" onSubmit={(event) => void submitSupport(event)}><label>Topic<select value={supportSubject} onChange={(event) => setSupportSubject(event.target.value)}><option>Booking question</option><option>Complaint or concern</option><option>Account help</option><option>Other</option></select></label><label>Related booking<select value={supportBookingId} onChange={(event) => setSupportBookingId(event.target.value)}><option value="">No booking reference</option>{props.bookings.map((booking) => <option key={booking.booking_id} value={booking.booking_id}>{booking.booking_reference} · {booking.site_name}</option>)}</select></label><label>Message<textarea value={supportMessage} onChange={(event) => setSupportMessage(event.target.value)} minLength={10} maxLength={4000} rows={4} required/></label><button className="btn btn-primary" disabled={accountBusy || supportMessage.trim().length < 10}>Send support request</button></form>
             <h3 className="support-history-title">Your support requests</h3>{!supportRequests.length && <div className="empty-inline">No requests yet.</div>}{supportRequests.map((request) => { const booking = props.bookings.find((item) => item.booking_id === request.booking_id); return <div className="support-request-row" key={request.id}><div><b>{request.subject}</b><span className="status-tag">{request.status.replace('_', ' ')}</span><small>{booking ? booking.booking_reference + ' · ' : ''}{new Date(request.created_at).toLocaleString()}</small><p>{request.message}</p>{request.staff_response && <blockquote>{request.staff_response}</blockquote>}</div></div>; })}
+          </section>}
+          {accountTab === 'security' && <section className="profile-tab-content"><div className="profile-tab-heading"><div><span className="eyebrow"><span className="eyebrow-line"/> ACCOUNT SECURITY</span><h2>Password and security</h2><p>Change the password used to sign in to your visitor account.</p></div></div>
+            {props.user && <ChangePasswordForm user={props.user} notify={props.notify}/>}
+            <button className="link-btn" onClick={props.onPasswordReset}>Forgot password?</button>
           </section>}
         </div>
       </div>

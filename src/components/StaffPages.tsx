@@ -123,7 +123,7 @@ function GatekeeperDutyGate(props: Props & { content: ReactNode }) {
     {state === 'loading' && <section className="dashboard-page section-wrap"><div className="empty-card"><ShieldCheck size={30}/><h3>Checking gatekeeper duty</h3><p>Loading the active duty roster for this destination.</p></div></section>}
     {state === 'unavailable' && <section className="dashboard-page section-wrap"><div className="empty-card"><ShieldCheck size={30}/><h3>Duty roster setup is unavailable</h3><p>Apply the latest database migration, then create an active duty roster entry.</p></div></section>}
     {state === 'locked' && <>{props.page === 'Duty details' ? props.content : <section className="dashboard-page"><div className="empty-card"><ShieldCheck size={30}/><h3>Gatekeeper duty required</h3><p>Your account is active, but you are not assigned as gatekeeper for this destination and shift. Contact your supervisor.</p><button className="btn btn-outline" onClick={() => props.go('Duty details')}>View assigned duty</button></div></section>}</>}
-    {state === 'ready' && <><section className="duty-context"><ShieldCheck size={17}/><span><b>{site?.name}</b><small>{props.user?.email}</small> · {duty?.duty_role === 'primary' ? 'Primary Responsible Gatekeeper' : 'Support Gatekeeper'} · Primary: {duty?.primary_gatekeeper_name} · {new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium' }).format(new Date(duty!.duty_date + 'T00:00:00+08:00'))} · Ends {new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }).format(new Date(duty!.shift_end_at))}</span></section>{props.content}</>}
+    {state === 'ready' && <><section className="duty-context"><ShieldCheck size={17}/><span><b>{site?.name}</b><small>{props.user?.email}</small> · {duty?.duty_role === 'primary' ? 'Primary Responsible Gatekeeper' : 'Support Gatekeeper'} · Primary: {duty?.primary_gatekeeper_name} · {new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium' }).format(new Date(duty!.duty_date + 'T00:00:00+08:00'))} · Ends {new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }).format(new Date(duty!.shift_end_at))}</span><b className="duty-on-status">On Duty</b></section>{props.content}</>}
   </>;
 }
 
@@ -142,74 +142,119 @@ function SiteSelector({ sites, siteId, setSiteId }: Pick<Props, 'sites' | 'siteI
 
 function OverviewPage(props: Props) {
   const [rows, setRows] = useState<Array<Record<string, any>>>([]);
+  const [attendanceRows, setAttendanceRows] = useState<Array<{ site_id: string; scanned_at: string; visitor_count: number }>>([]);
+  const [monthDate, setMonthDate] = useState(() => phToday().slice(0, 7));
+  const [visibleSites, setVisibleSites] = useState<string[]>([]);
+  const [networkSiteId, setNetworkSiteId] = useState('all');
   const [todayMetrics, setTodayMetrics] = useState<Record<string, any> | null>(null);
   const [liveOccupancy, setLiveOccupancy] = useState<LiveOccupancy | null>(null);
+  const [dailyBookingCapacity, setDailyBookingCapacity] = useState<number | null>(null);
   const [totalReservations, setTotalReservations] = useState(0);
   const [upcoming, setUpcoming] = useState<Array<Record<string, any>>>([]);
-  const [activity, setActivity] = useState<Array<Record<string, any>>>([]);
-  const monthStart = phToday().slice(0, 8) + '01';
+  const [gatekeeperAttendance, setGatekeeperAttendance] = useState<Array<{ scanned_at: string; visitor_count: number }>>([]);
+  const requestVersion = useRef(0);
+  const monthStart = `${monthDate}-01`;
+  const monthEnd = new Date(Number(monthDate.slice(0, 4)), Number(monthDate.slice(5, 7)), 0).getDate();
   const isGatekeeper = props.role === 'gatekeeper';
   const site = isGatekeeper ? assignedGatekeeperSite(props) : props.sites.find((item) => item.id === props.siteId);
-  const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${site?.id ?? props.siteId}:${monthStart}`);
+  const dashboardSites = props.role === 'tourism_office' ? props.sites.filter((item) => networkSiteId === 'all' || item.id === networkSiteId) : site ? [site] : [];
+  const siteScope = props.role === 'tourism_office' ? props.sites.map((item) => item.id).join(',') : site?.id ?? props.siteId;
+  const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${siteScope}:${networkSiteId}:${monthStart}`);
   const refresh = useCallback(async () => {
+    const request = ++requestVersion.current;
     try {
       if (isGatekeeper) {
         if (!site) throw new Error('No single active destination assignment. Ask the Tourism Office to resolve the assignment.');
         const today = phToday();
         const horizon = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() + 7 * 86400000));
-        const [daily, total, reservations, events, occupancy] = await Promise.all([
+        const monthStartAt = new Date(`${monthStart}T00:00:00+08:00`).toISOString();
+        const monthEndAt = new Date(Date.parse(`${monthDate}-${String(monthEnd).padStart(2, '0')}T00:00:00+08:00`) + 86400000).toISOString();
+        const [daily, total, reservations, occupancy, attendance, siteSettings] = await Promise.all([
           db().from('site_visit_daily_metrics').select('*').eq('site_id', site.id).eq('report_date', today).maybeSingle(),
           db().from('bookings').select('id', { count: 'exact', head: true }).eq('site_id', site.id).neq('booking_status', 'expired'),
           db().from('bookings').select('id,booking_reference,visitor_name,visitor_count,booking_status,site_slots!inner(slot_date,starts_at)')
             .eq('site_id', site.id).gte('site_slots.slot_date', today).lte('site_slots.slot_date', horizon)
             .in('booking_status', ['confirmed', 'awaiting_payment']).order('created_at').limit(12),
-          db().from('audit_logs').select('id,action,entity_type,created_at').eq('site_id', site.id)
-            .order('created_at', { ascending: false }).limit(8),
           loadLiveOccupancy(site.id).catch(() => null),
+          db().from('attendance_logs').select('scanned_at,booking:bookings!attendance_logs_booking_id_fkey(visitor_count)')
+            .eq('site_id', site.id).eq('action', 'entry').gte('scanned_at', monthStartAt).lt('scanned_at', monthEndAt).order('scanned_at').limit(2000),
+          db().from('site_settings').select('daily_capacity').eq('site_id', site.id).maybeSingle(),
         ]);
-        for (const result of [daily, total, reservations, events]) if (result.error) throw result.error;
+        for (const result of [daily, total, reservations, attendance, siteSettings]) if (result.error) throw result.error;
+        if (request !== requestVersion.current) return;
         setTodayMetrics(daily.data ?? null);
         setTotalReservations(total.count ?? 0);
         setUpcoming((reservations.data ?? []) as Array<Record<string, any>>);
-        setActivity(events.data ?? []);
         setLiveOccupancy(occupancy);
+        setDailyBookingCapacity(siteSettings.data?.daily_capacity ?? null);
+        setGatekeeperAttendance((attendance.data ?? []).map((row: any) => ({ scanned_at: row.scanned_at, visitor_count: Number(Array.isArray(row.booking) ? row.booking[0]?.visitor_count : row.booking?.visitor_count ?? 0) })));
       } else {
         let query = db().from('booking_daily_metrics')
           .select('site_id, report_date, booking_count, visitor_count, walk_in_count, online_count, paid_revenue')
-          .gte('report_date', monthStart).lte('report_date', phToday());
+          .gte('report_date', monthStart).lte('report_date', monthDate === phToday().slice(0, 7) ? phToday() : `${monthDate}-${String(monthEnd).padStart(2, '0')}`);
         if (props.siteId && props.role !== 'tourism_office') query = query.eq('site_id', props.siteId);
-        const { data, error } = await query.order('report_date', { ascending: true });
-        if (error) throw error;
-        setRows((data ?? []) as Array<Record<string, any>>);
+        const attendanceQuery = db().from('attendance_logs').select('site_id,scanned_at,booking:bookings!attendance_logs_booking_id_fkey(visitor_count)')
+          .eq('action', 'entry').gte('scanned_at', new Date(`${monthStart}T00:00:00+08:00`).toISOString())
+          .lt('scanned_at', new Date(`${monthDate}-${String(monthEnd).padStart(2, '0')}T00:00:00+08:00`).toISOString());
+        if (props.siteId && props.role !== 'tourism_office') attendanceQuery.eq('site_id', props.siteId);
+        if (props.role === 'tourism_office' && networkSiteId !== 'all') {
+          query = query.eq('site_id', networkSiteId);
+          attendanceQuery.eq('site_id', networkSiteId);
+        }
+        const metrics = await query.order('report_date', { ascending: true });
+        if (metrics.error) throw metrics.error;
+        const attendanceRows: Array<{ site_id: string; scanned_at: string; booking: any }> = [];
+        for (let offset = 0; ; offset += 1000) {
+          const page = await attendanceQuery.order('scanned_at').range(offset, offset + 999);
+          if (page.error) throw page.error;
+          attendanceRows.push(...(page.data ?? []) as typeof attendanceRows);
+          if ((page.data?.length ?? 0) < 1000) break;
+        }
+        if (request !== requestVersion.current) return;
+        setRows((metrics.data ?? []) as Array<Record<string, any>>);
+        setAttendanceRows(attendanceRows.map((row) => ({ site_id: row.site_id, scanned_at: row.scanned_at, visitor_count: Number(Array.isArray(row.booking) ? row.booking[0]?.visitor_count : row.booking?.visitor_count ?? 0) })));
       }
     } catch (error) {
-      props.notify(error instanceof Error ? error.message : 'Could not load workspace metrics.');
-    } finally { finishLoading(); }
-  }, [finishLoading, isGatekeeper, monthStart, props.notify, props.role, props.siteId, site?.id]);
+      if (request === requestVersion.current) props.notify(error instanceof Error ? error.message : 'Could not load workspace metrics.');
+    } finally { if (request === requestVersion.current) finishLoading(); }
+  }, [finishLoading, isGatekeeper, monthDate, monthEnd, monthStart, networkSiteId, props.notify, props.role, props.siteId, site?.id, siteScope]);
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { setVisibleSites(dashboardSites.map((item) => item.id)); }, [dashboardSites.map((item) => item.id).join(',')]);
   const metric = (key: string) => rows.reduce((sum, row) => sum + Number(row[key] ?? 0), 0);
-  const lastDays = rows.slice(-14);
+  const gatekeeperDailyCounts = Array.from({ length: monthEnd }, (_, index) => gatekeeperAttendance.filter((row) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date(row.scanned_at)) === `${monthDate}-${String(index + 1).padStart(2, '0')}`).reduce((sum, row) => sum + row.visitor_count, 0));
+  const gatekeeperDailyMax = Math.max(1, ...gatekeeperDailyCounts);
+  const dailyAttendance = dashboardSites.map((item) => ({ site: item, counts: Array.from({ length: monthEnd }, (_, index) => attendanceRows.filter((row) => row.site_id === item.id && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date(row.scanned_at)) === `${monthDate}-${String(index + 1).padStart(2, '0')}`).reduce((sum, row) => sum + row.visitor_count, 0)) }));
+  const monthlyVisitors = attendanceRows.reduce((sum, row) => sum + row.visitor_count, 0);
+  const reportMonthDate = rows.filter((row) => String(row.report_date).startsWith(monthDate));
+  const lastDays = reportMonthDate.slice(-14);
+  const weeklyBookings = Array.from({ length: Math.ceil(monthEnd / 7) }, (_, index) => ({ week: index + 1, count: reportMonthDate.filter((row) => Math.floor((Number(String(row.report_date).slice(8)) - 1) / 7) === index).reduce((sum, row) => sum + Number(row.booking_count ?? 0), 0) }));
   const maxVisitors = Math.max(1, ...lastDays.map((row) => Number(row.visitor_count ?? 0)));
   return <section className={'dashboard-page section-wrap' + (isGatekeeper ? ' gatekeeper-overview' : '')}>
     <div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> {props.role.replace('_', ' ').toUpperCase()}</span>
-      <h1>{isGatekeeper ? <>{site?.name ?? 'Gatekeeper'} <em>dashboard.</em></> : props.role === 'tourism_office' ? <>Tourism <em>network.</em></> : <>Site <em>overview.</em></>}
+      <h1>{isGatekeeper ? <>{site?.name ?? 'Gatekeeper'} <em>Dashboard</em></> : props.role === 'tourism_office' ? <>Tourism <em>network.</em></> : <>Site <em>overview.</em></>}
       </h1><p>{isGatekeeper ? 'Destination operations · ' + phToday()
-        : 'Live records for ' + (props.role === 'tourism_office' ? 'all accessible destinations.' : site?.name ?? 'your assigned destination.')}</p></div>
-      <div className="header-actions">{!isGatekeeper && <SiteSelector {...props}/>}<button className="btn btn-outline" onClick={() => void refresh()}><RefreshCw size={15}/> Refresh</button></div></div>
-    {isGatekeeper ? <><div className="stats-grid">{[
-      [totalReservations, 'Total reservations'],
-      [todayMetrics?.booking_count ?? 0, 'Today’s reservations'],
-      [todayMetrics?.expected_visitor_count ?? 0, 'Expected visitors today'],
-      [liveOccupancy?.current_visitor_count ?? '—', 'Estimated currently inside'],
-      [liveOccupancy?.arrivals_today ?? '—', 'Recorded arrivals today'],
-      [liveOccupancy?.departures_today ?? '—', 'Recorded departures today'],
-      [Math.max(0, Number(todayMetrics?.expected_visitor_count ?? 0) - Number(todayMetrics?.checked_in_visitor_count ?? 0)), 'Not yet checked in'],
-      [todayMetrics?.pending_booking_count ?? 0, 'Awaiting payment'],
-      [todayMetrics?.confirmed_booking_count ?? 0, 'Confirmed'],
-      [todayMetrics?.cancelled_booking_count ?? 0, 'Cancelled'],
-    ].map(([value, label]) => <div key={String(label)}><b>{loading ? '…' : value}</b><small>{label}</small></div>)}</div>
-      {liveOccupancy && <p className="report-note"><ShieldCheck size={15}/> Occupancy estimate uses recorded arrivals minus departures. {liveOccupancy.last_recorded_at ? `Last attendance event: ${new Date(liveOccupancy.last_recorded_at).toLocaleString()}.` : 'No attendance event recorded yet.'}</p>}
-      <div className="dashboard-grid"><div className="arrivals-card"><div className="card-heading"><span><small>UPCOMING · ASSIGNED DESTINATION</small><h3>Reservations</h3></span><button className="link-btn" onClick={() => props.go('Reservations')}>View all <ArrowRight size={14}/></button></div>
+        : 'Live records for ' + (props.role === 'tourism_office' ? (dashboardSites.length === props.sites.length ? 'all accessible destinations.' : dashboardSites[0]?.name ?? 'the selected destination.') : site?.name ?? 'your assigned destination.')}</p></div>
+      <div className="header-actions">{!isGatekeeper && (props.role === 'tourism_office' ? <select aria-label="Destination filter" value={networkSiteId} onChange={(event) => setNetworkSiteId(event.target.value)}><option value="all">All</option>{props.sites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <SiteSelector {...props}/>)}<label className="dashboard-month-filter">Month<input type="month" value={monthDate} onChange={(event) => event.target.value && setMonthDate(event.target.value)}/></label><button className="btn btn-outline" onClick={() => void refresh()}><RefreshCw size={15}/> Refresh</button></div></div>
+    {isGatekeeper ? <>
+      <div className="stats-grid gatekeeper-primary-stats">{[
+        [liveOccupancy?.current_visitor_count ?? '—', 'Currently inside', Users],
+        [todayMetrics?.expected_visitor_count ?? 0, 'Expected visitors today', CalendarDays],
+        [liveOccupancy?.arrivals_today ?? 0, 'Arrivals today', ArrowRight],
+        [liveOccupancy?.departures_today ?? 0, 'Departures today', ArrowLeft],
+      ].map(([value, label, Icon]) => <div key={String(label)}><Icon size={19}/><small>{label}</small><b>{loading ? '…' : value}</b></div>)}</div>
+      {(() => {
+        const current = liveOccupancy?.current_visitor_count ?? 0;
+        const approvedLimit = liveOccupancy?.approved_visitor_limit;
+        const capacity = approvedLimit ?? liveOccupancy?.capacity_estimate ?? dailyBookingCapacity;
+        const estimated = approvedLimit == null;
+        const percent = capacity ? Math.min(100, Math.round(current / capacity * 100)) : null;
+        const remaining = capacity == null ? null : Math.max(0, capacity - current);
+        const status = percent == null ? 'Capacity estimate unavailable' : percent >= 100 ? 'Full / Overcrowded' : percent >= 90 ? 'Almost Full' : percent >= 70 ? 'Near Capacity' : 'Available';
+        const capacitySource = approvedLimit != null ? 'Approved visitor limit' : liveOccupancy?.capacity_estimate != null ? 'Assessment estimate' : 'Daily booking limit estimate';
+        return <div className="gatekeeper-dashboard-grid"><section className="capacity-live-card"><div className="card-heading"><span><small>LIVE DESTINATION CAPACITY</small><h3>{site?.name}</h3></span><span className={`capacity-state ${percent != null && percent >= 90 ? 'capacity-state-warning' : ''}`}>{estimated && percent != null ? 'Estimated · ' : ''}{status}</span></div>{capacity == null ? <p>Capacity estimate unavailable.</p> : <><p className="capacity-total"><b>{current.toLocaleString()}</b> / {estimated ? '~' : ''}{capacity.toLocaleString()} <span>visitors</span></p><div className="capacity-progress" role="progressbar" aria-label={estimated ? 'Estimated destination capacity' : 'Approved destination capacity'} aria-valuemin={0} aria-valuemax={capacity} aria-valuenow={Math.min(current, capacity)}><i className={percent! >= 90 ? 'capacity-progress-high' : percent! >= 70 ? 'capacity-progress-near' : ''} style={{ width: `${percent}%` }}/></div><div className="capacity-meta"><b>{estimated ? '~' : ''}{percent}% occupied</b><span>{estimated ? '~' : ''}{remaining?.toLocaleString()} spaces remaining</span></div></>}<p className="daily-booking-capacity">{capacitySource}: {capacity == null ? 'Not configured' : `${capacity.toLocaleString()} visitors`}{estimated ? '. Estimate only; not an approved simultaneous occupancy limit.' : '.'}</p>{percent != null && percent >= 70 && <p className="capacity-warning">{estimated ? 'Estimated occupancy is nearing the estimated limit.' : 'Destination is nearing its approved visitor limit.'}</p>}</section>
+        <section className="quick-actions-card"><div className="card-heading"><span><small>QUICK ACTIONS</small><h3>Visitor operations</h3></span><Activity size={18}/></div><div className="gatekeeper-actions"><button className="gatekeeper-action-primary" onClick={() => props.go('Scan and exit')}><ScanLine/>Scan check-in</button><button onClick={() => props.go('Scan and exit')}><ArrowLeft/>Record check-out</button><button onClick={() => props.go('Walk-in registration')}><TicketIcon/>Walk-in visitor</button><button onClick={() => props.go('Reservations')}><CalendarDays/>Reservations</button></div></section></div>; })()}
+      <div className="gatekeeper-dashboard-grid"><section className="chart-card"><div className="card-heading"><span><small>RECORDED ATTENDANCE · ASIA/MANILA</small><h3>Visitor activity</h3></span><CalendarDays size={18}/></div>{loading ? <div className="empty-inline">Loading attendance…</div> : gatekeeperAttendance.length ? <><div className="gatekeeper-trend-chart" style={{ gridTemplateColumns: `repeat(${monthEnd}, minmax(3px, 1fr))` }} role="img" aria-label={`Daily checked-in visitors at ${site?.name} for ${monthDate}`}>{gatekeeperDailyCounts.map((count, i) => { const day = i + 1; return <div key={day} title={`${day}: ${count} visitors`}><i style={{ height: `${count / gatekeeperDailyMax * 100}%` }}/>{(day === 1 || day % 5 === 0 || day === monthEnd) && <small>{day}</small>}</div>; })}</div><p className="report-note">Daily visitor count from recorded ticket check-ins for this destination.</p></> : <div className="empty-inline">No visitor attendance recorded for this month.</div>}</section>
+        <section className="arrivals-card"><div className="card-heading"><span><small>UPCOMING · ASSIGNED DESTINATION</small><h3>Reservations</h3></span><button className="link-btn" onClick={() => props.go('Reservations')}>View all <ArrowRight size={14}/></button></div>
       {loading && <div className="empty-inline">Loading reservations…</div>}
         {!loading && !upcoming.length && <div className="empty-inline">No upcoming reservations for this destination.</div>}
         {!loading && upcoming.map((booking) => { const slot = Array.isArray(booking.site_slots) ? booking.site_slots[0] : booking.site_slots; return <div className="arrival-row" key={booking.id}>
@@ -217,20 +262,25 @@ function OverviewPage(props: Props) {
           <span><b>{booking.visitor_name}</b><small>{booking.booking_reference} · {dateLabel(slot?.slot_date)} · {slot?.starts_at ? timeLabel(slot.starts_at) : ''} · {booking.visitor_count} visitors</small></span>
           <span className="status-tag">{String(booking.booking_status).replace(/_/g, ' ')}</span>
         </div>; })}
-      </div><div className="activity-card"><div className="card-heading"><span><small>RECENT CHANGES</small><h3>Destination activity</h3></span><Activity size={18}/></div>
-        {loading && <div className="empty-inline">Loading activity…</div>}
-        {!loading && !activity.length && <div className="empty-inline">No activity recorded yet.</div>}
-        {!loading && activity.map((event) => <div className="audit-row" key={event.id}><span><b>{String(event.action).replace(/_/g, ' ')}</b><small>{event.entity_type}</small></span><time>{new Date(event.created_at).toLocaleTimeString()}</time></div>)}
-      </div></div>
+      </section></div>
+      <section className="schedule-card gatekeeper-operations"><div className="card-heading"><span><small>TODAY’S OPERATIONS</small><h3>Reservation summary</h3></span><CalendarClock size={18}/></div><div className="gatekeeper-operation-metrics">{[[todayMetrics?.booking_count ?? 0, 'Today’s reservations'], [Math.max(0, Number(todayMetrics?.expected_visitor_count ?? 0) - Number(todayMetrics?.checked_in_visitor_count ?? 0)), 'Not yet checked in'], [todayMetrics?.pending_booking_count ?? 0, 'Awaiting payment'], [todayMetrics?.confirmed_booking_count ?? 0, 'Confirmed'], [todayMetrics?.cancelled_booking_count ?? 0, 'Cancelled'], [totalReservations, 'Total reservations']].map(([value, label]) => <div key={String(label)}><b>{loading ? '…' : value}</b><small>{label}</small></div>)}</div></section>
     </> : <><div className="stats-grid">{[
-      [metric('visitor_count').toLocaleString(), 'Visitors this month'],
+      [(props.role === 'tourism_office' ? monthlyVisitors : metric('visitor_count')).toLocaleString(), 'Visitors this month'],
       [metric('online_count').toLocaleString(), 'Online bookings'],
       [metric('walk_in_count').toLocaleString(), 'Walk-in bookings'],
     ].map(([value, label]) => <div key={label}><b>{loading ? '…' : value}</b><small>{label}</small></div>)}</div>
-      <div className="dashboard-grid"><div className="chart-card"><div className="card-heading"><span><small>RECORDED VISITS · ASIA/MANILA</small><h3>Visitor activity</h3></span><CalendarDays size={18}/></div>
-        {!loading && lastDays.length ? <div className="bar-chart">{lastDays.map((row) => <div className="bar-column" key={row.report_date}><i style={{ height: (Number(row.visitor_count) / maxVisitors * 100) + '%' }}/><small>{String(row.report_date).slice(8)}</small></div>)}</div>
+      <div className="dashboard-grid"><div className="chart-card"><div className="card-heading"><span><small>RECORDED VISITS · ASIA/MANILA</small><h3>{props.role === 'tourism_office' ? 'Daily Visitor Activity by Destination' : 'Visitor activity'}</h3></span><CalendarDays size={18}/></div>
+        {props.role === 'tourism_office' ? loading ? <div className="empty-inline">Loading recorded visits…</div> : !dashboardSites.length ? <div className="empty-inline">No destinations available.</div> : <>
+          <div className="network-chart-scroll"><svg className="network-visitor-chart" viewBox={`0 0 720 260`} role="img" aria-label={`Daily visitor activity by destination for ${monthDate}`}>
+            {[0, 1, 2, 3].map((step) => { const max = Math.max(1, ...dailyAttendance.flatMap((series) => series.counts)); const value = Math.ceil(max * (3 - step) / 3); const y = 218 - step * 62; return <g key={step}><line x1="46" x2="704" y1={y} y2={y} className="network-chart-grid"/><text x="38" y={y + 4} textAnchor="end" className="network-chart-label">{value}</text></g>; })}
+            {Array.from({ length: monthEnd }, (_, index) => index + 1).map((day) => { const x = 48 + (day - 1) * 654 / Math.max(1, monthEnd - 1); return <g key={day}>{(day === 1 || day % 5 === 0 || day === monthEnd) && <text x={x} y="243" textAnchor="middle" className="network-chart-label">{day}</text>}</g>; })}
+            {dailyAttendance.map((series, seriesIndex) => { const max = Math.max(1, ...dailyAttendance.flatMap((item) => item.counts)); const color = ['#087fa4', '#36a275', '#e17832', '#d6a52f'][seriesIndex % 4]; const points = series.counts.map((value, index) => `${48 + index * 654 / Math.max(1, monthEnd - 1)},${218 - value / max * 186}`).join(' '); return visibleSites.includes(series.site.id) && <g key={series.site.id}><polyline points={points} fill="none" stroke={color} strokeWidth="2.5"/>{series.counts.map((value, index) => <circle key={index} cx={48 + index * 654 / Math.max(1, monthEnd - 1)} cy={218 - value / max * 186} r="3" fill={color}><title>{`${series.site.name} · ${monthDate}-${String(index + 1).padStart(2, '0')}: ${value} visitors`}</title></circle>)}</g>; })}
+          </svg></div><div className="network-chart-legend">{dailyAttendance.map((series, index) => <button key={series.site.id} aria-pressed={visibleSites.includes(series.site.id)} onClick={() => setVisibleSites((current) => current.includes(series.site.id) ? current.filter((id) => id !== series.site.id) : [...current, series.site.id])} style={{ opacity: visibleSites.includes(series.site.id) ? 1 : .45 }}><i style={{ background: ['#087fa4', '#36a275', '#e17832', '#d6a52f'][index % 4] }}/>{series.site.name}</button>)}</div>
+          <p className="report-note"><ShieldCheck size={15}/> Counts use recorded ticket entries, not bookings. Monthly total combines checked-in visitors for the selected destination scope.</p>
+          <div className="card-heading network-weekly-heading"><span><small>MONTHLY REPORT · BOOKINGS</small><h3>Weekly booking activity</h3></span></div>
+          <div className="network-weekly-chart">{weeklyBookings.map((week) => { const max = Math.max(1, ...weeklyBookings.map((item) => item.count)); return <div key={week.week}><i style={{ height: `${Math.max(2, week.count / max * 100)}%` }} title={`Week ${week.week}: ${week.count} bookings`}/><small>Week {week.week}</small><b>{week.count}</b></div>; })}</div></> : !loading && lastDays.length ? <div className="bar-chart">{lastDays.map((row) => <div className="bar-column" key={row.report_date}><i style={{ height: (Number(row.visitor_count) / maxVisitors * 100) + '%' }}/><small>{String(row.report_date).slice(8)}</small></div>)}</div>
           : <div className="empty-inline">{loading ? 'Loading records…' : 'No booking records for this month.'}</div>}
-        <p className="report-note"><ShieldCheck size={15}/> Counts come from confirmed database records and are scoped by staff permissions.</p></div>
+        {props.role !== 'tourism_office' && <p className="report-note"><ShieldCheck size={15}/> Counts come from confirmed database records and are scoped by staff permissions.</p>}</div>
         <div className="activity-card"><div className="card-heading"><span><small>WORKSPACE</small><h3>Quick actions</h3></span><Activity size={18}/></div>
           {props.role === 'tourism_office' ? <><button className="quick-row" onClick={() => props.go('Sites and staff')}><MapPin size={17}/> Manage destinations <ArrowRight size={14}/></button><button className="quick-row" onClick={() => props.go('Reports')}><ArrowDownToLine size={17}/> Export reports <ArrowRight size={14}/></button></>
             : <><button className="quick-row" onClick={() => props.go('Slots and closures')}><CalendarDays size={17}/> Manage visit slots <ArrowRight size={14}/></button><button className="quick-row" onClick={() => props.go('Staff and accounts')}><Users size={17}/> Staff & accounts <ArrowRight size={14}/></button></>}</div></div>
@@ -249,6 +299,7 @@ function ReservationsPage(props: Props) {
   const [paymentStatus, setPaymentStatus] = useState('all');
   const [page, setPage] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [paymentBusy, setPaymentBusy] = useState('');
   const [total, setTotal] = useState(0);
   const site = assignedGatekeeperSite(props);
   const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${site?.id ?? 'unassigned'}`);
@@ -262,7 +313,7 @@ function ReservationsPage(props: Props) {
     setRefreshing(true);
     void (async () => {
       let query = db().from('bookings').select(
-        'id,booking_reference,visitor_name,visitor_count,adult_count,child_count,booking_status,payment_status,booking_source,created_at,site_slots!inner(slot_date,starts_at,ends_at),reservation_visitors(id,sequence_number,visitor_type,full_name,address,gender,nationality,check_in_status,checked_in_at)',
+        'id,booking_reference,visitor_name,visitor_count,adult_count,child_count,total_amount,payment_method,booking_status,payment_status,booking_source,created_at,site_slots!inner(slot_date,starts_at,ends_at),reservation_visitors(id,sequence_number,visitor_type,full_name,address,gender,nationality,check_in_status,checked_in_at)',
         { count: 'exact' },
       ).eq('site_id', site.id);
       if (visitDate) query = query.eq('site_slots.slot_date', visitDate);
@@ -279,6 +330,17 @@ function ReservationsPage(props: Props) {
     return () => { active = false; };
   }, [finishLoading, page, paymentStatus, props.notify, queryKey, refreshKey, search, site?.id, status, visitDate]);
   const updateFilter = (setter: (value: string) => void) => (value: string) => { setPage(0); setter(value); };
+  const recordOnsitePayment = async (booking: Record<string, any>) => {
+    if (!window.confirm(`Confirm ${money(Number(booking.total_amount))} payment was collected onsite for ${booking.booking_reference}?`)) return;
+    setPaymentBusy(booking.id);
+    try {
+      const { error } = await db().rpc('record_onsite_payment', { p_booking_id: booking.id });
+      if (error) throw error;
+      props.notify('Onsite payment recorded.');
+      setRefreshKey((current) => current + 1);
+    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not record onsite payment.'); }
+    finally { setPaymentBusy(''); }
+  };
   const pageCount = Math.max(1, Math.ceil(total / RESERVATION_PAGE_SIZE));
   return <section className="dashboard-page section-wrap"><div className="dash-header"><div>
     <span className="eyebrow"><span className="eyebrow-line"/> {site?.name ?? 'DESTINATION'} · RESERVATIONS</span>
@@ -294,7 +356,7 @@ function ReservationsPage(props: Props) {
     <div className="table-toolbar" aria-busy={refreshing || !resultsCurrent}><span>{loading ? 'Loading…' : refreshing ? 'Updating reservations…' : resultsCurrent ? `${total} destination reservations` : 'Showing previous results'}</span><span>Page {page + 1} of {pageCount}</span></div>
     {!loading && !refreshing && resultsCurrent && !rows.length && <div className="empty-inline">No bookings match these filters.</div>}
     {loading && <div className="empty-inline" role="status">Loading reservations…</div>}
-    {!loading && !!rows.length && <div className="table-card gatekeeper-bookings-table" aria-busy={refreshing || !resultsCurrent}><table><thead><tr><th>Reference</th><th>Booking contact</th><th>Visit</th><th>Visitors</th><th>Status</th><th>Created</th></tr></thead>
+    {!loading && !!rows.length && <div className="table-card gatekeeper-bookings-table" aria-busy={refreshing || !resultsCurrent}><table><thead><tr><th>Reference</th><th>Booking contact</th><th>Visit</th><th>Visitors</th><th>Payment</th><th>Status</th><th>Created</th></tr></thead>
       <tbody>{rows.map((booking) => { const slot = Array.isArray(booking.site_slots) ? booking.site_slots[0] : booking.site_slots; const visitors = booking.reservation_visitors ?? [];
         return <tr key={booking.id}><td><b>{booking.booking_reference}</b><small>{booking.booking_source.replace('_', ' ')}</small></td>
           <td>{booking.visitor_name}</td><td>{dateLabel(slot?.slot_date)}<small>{slot?.starts_at ? timeLabel(slot.starts_at) : ''}</small></td>
@@ -305,6 +367,7 @@ function ReservationsPage(props: Props) {
               {requiredVisitorFields(site.slug).includes('nationality') && <small>Nationality: {visitor.nationality ?? '—'}</small>}
               <small>{visitor.check_in_status === 'checked_in' ? 'Checked in' : 'Not checked in'}</small>
             </article>)}</div></details></td>
+          <td>{booking.payment_method === 'onsite' ? 'Pay onsite' : 'Online'}<small>{money(Number(booking.total_amount))} due · {paymentStatusLabel(String(booking.payment_status), Number(booking.total_amount))}</small>{booking.payment_method === 'onsite' && booking.payment_status === 'pending' && booking.booking_status === 'confirmed' && <button className="link-btn" disabled={Boolean(paymentBusy)} onClick={() => void recordOnsitePayment(booking)}>{paymentBusy === booking.id ? 'Recording…' : 'Record payment collected'}</button>}</td>
           <td><span className="status-tag">{String(booking.booking_status).replace(/_/g, ' ')}</span><small>{paymentStatusLabel(String(booking.payment_status), Number(booking.total_amount))}</small></td>
           <td>{new Date(booking.created_at).toLocaleString()}</td></tr>;
       })}</tbody></table></div>}
@@ -836,6 +899,7 @@ function VisitorLogbookPage(props: Props) {
 
 function ReportsPage(props: Props) {
   const [metrics, setMetrics] = useState<Array<Record<string, any>>>([]);
+  const [paymentMetrics, setPaymentMetrics] = useState<Array<Record<string, any>>>([]);
   const [audit, setAudit] = useState<Array<Record<string, any>>>([]);
   const [month, setMonth] = useState(phToday().slice(0, 7));
   const siteIds = props.role === 'tourism_office' ? props.sites.map((site) => site.id) : [props.siteId].filter(Boolean);
@@ -844,7 +908,7 @@ function ReportsPage(props: Props) {
   const [loadedReportKey, setLoadedReportKey] = useState('');
   const reportCurrent = loadedReportKey === reportKey;
   const refresh = useCallback(async () => {
-    if (!siteIds.length) { setMetrics([]); setAudit([]); setLoadedReportKey(reportKey); finishLoading(); return; }
+    if (!siteIds.length) { setMetrics([]); setPaymentMetrics([]); setAudit([]); setLoadedReportKey(reportKey); finishLoading(); return; }
     const start = month + '-01';
     const [year, monthNumber] = month.split('-').map(Number);
     const end = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
@@ -855,17 +919,23 @@ function ReportsPage(props: Props) {
       metricQuery = metricQuery.gte('report_date', start).lte('report_date', end);
       let auditQuery = db().from('audit_logs').select('id,actor_id,site_id,action,entity_type,entity_id,created_at')
         .gte('created_at', localStart(start)).lte('created_at', localEnd(end)).order('created_at', { ascending: false }).limit(200);
+      let paymentQuery = db().from('booking_payment_daily_metrics').select('site_id,report_date,online_pending_count,online_paid_count,onsite_pending_count,onsite_paid_count,failed_or_expired_count')
+        .gte('report_date', start).lte('report_date', end);
       if (props.role !== 'tourism_office') {
         metricQuery = metricQuery.eq('site_id', props.siteId);
         auditQuery = auditQuery.eq('site_id', props.siteId);
+        paymentQuery = paymentQuery.eq('site_id', props.siteId);
       } else if (siteIds.length) {
         metricQuery = metricQuery.in('site_id', siteIds);
         auditQuery = auditQuery.in('site_id', siteIds);
+        paymentQuery = paymentQuery.in('site_id', siteIds);
       }
-      const [metricResult, auditResult] = await Promise.all([metricQuery.order('report_date'), auditQuery]);
+      const [metricResult, auditResult, paymentResult] = await Promise.all([metricQuery.order('report_date'), auditQuery, paymentQuery]);
       if (metricResult.error) throw metricResult.error;
       if (auditResult.error) throw auditResult.error;
+      if (paymentResult.error) throw paymentResult.error;
       setMetrics(metricResult.data ?? []);
+      setPaymentMetrics(paymentResult.data ?? []);
       setAudit(auditResult.data ?? []);
       setLoadedReportKey(reportKey);
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not load the report.'); }
@@ -873,6 +943,7 @@ function ReportsPage(props: Props) {
   }, [finishLoading, month, props.notify, props.role, props.siteId, reportKey, siteIds.join(',')]);
   useEffect(() => { void refresh(); }, [refresh]);
   const summary = (key: string) => metrics.reduce((sum, row) => sum + Number(row[key] ?? 0), 0);
+  const paymentSummary = (key: string) => paymentMetrics.reduce((sum, row) => sum + Number(row[key] ?? 0), 0);
   const siteName = (id: string) => props.sites.find((site) => site.id === id)?.name ?? id;
   const gatekeeperStats = props.role === 'gatekeeper';
   return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> {props.role === 'tourism_office' ? 'TOURISM OFFICE · NETWORK REPORT' : gatekeeperStats ? 'GATEKEEPER · DESTINATION REPORT' : 'SITE ADMIN · DESTINATION REPORT'}</span>
@@ -881,7 +952,7 @@ function ReportsPage(props: Props) {
       {props.role === 'tourism_office' && <SiteSelector {...props}/>}<button className="btn btn-outline" disabled={loading || !reportCurrent || !metrics.length} onClick={() => void exportCsv('iliguide-report-' + month + '.csv', metrics.map((row) => ({ ...row, site_name: siteName(row.site_id) })))}><ArrowDownToLine size={15}/> Export</button></div></div>
     <div className="stats-grid">{(gatekeeperStats
       ? [[summary('expected_visitor_count').toLocaleString(), 'Expected visitors'], [summary('checked_in_visitor_count').toLocaleString(), 'Checked in'], [summary('adult_count').toLocaleString(), 'Adults'], [summary('child_count').toLocaleString(), 'Children']]
-      : [[summary('visitor_count').toLocaleString(), 'Visitors'], [summary('online_count').toLocaleString(), 'Online bookings'], [summary('walk_in_count').toLocaleString(), 'Walk-ins']])
+      : [[summary('visitor_count').toLocaleString(), 'Visitors'], [summary('online_count').toLocaleString(), 'Online bookings'], [summary('walk_in_count').toLocaleString(), 'Walk-ins'], [paymentSummary('online_paid_count').toLocaleString(), 'Online payments paid'], [paymentSummary('onsite_paid_count').toLocaleString(), 'Onsite payments collected'], [paymentSummary('online_pending_count').toLocaleString(), 'Online payments pending'], [paymentSummary('onsite_pending_count').toLocaleString(), 'Onsite payments due'], [paymentSummary('failed_or_expired_count').toLocaleString(), 'Failed or expired']])
       .map(([value, label]) => <div key={label}><b>{loading || !reportCurrent ? '…' : value}</b><small>{label}</small></div>)}</div>
     <div className="report-grid"><div className="chart-card"><div className="card-heading"><span><small>{gatekeeperStats ? 'VISIT DATE · ' + month : 'BY DESTINATION · ' + month}</small><h3>{gatekeeperStats ? 'Daily visitor counts' : 'Recorded activity'}</h3></span></div>
       {!reportCurrent && <div className="empty-inline">{loading ? 'Loading report…' : 'Report data for this period is unavailable.'}</div>}
