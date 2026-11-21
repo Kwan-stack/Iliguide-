@@ -73,6 +73,7 @@ export default function App() {
   const [visitor, setVisitor] = useState({ name: '', email: '', phone: '' });
   const [selectedTravelerId, setSelectedTravelerId] = useState('');
   const [search, setSearch] = useState('');
+  const [destinationQuery, setDestinationQuery] = useState('');
   const [category, setCategory] = useState('All');
   const [authMode, setAuthMode] = useState<AuthMode>(() => new URLSearchParams(window.location.search).get('mode') === 'reset' || isPasswordRecoveryUrl() ? 'reset' : null);
   const [passwordRecovery, setPasswordRecovery] = useState(isPasswordRecoveryUrl);
@@ -643,12 +644,12 @@ export default function App() {
       {page === 'Landing' && <LandingPage onExplore={() => go('Discover')}/>}
       {page === 'Discover' && role !== 'gatekeeper' && <HomePage
         sites={visibleSites} destinationOptions={permittedSites} allCount={sites.length} categories={categories} category={category}
-        setCategory={setCategory} search={search} setSearch={setSearch} visitDate={date} setVisitDate={setDate} openSite={openSite}
+        setCategory={setCategory} destinationQuery={destinationQuery} setDestinationQuery={setDestinationQuery} search={search} setSearch={setSearch} visitDate={date} setVisitDate={setDate} openSite={openSite}
         signedIn={Boolean(user)} onHow={() => go('How it works')} savedSiteIds={savedSiteIds} onToggleSavedSite={toggleSavedSite}
       />}
       {page === 'Destinations' && role !== 'gatekeeper' && <DestinationsPage
         sites={destinationSites} allCount={permittedSites.length} categories={categories} category={category}
-        setCategory={setCategory} openSite={openSite} savedSiteIds={savedSiteIds} onToggleSavedSite={toggleSavedSite}
+        setCategory={setCategory} destinationQuery={destinationQuery} setDestinationQuery={setDestinationQuery} openSite={openSite} savedSiteIds={savedSiteIds} onToggleSavedSite={toggleSavedSite}
       />}
       {page === 'Destination map' && role !== 'gatekeeper' && <DestinationLocator sites={sites} openSite={openSite}/>}
       {page === 'Destination' && !activeSite && <section className="content-page section-wrap"><div className="empty-card" role="status"><Compass size={28}/><h3>{sitesLoaded ? 'Destination unavailable' : 'Loading destination details'}</h3><p>{sitesLoaded ? 'This destination is not currently available.' : 'Fetching the current published destination details.'}</p><button className="btn btn-outline" onClick={() => go('Discover')}>Browse destinations</button></div></section>}
@@ -757,12 +758,14 @@ function LandingPage({ onExplore }: { onExplore: () => void }) {
   </section>;
 }
 
-function HomePage({ sites, destinationOptions, allCount, categories, category, setCategory, search, setSearch, visitDate, setVisitDate, openSite, signedIn, onHow, savedSiteIds, onToggleSavedSite }: {
+function HomePage({ sites, destinationOptions, allCount, categories, category, setCategory, destinationQuery, setDestinationQuery, search, setSearch, visitDate, setVisitDate, openSite, signedIn, onHow, savedSiteIds, onToggleSavedSite }: {
   sites: Site[]; destinationOptions: Site[]; allCount: number; categories: string[]; category: string;
+  destinationQuery: string; setDestinationQuery: (value: string) => void;
   setCategory: (value: string) => void; search: string; setSearch: (value: string) => void;
   visitDate: string; setVisitDate: (value: string) => void;
   openSite: (site: Site) => void; signedIn: boolean; onHow: () => void; savedSiteIds: string[]; onToggleSavedSite: (siteId: string) => void;
 }) {
+  const filteredSites = sites.filter((site) => (site.name + ' ' + site.address + ' ' + site.category).toLowerCase().includes(destinationQuery.trim().toLowerCase()));
   return <>
     <section className="hero"><HeroSlideshow/><div className="hero-copy"><span className="eyebrow"><span className="eyebrow-line"/> YOUR NEXT GREAT ESCAPE</span>
       <h1>Majestic City<br/><em>of waterfalls.</em></h1>
@@ -774,9 +777,9 @@ function HomePage({ sites, destinationOptions, allCount, categories, category, s
     </div></section>
       <div className="trust-strip"><div className="trust-strip-inner"><span><ShieldCheck size={18}/> Capacity-checked reservations</span><span><BadgeCheck size={18}/> Admission fees published by each site</span><span><TicketIcon size={18}/> QR tickets after confirmation</span><span className="strip-location"><MapPin size={16}/> Iligan City, Philippines</span></div></div>
     <section className="destinations-section section-wrap" id="destinations"><div className="section-heading"><div><span className="eyebrow"><span className="eyebrow-line"/> THE GOOD STUFF</span><h2>Places worth<br className="mobile-only"/> <em>getting lost in.</em></h2></div><Link className="text-link" to="/destinations" aria-label={'View all ' + allCount + ' published destinations'} onClick={() => setCategory('All')}>{allCount} published destinations <ArrowRight size={17}/></Link></div>
-      <div className="dest-toolbar"><p>Explore destinations published by the Tourism Office.</p><div className="filter-pills">{categories.map((item) => <button key={item} className={category === item ? 'filter-pill active' : 'filter-pill'} onClick={() => setCategory(item)}>{item}</button>)}</div></div>
-      <div className="site-grid">{sites.map((site, index) => <SiteCard key={site.id} site={site} index={index} onOpen={() => openSite(site)} isSaved={savedSiteIds.includes(site.id)} onToggleSaved={() => onToggleSavedSite(site.id)}/>)}</div>
-      {!sites.length && <div className="empty-state"><Compass size={32}/><h3>No destinations listed yet</h3><p>{allCount === 0 ? 'When a Tourism Office administrator publishes a destination, it will appear here.' : 'No places match this search. Try a different name or category.'}</p></div>}
+      <div className="dest-toolbar"><p>Explore destinations published by the Tourism Office.</p><div className="dest-filter-controls"><label className="destination-search"><Search size={15}/><input value={destinationQuery} onChange={(event) => setDestinationQuery(event.target.value)} placeholder="Search destinations" aria-label="Search destinations"/></label><div className="filter-pills">{categories.map((item) => <button key={item} className={category === item ? 'filter-pill active' : 'filter-pill'} onClick={() => setCategory(item)}>{item}</button>)}</div></div></div>
+      <div className="site-grid">{filteredSites.map((site, index) => <SiteCard key={site.id} site={site} index={index} onOpen={() => openSite(site)} isSaved={savedSiteIds.includes(site.id)} onToggleSaved={() => onToggleSavedSite(site.id)}/>)}</div>
+      {!filteredSites.length && <div className="empty-state"><Compass size={32}/><h3>No destinations listed yet</h3><p>{allCount === 0 ? 'When a Tourism Office administrator publishes a destination, it will appear here.' : 'No places match this search. Try a different name or category.'}</p></div>}
     </section>
     <section className="how-section"><div className="section-wrap how-inner"><div className="how-intro"><span className="eyebrow"><span className="eyebrow-line"/> EASY AS 1, 2, 3</span><h2>Less planning.<br/><em>More exploring.</em></h2><p>Choose a destination, reserve a live slot, and show your ticket at the gate.</p><button className="btn btn-outline" onClick={onHow}>How it works <ArrowRight size={16}/></button></div>
       <div className="steps">{[{ n: '01', title: 'Find your spot', text: 'Browse current destination details and operating hours.', icon: <Compass/> }, { n: '02', title: 'Book your visit', text: 'Choose a time with availability confirmed by the reservation service.', icon: <CalendarDays/> }, { n: '03', title: 'Show your ticket', text: 'Present your QR reservation at the destination for validation.', icon: <TicketIcon/> }].map((step) => <div className="step" key={step.n}><span className="step-icon">{step.icon}</span><span className="step-body"><span className="step-number">{step.n} /</span><b>{step.title}</b><small>{step.text}</small></span><ArrowRight className="step-arrow" size={19}/></div>)}</div></div></section>
@@ -784,15 +787,17 @@ function HomePage({ sites, destinationOptions, allCount, categories, category, s
   </>;
 }
 
-function DestinationsPage({ sites, allCount, categories, category, setCategory, openSite, savedSiteIds, onToggleSavedSite }: {
+function DestinationsPage({ sites, allCount, categories, category, setCategory, destinationQuery, setDestinationQuery, openSite, savedSiteIds, onToggleSavedSite }: {
   sites: Site[]; allCount: number; categories: string[]; category: string; setCategory: (value: string) => void;
+  destinationQuery: string; setDestinationQuery: (value: string) => void;
   openSite: (site: Site) => void; savedSiteIds: string[]; onToggleSavedSite: (siteId: string) => void;
 }) {
+  const filteredSites = sites.filter((site) => (site.name + ' ' + site.address + ' ' + site.category).toLowerCase().includes(destinationQuery.trim().toLowerCase()));
   return <section className="destinations-section destination-list-page section-wrap">
     <div className="section-heading"><div><span className="eyebrow"><span className="eyebrow-line"/> ILIGAN CITY · PLACES TO EXPLORE</span><h1>Explore <em>destinations.</em></h1></div><span className="text-link">{allCount} published destinations</span></div>
-    <div className="dest-toolbar"><p>Browse destinations published by Iligan destination teams.</p><div className="filter-pills">{categories.map((item) => <button key={item} className={category === item ? 'filter-pill active' : 'filter-pill'} onClick={() => setCategory(item)}>{item}</button>)}</div></div>
-    <div className="site-grid">{sites.map((site, index) => <SiteCard key={site.id} site={site} index={index} onOpen={() => openSite(site)} isSaved={savedSiteIds.includes(site.id)} onToggleSaved={() => onToggleSavedSite(site.id)}/>)}</div>
-    {!sites.length && <div className="empty-state"><Compass size={32}/><h3>No destinations listed yet</h3><p>{allCount === 0 ? 'When a Tourism Office administrator publishes a destination, it will appear here.' : 'No places in this category. Try another category.'}</p></div>}
+    <div className="dest-toolbar"><p>Browse destinations published by Iligan destination teams.</p><div className="dest-filter-controls"><label className="destination-search"><Search size={15}/><input value={destinationQuery} onChange={(event) => setDestinationQuery(event.target.value)} placeholder="Search destinations" aria-label="Search destinations"/></label><div className="filter-pills">{categories.map((item) => <button key={item} className={category === item ? 'filter-pill active' : 'filter-pill'} onClick={() => setCategory(item)}>{item}</button>)}</div></div></div>
+    <div className="site-grid">{filteredSites.map((site, index) => <SiteCard key={site.id} site={site} index={index} onOpen={() => openSite(site)} isSaved={savedSiteIds.includes(site.id)} onToggleSaved={() => onToggleSavedSite(site.id)}/>)}</div>
+    {!filteredSites.length && <div className="empty-state"><Compass size={32}/><h3>No destinations listed yet</h3><p>{allCount === 0 ? 'When a Tourism Office administrator publishes a destination, it will appear here.' : destinationQuery ? 'No destinations match this search. Try a different name or category.' : 'No places in this category. Try another category.'}</p></div>}
   </section>;
 }
 
