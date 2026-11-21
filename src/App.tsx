@@ -717,7 +717,7 @@ export default function App() {
             <div className="visitor-payment-options"><button type="button" className={'visitor-payment-option' + (paymentMethod === 'online' ? ' selected' : '')} aria-pressed={paymentMethod === 'online'} onClick={() => setPaymentMethod('online')}><CreditCard size={22}/><b>Pay Online</b><span>Secure PayMongo checkout with card, GCash, or QR Ph where enabled. Confirmation follows provider verification.</span></button>
               <button type="button" className={'visitor-payment-option' + (paymentMethod === 'onsite' ? ' selected' : '')} aria-pressed={paymentMethod === 'onsite'} onClick={() => setPaymentMethod('onsite')}><Banknote size={22}/><b>Pay Onsite</b><span>Reserve now and pay at the destination under its payment policy.</span></button></div>
           </div>}
-          <div className="visitor-booking-summary"><b>Booking summary</b><span>{activeSite.name} · {date}</span><span>{availableSlots[0]?.starts_at ? timeLabel(availableSlots[0].starts_at) : 'Time slot unavailable'} · {party.adults + party.children} visitors</span><span>Admission · {money(activeSite.adult_fee)} / adult · {money(activeSite.child_fee)} / child</span><strong>Total amount · {money(bookingTotal)}</strong>{bookingTotal > 0 && <small>Payment method · {paymentMethod === 'online' ? 'Pay Online' : 'Pay Onsite'}</small>}</div>
+          <div className="visitor-booking-summary"><b>Booking summary</b><span>{activeSite.name} · {date}</span><span>{party.adults + party.children} visitors</span><span>Admission · {money(activeSite.adult_fee)} / adult · {money(activeSite.child_fee)} / child</span><strong>Total amount · {money(bookingTotal)}</strong>{bookingTotal > 0 && <small>Payment method · {paymentMethod === 'online' ? 'Pay Online' : 'Pay Onsite'}</small>}</div>
           <button className="btn btn-primary btn-wide" disabled={busy || slotsLoading || !selectedSlot || completedVisitorCount(visitorInformation, activeSite.slug) !== visitorInformation.length} onClick={() => void reserve()}>{busy ? 'Please wait…' : bookingTotal <= 0 ? 'Confirm free reservation' : paymentMethod === 'online' ? 'Continue to secure payment' : 'Confirm and pay onsite'} <ArrowRight size={16}/></button>
           <p className="secure-note"><ShieldCheck size={14}/>{bookingTotal <= 0 ? 'No payment is due for this reservation.' : paymentMethod === 'online' ? 'Payment is confirmed only after PayMongo verifies it.' : 'Your reservation is confirmed now. Payment remains due at the destination.'}</p>
           </>}
@@ -866,10 +866,10 @@ function PhotoCredit({ slug }: { slug: string }) {
 
 function HowPage() {
   return <section className="content-page section-wrap"><span className="eyebrow"><span className="eyebrow-line"/> A SIMPLE WAY TO VISIT</span><h1>Plan less.<br/><em>Be there more.</em></h1>
-    <p className="page-intro">Choose a published destination and reserve an available time. No online payment is collected.</p>
+    <p className="page-intro">Choose a published destination and reserve a visit date. No online payment is collected.</p>
     <div className="how-page-grid">{[
-      ['01', 'Choose a destination', 'Review live site details, admission fees, published hours, and currently available slots.'],
-      ['02', 'Reserve a visit time', 'The booking service checks capacity and records your reservation. No payment is collected.'],
+      ['01', 'Choose a destination', 'Review destination details, admission fees, published hours, and daily capacity.'],
+      ['02', 'Reserve a visit date', 'The booking service checks capacity and records your reservation. No payment is collected.'],
       ['03', 'View your ticket', 'Present the QR reservation at the destination so gate staff can validate it.'],
     ].map(([number, title, text]) => <article key={number}><span>{number}</span><h3>{title}</h3><p>{text}</p></article>)}</div>
     <div className="config-note"><ShieldCheck size={16}/> Sign in to view reservations and tickets linked to your visitor account.</div>

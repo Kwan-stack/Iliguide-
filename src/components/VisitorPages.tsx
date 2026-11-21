@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { QRCodeSVG } from 'qrcode.react';
 import { ArrowDownToLine, ArrowRight, CalendarDays, Clock3, Heart, LogOut, Search, ShieldCheck, Ticket as TicketIcon, UserRound, BadgeCheck } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
-import { db, dateLabel, exportCsv, invokeFunction, loadOwnBookings, money, timeLabel, type Booking, type Profile, type Site, type Ticket, type TravelerProfile } from '../lib/iliguide';
+import { db, dateLabel, exportCsv, invokeFunction, loadOwnBookings, money, type Booking, type Profile, type Site, type Ticket, type TravelerProfile } from '../lib/iliguide';
 import { supabase } from '../lib/supabase';
 import { ChangePasswordForm } from './ChangePasswordForm';
 import { filterVisitorBookings, matchesBookingTab, type BookingTab } from '../lib/visitorBookingFilters';
@@ -114,7 +114,7 @@ export function VisitorPages(props: Props) {
     <div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> VISITOR ACCOUNT</span>
       <h1>{props.page === 'Tickets' ? <>Your <em>ticket.</em></> : <>Your plans, <em>all here.</em></>}</h1>
       <p>{props.page === 'Tickets' ? 'A ticket is available after your reservation is confirmed.' : 'Review reservations made with your visitor account.'}</p>
-    </div>{props.user && <button className="btn btn-outline" onClick={() => void exportCsv('iliguide-bookings.csv', bookings as unknown as Array<Record<string, unknown>>)} disabled={loading || !bookings.length}><ArrowDownToLine size={15}/> Export bookings</button>}</div>
+    </div>{props.user && <button className="btn btn-outline" onClick={() => void exportCsv('iliguide-bookings.csv', bookings.map(({ starts_at: _startsAt, ends_at: _endsAt, ...booking }) => booking as unknown as Record<string, unknown>))} disabled={loading || !bookings.length}><ArrowDownToLine size={15}/> Export bookings</button>}</div>
     <p className="config-note">Reservations and tickets here do not grant admission at the destination.</p>
     {props.booking && <BookingRecord booking={props.booking} token={props.guestAccessToken} onTicket={props.onTicket}
       cancellationReason={cancellationReason} setCancellationReason={setCancellationReason}
@@ -132,7 +132,7 @@ export function VisitorPages(props: Props) {
         <label>Sort<select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as 'newest' | 'oldest')}><option value="newest">Newest</option><option value="oldest">Oldest</option></select></label></div>
       {visibleBookings.map((item) => <article className="booking-record" key={item.booking_id}><div className="booking-record-icon"><CalendarDays size={19}/></div>
       <div className="booking-record-main"><span className="booking-reference">{item.booking_reference}</span><h3>{item.site_name}</h3>
-        <p>{dateLabel(item.slot_date)} · {timeLabel(item.starts_at)} – {timeLabel(item.ends_at)} · {item.visitor_count} visitors</p>
+        <p>{dateLabel(item.slot_date)} · {item.visitor_count} visitors</p>
         <small>{money(item.total_amount)} estimated · {item.payment_method === 'onsite' ? 'Pay onsite' : 'Online'} · {paymentStatusLabel(item.payment_status, item.total_amount)} · {item.booking_status.replace('_', ' ')}</small></div>
       <span className="status-tag">{item.booking_status.replace('_', ' ')}</span>
       <button className="link-btn" aria-expanded={expandedBooking === item.booking_id} onClick={() => setExpandedBooking(expandedBooking === item.booking_id ? '' : item.booking_id)}>{expandedBooking === item.booking_id ? 'Hide details' : 'View details'}</button>
@@ -154,7 +154,7 @@ function BookingRecord({ booking, token, onTicket, cancellationReason, setCancel
     && new Date(booking.cancellation_cutoff_at).getTime() > Date.now();
   return <article className="booking-detail-card">
     <div className="booking-detail-head"><div><span className="eyebrow"><span className="eyebrow-line"/> BOOKING {booking.booking_reference}</span><h2>{booking.site_name}</h2>
-      <p>{dateLabel(booking.slot_date)} · {timeLabel(booking.starts_at)} – {timeLabel(booking.ends_at)}</p></div>
+      <p>{dateLabel(booking.slot_date)}</p></div>
       <span className={booking.payment_status === 'paid' ? 'status-tag paid' : 'status-tag'}>{booking.booking_status.replace('_', ' ')} · {paymentStatusLabel(booking.payment_status, booking.total_amount)}</span></div>
     <div className="booking-detail-facts"><span><small>VISITORS</small><b>{booking.adult_count} adults, {booking.child_count} children{booking.pwd_count ? `, ${booking.pwd_count} PWD` : ''}</b></span><span><small>PAYMENT METHOD</small><b>{booking.payment_method === 'onsite' ? 'Pay onsite' : 'Online'}</b></span>
       <span><small>{booking.payment_status === 'not_required' ? 'ESTIMATED FEES' : 'TOTAL'}</small><b>{money(booking.total_amount)}</b></span><span><small>REFERENCE</small><b>{booking.booking_reference}</b></span></div>
@@ -218,9 +218,8 @@ function TicketView({ booking, ticket, notify }: { booking: Booking; ticket: Tic
       text('BOOKING REFERENCE', 420, 370, '700 12px Arial, sans-serif', '#71828b');
       text(booking.booking_reference, 420, 400, '700 20px Arial, sans-serif', '#1b2935');
       card('Visit date', dateLabel(ticket.booking.slot_date), 84, 438, 330);
-      card('Entry time', timeLabel(ticket.booking.starts_at) + ' – ' + timeLabel(ticket.booking.ends_at), 434, 438, 330);
-      card('Visitors', String(ticket.booking.visitor_count), 84, 548, 330);
-      card(booking.payment_status === 'not_required' ? 'Estimated fee' : 'Admission', money(ticket.booking.total_amount), 434, 548, 330);
+      card('Visitors', String(ticket.booking.visitor_count), 434, 438, 330);
+      card(booking.payment_status === 'not_required' ? 'Estimated fee' : 'Admission', money(ticket.booking.total_amount), 84, 548, 680);
       roundRect(812, 230, 306, 438, 18, '#ffffff', '#dce5ea');
       context.drawImage(qrImage, 847, 265, 236, 236);
       text('PRIVATE BOOKING QR', 872, 535, '700 14px Arial, sans-serif', '#006f93');
@@ -244,7 +243,7 @@ function TicketView({ booking, ticket, notify }: { booking: Booking; ticket: Tic
     <p>Present this QR code to the gatekeeper when you arrive.</p><div className="ticket-divider"/>
     <div className="ticket-data"><span>BOOKING REFERENCE<b>{booking.booking_reference}</b></span><span>VISITOR NAME<b>{ticket.booking.visitor_name}</b></span>
       <span>VISITOR COUNT<b>{ticket.booking.visitor_count}</b></span><span>VISIT DATE<b>{dateLabel(ticket.booking.slot_date)}</b></span>
-      <span>ENTRY TIME<b>{timeLabel(ticket.booking.starts_at)}</b></span><span>{booking.payment_status === 'not_required' ? 'ESTIMATED FEE' : 'ADMISSION'}<b>{money(ticket.booking.total_amount)}</b></span></div></div>
+      <span>{booking.payment_status === 'not_required' ? 'ESTIMATED FEE' : 'ADMISSION'}<b>{money(ticket.booking.total_amount)}</b></span></div></div>
     <div className="ticket-qr"><QRCodeSVG value={ticket.token} size={188} level="H" includeMargin aria-label="Secure Iliguide entry ticket QR code"/>
       <small>This private QR code contains an opaque signed ticket token, not visitor contact information.</small>
       <button className="btn btn-outline" onClick={download}><ArrowDownToLine size={15}/> Download PNG</button></div></article>;

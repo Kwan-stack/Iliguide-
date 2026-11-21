@@ -30,7 +30,7 @@ export async function sendTemplate(to: string, templateId: number, params: Recor
 
 export async function sendBookingEmail(admin: SupabaseClient, bookingId: string, event: EmailEvent, requestId?: string) {
   const { data: booking, error } = await admin.from('bookings')
-    .select('id,booking_reference,visitor_name,visitor_email,visitor_count,total_amount,payment_status,booking_status,tourism_sites(name),site_slots(slot_date,starts_at)')
+    .select('id,booking_reference,visitor_name,visitor_email,visitor_count,total_amount,payment_status,booking_status,tourism_sites(name),site_slots(slot_date)')
     .eq('id', bookingId).single();
   if (error || !booking) throw new Error(`Booking email data is unavailable: ${error?.message ?? 'missing row'}`);
   if (!booking.visitor_email) return { sent: false, reason: 'no_email' };
@@ -65,7 +65,7 @@ export async function sendBookingEmail(admin: SupabaseClient, bookingId: string,
     site: escapeHtml(String(site?.name ?? 'your destination')),
     reference: escapeHtml(String(booking.booking_reference)),
     date: slot?.slot_date ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'long', timeZone: 'Asia/Manila' }).format(new Date(`${slot.slot_date}T12:00:00+08:00`)) : '',
-    time: escapeHtml(String(slot?.starts_at ?? '').slice(0, 5)),
+    time: 'No fixed time; visit during operating hours.',
     visitors: String(booking.visitor_count),
     amount: `PHP ${Number(booking.total_amount).toFixed(2)}`,
     decision: escapeHtml(decision),
