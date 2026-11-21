@@ -1,9 +1,9 @@
 .office-app-shell{min-height:100vh;overflow-x:hidden;background:#f5f8fa;color:var(--ink,#1b2935)}
 .office-app-topbar{height:76px;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:0 max(4vw,24px) 0 10px;border-bottom:1px solid #e5ecef;background:#fff;position:sticky;top:0;z-index:30}
 .office-app-brand{display:flex;align-items:center;min-width:0;color:var(--ink,#1b2935)}
-.office-app-brand-lockup{display:grid;justify-items:start;gap:0;line-height:1}
+.office-app-brand-lockup{display:flex;flex-direction:column;align-items:center;width:max-content;gap:0;line-height:1}
 .office-app-brand-lockup img{display:block;width:128px;height:48px;object-fit:contain}
-.office-app-brand-lockup small{color:var(--muted,#6b7c89);font:700 7px/1 'DM Sans',sans-serif;letter-spacing:1.5px}
+.office-app-brand-lockup small{width:100%;color:var(--muted,#6b7c89);font:700 7px/1 'DM Sans',sans-serif;letter-spacing:1.5px;text-align:center}
 .office-app-mark{width:38px;height:38px;display:grid;place-items:center;flex:none;border-radius:12px;background:linear-gradient(140deg,#009bce,#007da4);box-shadow:0 5px 12px #009bce30}
 .office-app-mark img{width:24px;height:24px;object-fit:contain}
 .office-app-actions{display:flex;align-items:center;gap:16px}
