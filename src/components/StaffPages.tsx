@@ -9,6 +9,7 @@ import { paymentStatusLabel } from '../lib/paymentStatus';
 import { useSilentLoad } from '../lib/useSilentLoad';
 import { VisitorInformationForm } from './VisitorInformationForm';
 import { ChangePasswordForm } from './ChangePasswordForm';
+import { TimePicker } from './TimePicker';
 import DestinationMap from './DestinationMap';
 import type { GatekeeperPage } from '../lib/gatekeeperRoutes';
 import './DutyRoster.css';
@@ -141,6 +142,9 @@ function OverviewPage(props: Props) {
   const [rows, setRows] = useState<Array<Record<string, any>>>([]);
   const [attendanceRows, setAttendanceRows] = useState<Array<{ site_id: string; scanned_at: string; visitor_count: number }>>([]);
   const [monthDate, setMonthDate] = useState(() => phToday().slice(0, 7));
+  const [selectedYear, setSelectedYear] = useState(() => Number(phToday().slice(0, 4)));
+  const [availableYears, setAvailableYears] = useState<number[]>([Number(phToday().slice(0, 4))]);
+  const [yearlyBookingRows, setYearlyBookingRows] = useState<Array<{ site_id: string; report_date: string; visitor_count: number }>>([]);
   const [visibleSites, setVisibleSites] = useState<string[]>([]);
   const [networkSiteId, setNetworkSiteId] = useState('all');
   const [todayMetrics, setTodayMetrics] = useState<Record<string, any> | null>(null);
@@ -156,7 +160,7 @@ function OverviewPage(props: Props) {
   const site = isGatekeeper ? assignedGatekeeperSite(props) : props.sites.find((item) => item.id === props.siteId);
   const dashboardSites = props.role === 'tourism_office' ? props.sites.filter((item) => networkSiteId === 'all' || item.id === networkSiteId) : site ? [site] : [];
   const siteScope = props.role === 'tourism_office' ? props.sites.map((item) => item.id).join(',') : site?.id ?? props.siteId;
-  const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${siteScope}:${networkSiteId}:${monthStart}`);
+  const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${siteScope}:${networkSiteId}:${networkSiteId === 'all' ? selectedYear : monthStart}`);
   const refresh = useCallback(async () => {
     const request = ++requestVersion.current;
     try {
@@ -200,6 +204,28 @@ function OverviewPage(props: Props) {
         }
         const metrics = await query.order('report_date', { ascending: true });
         if (metrics.error) throw metrics.error;
+        let yearlyRows: Array<{ site_id: string; report_date: string; expected_visitor_count: number }> = [];
+        let years: number[] = [];
+        if (props.role === 'tourism_office' && networkSiteId === 'all' && props.sites.length) {
+          const siteIds = props.sites.map((item) => item.id);
+          for (let offset = 0; ; offset += 1000) {
+            const page = await db().from('site_visit_daily_metrics').select('site_id,report_date,expected_visitor_count')
+              .in('site_id', siteIds).gte('report_date', `${selectedYear}-01-01`).lt('report_date', `${selectedYear + 1}-01-01`)
+              .order('report_date').range(offset, offset + 999);
+            if (page.error) throw page.error;
+            yearlyRows.push(...(page.data ?? []) as typeof yearlyRows);
+            if ((page.data?.length ?? 0) < 1000) break;
+          }
+          const seenYears = new Set<number>();
+          for (let offset = 0; ; offset += 1000) {
+            const page = await db().from('site_visit_daily_metrics').select('report_date')
+              .in('site_id', siteIds).gt('expected_visitor_count', 0).order('report_date').range(offset, offset + 999);
+            if (page.error) throw page.error;
+            for (const row of page.data ?? []) seenYears.add(Number(String(row.report_date).slice(0, 4)));
+            if ((page.data?.length ?? 0) < 1000) break;
+          }
+          years = [...seenYears].sort((a, b) => b - a);
+        }
         const attendanceRows: Array<{ site_id: string; scanned_at: string; booking: any }> = [];
         for (let offset = 0; ; offset += 1000) {
           const page = await attendanceQuery.order('scanned_at').range(offset, offset + 999);
@@ -209,29 +235,38 @@ function OverviewPage(props: Props) {
         }
         if (request !== requestVersion.current) return;
         setRows((metrics.data ?? []) as Array<Record<string, any>>);
+        setYearlyBookingRows(yearlyRows.map((row) => ({ site_id: row.site_id, report_date: row.report_date, visitor_count: Number(row.expected_visitor_count ?? 0) })));
+        if (years.length) setAvailableYears(years);
         setAttendanceRows(attendanceRows.map((row) => ({ site_id: row.site_id, scanned_at: row.scanned_at, visitor_count: Number(Array.isArray(row.booking) ? row.booking[0]?.visitor_count : row.booking?.visitor_count ?? 0) })));
       }
     } catch (error) {
       if (request === requestVersion.current) props.notify(error instanceof Error ? error.message : 'Could not load workspace metrics.');
     } finally { if (request === requestVersion.current) finishLoading(); }
-  }, [finishLoading, isGatekeeper, monthDate, monthEnd, monthStart, networkSiteId, props.notify, props.role, props.siteId, site?.id, siteScope]);
+  }, [finishLoading, isGatekeeper, monthDate, monthEnd, monthStart, networkSiteId, props.notify, props.role, props.siteId, props.sites, selectedYear, site?.id, siteScope]);
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => { setVisibleSites(dashboardSites.map((item) => item.id)); }, [dashboardSites.map((item) => item.id).join(',')]);
   const metric = (key: string) => rows.reduce((sum, row) => sum + Number(row[key] ?? 0), 0);
   const gatekeeperDailyCounts = Array.from({ length: monthEnd }, (_, index) => gatekeeperAttendance.filter((row) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date(row.scanned_at)) === `${monthDate}-${String(index + 1).padStart(2, '0')}`).reduce((sum, row) => sum + row.visitor_count, 0));
   const gatekeeperDailyMax = Math.max(1, ...gatekeeperDailyCounts);
-  const dailyAttendance = dashboardSites.map((item) => ({ site: item, counts: Array.from({ length: monthEnd }, (_, index) => attendanceRows.filter((row) => row.site_id === item.id && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date(row.scanned_at)) === `${monthDate}-${String(index + 1).padStart(2, '0')}`).reduce((sum, row) => sum + row.visitor_count, 0)) }));
   const monthlyVisitors = attendanceRows.reduce((sum, row) => sum + row.visitor_count, 0);
   const reportMonthDate = rows.filter((row) => String(row.report_date).startsWith(monthDate));
   const lastDays = reportMonthDate.slice(-14);
   const weeklyBookings = Array.from({ length: Math.ceil(monthEnd / 7) }, (_, index) => ({ week: index + 1, count: reportMonthDate.filter((row) => Math.floor((Number(String(row.report_date).slice(8)) - 1) / 7) === index).reduce((sum, row) => sum + Number(row.booking_count ?? 0), 0) }));
   const maxVisitors = Math.max(1, ...lastDays.map((row) => Number(row.visitor_count ?? 0)));
+  const monthlyBookingSeries = dashboardSites.map((destination) => ({
+    site: destination,
+    counts: Array.from({ length: 12 }, (_, month) => yearlyBookingRows.filter((row) => row.site_id === destination.id && Number(row.report_date.slice(5, 7)) === month + 1).reduce((sum, row) => sum + row.visitor_count, 0)),
+  }));
+  const monthlyBookingMax = Math.max(0, ...monthlyBookingSeries.flatMap((series) => series.counts));
+  const monthlyBookingAxisMax = monthlyBookingMax || 1;
+  const monthlyBookingTicks = monthlyBookingMax === 0 ? [0] : [...new Set(Array.from({ length: 5 }, (_, index) => Math.round(monthlyBookingMax * index / 4)))];
+  const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return <section className={'dashboard-page section-wrap' + (isGatekeeper ? ' gatekeeper-overview' : '')}>
     <div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> {props.role.replace('_', ' ').toUpperCase()}</span>
       <h1>{isGatekeeper ? <>{site?.name ?? 'Gatekeeper'} <em>Dashboard</em></> : props.role === 'tourism_office' ? <>Tourism <em>network.</em></> : <>Site <em>overview.</em></>}
       </h1><p>{isGatekeeper ? 'Destination operations · ' + phToday()
         : 'Live records for ' + (props.role === 'tourism_office' ? (dashboardSites.length === props.sites.length ? 'all accessible destinations.' : dashboardSites[0]?.name ?? 'the selected destination.') : site?.name ?? 'your assigned destination.')}</p></div>
-      <div className="header-actions">{!isGatekeeper && (props.role === 'tourism_office' ? <select aria-label="Destination filter" value={networkSiteId} onChange={(event) => setNetworkSiteId(event.target.value)}><option value="all">All</option>{props.sites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <SiteSelector {...props}/>)}<label className="dashboard-month-filter">Month<input type="month" value={monthDate} onChange={(event) => event.target.value && setMonthDate(event.target.value)}/></label><button className="btn btn-outline" onClick={() => void refresh()}><RefreshCw size={15}/> Refresh</button></div></div>
+      <div className="header-actions">{!isGatekeeper && (props.role === 'tourism_office' ? <select aria-label="Destination filter" value={networkSiteId} onChange={(event) => setNetworkSiteId(event.target.value)}><option value="all">All</option>{props.sites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <SiteSelector {...props}/>)}{props.role === 'tourism_office' && networkSiteId === 'all' ? <label className="dashboard-month-filter">Year<select aria-label="Report year" value={selectedYear} onChange={(event) => setSelectedYear(Number(event.target.value))}>{[...new Set([selectedYear, ...availableYears])].sort((a, b) => b - a).map((year) => <option key={year} value={year}>{year}</option>)}</select></label> : <label className="dashboard-month-filter">Month<input type="month" value={monthDate} onChange={(event) => event.target.value && setMonthDate(event.target.value)}/></label>}<button className="btn btn-outline" onClick={() => void refresh()}><RefreshCw size={15}/> Refresh</button></div></div>
     {isGatekeeper ? <>
       <div className="stats-grid gatekeeper-primary-stats">{[
         [liveOccupancy?.current_visitor_count ?? '—', 'Currently inside', Users],
@@ -266,16 +301,15 @@ function OverviewPage(props: Props) {
       [metric('online_count').toLocaleString(), 'Online bookings'],
       [metric('walk_in_count').toLocaleString(), 'Walk-in bookings'],
     ].map(([value, label]) => <div key={label}><b>{loading ? '…' : value}</b><small>{label}</small></div>)}</div>
-      <div className="dashboard-grid"><div className="chart-card"><div className="card-heading"><span><small>RECORDED VISITS · ASIA/MANILA</small><h3>{props.role === 'tourism_office' ? 'Daily Visitor Activity by Destination' : 'Visitor activity'}</h3></span><CalendarDays size={18}/></div>
-        {props.role === 'tourism_office' ? loading ? <div className="empty-inline">Loading recorded visits…</div> : !dashboardSites.length ? <div className="empty-inline">No destinations available.</div> : <>
-          <div className="network-chart-scroll"><svg className="network-visitor-chart" viewBox={`0 0 720 260`} role="img" aria-label={`Daily visitor activity by destination for ${monthDate}`}>
-            {[0, 1, 2, 3].map((step) => { const max = Math.max(1, ...dailyAttendance.flatMap((series) => series.counts)); const value = Math.ceil(max * (3 - step) / 3); const y = 218 - step * 62; return <g key={step}><line x1="46" x2="704" y1={y} y2={y} className="network-chart-grid"/><text x="38" y={y + 4} textAnchor="end" className="network-chart-label">{value}</text></g>; })}
-            {Array.from({ length: monthEnd }, (_, index) => index + 1).map((day) => { const x = 48 + (day - 1) * 654 / Math.max(1, monthEnd - 1); return <g key={day}>{(day === 1 || day % 5 === 0 || day === monthEnd) && <text x={x} y="243" textAnchor="middle" className="network-chart-label">{day}</text>}</g>; })}
-            {dailyAttendance.map((series, seriesIndex) => { const max = Math.max(1, ...dailyAttendance.flatMap((item) => item.counts)); const color = ['#087fa4', '#36a275', '#e17832', '#d6a52f'][seriesIndex % 4]; const points = series.counts.map((value, index) => `${48 + index * 654 / Math.max(1, monthEnd - 1)},${218 - value / max * 186}`).join(' '); return visibleSites.includes(series.site.id) && <g key={series.site.id}><polyline points={points} fill="none" stroke={color} strokeWidth="2.5"/>{series.counts.map((value, index) => <circle key={index} cx={48 + index * 654 / Math.max(1, monthEnd - 1)} cy={218 - value / max * 186} r="3" fill={color}><title>{`${series.site.name} · ${monthDate}-${String(index + 1).padStart(2, '0')}: ${value} visitors`}</title></circle>)}</g>; })}
-          </svg></div><div className="network-chart-legend">{dailyAttendance.map((series, index) => <button key={series.site.id} aria-pressed={visibleSites.includes(series.site.id)} onClick={() => setVisibleSites((current) => current.includes(series.site.id) ? current.filter((id) => id !== series.site.id) : [...current, series.site.id])} style={{ opacity: visibleSites.includes(series.site.id) ? 1 : .45 }}><i style={{ background: ['#087fa4', '#36a275', '#e17832', '#d6a52f'][index % 4] }}/>{series.site.name}</button>)}</div>
-          <p className="report-note"><ShieldCheck size={15}/> Counts use recorded ticket entries, not bookings. Monthly total combines checked-in visitors for the selected destination scope.</p>
-          <div className="card-heading network-weekly-heading"><span><small>MONTHLY REPORT · BOOKINGS</small><h3>Weekly booking activity</h3></span></div>
-          <div className="network-weekly-chart">{weeklyBookings.map((week) => { const max = Math.max(1, ...weeklyBookings.map((item) => item.count)); return <div key={week.week}><i style={{ height: `${Math.max(2, week.count / max * 100)}%` }} title={`Week ${week.week}: ${week.count} bookings`}/><small>Week {week.week}</small><b>{week.count}</b></div>; })}</div></> : !loading && lastDays.length ? <div className="bar-chart">{lastDays.map((row) => <div className="bar-column" key={row.report_date}><i style={{ height: (Number(row.visitor_count) / maxVisitors * 100) + '%' }}/><small>{String(row.report_date).slice(8)}</small></div>)}</div>
+      <div className="dashboard-grid"><div className="chart-card"><div className="card-heading"><span><small>{props.role === 'tourism_office' ? 'SCHEDULED BOOKINGS · ASIA/MANILA' : 'RECORDED VISITS · ASIA/MANILA'}</small><h3>{props.role === 'tourism_office' ? networkSiteId === 'all' ? 'Monthly Booking Activity by Destination' : 'Weekly Booking Activity' : 'Visitor activity'}</h3></span><CalendarDays size={18}/></div>
+        {props.role === 'tourism_office' ? networkSiteId === 'all' ? loading ? <div className="empty-inline">Loading booking activity…</div> : !dashboardSites.length ? <div className="empty-inline">No destinations available.</div> : <>
+          <div className="network-chart-scroll"><svg className="network-visitor-chart" viewBox="0 0 720 280" role="img" aria-label={`Monthly number of people booked by destination for ${selectedYear}`}>
+            {monthlyBookingTicks.map((value) => { const y = 218 - value / monthlyBookingAxisMax * 178; return <g key={value}><line x1="48" x2="704" y1={y} y2={y} className="network-chart-grid"/><text x="38" y={y + 4} textAnchor="end" className="network-chart-label">{value}</text></g>; })}
+            {monthLabels.map((month, index) => { const x = 48 + index * 656 / 11; return <text key={month} x={x} y="243" textAnchor="middle" className="network-chart-label">{month}</text>; })}
+            <text x="376" y="270" textAnchor="middle" className="network-chart-label">Month</text><text x="12" y="129" textAnchor="middle" transform="rotate(-90 12 129)" className="network-chart-label">Number of People Booking</text>
+            {monthlyBookingSeries.map((series, seriesIndex) => { const color = ['#087fa4', '#36a275', '#e17832', '#d6a52f'][seriesIndex % 4]; const points = series.counts.map((value, index) => `${48 + index * 656 / 11},${218 - value / monthlyBookingAxisMax * 178}`).join(' '); return visibleSites.includes(series.site.id) && <g key={series.site.id}><polyline points={points} fill="none" stroke={color} strokeWidth="2.5"/>{series.counts.map((value, index) => <circle key={monthLabels[index]} cx={48 + index * 656 / 11} cy={218 - value / monthlyBookingAxisMax * 178} r="3" fill={color}><title>{`${monthLabels[index]} ${selectedYear} · ${series.site.name}: ${value} people booked`}</title></circle>)}</g>; })}
+          </svg></div><div className="network-chart-legend">{monthlyBookingSeries.map((series, index) => <button key={series.site.id} aria-pressed={visibleSites.includes(series.site.id)} onClick={() => setVisibleSites((current) => current.includes(series.site.id) ? current.filter((id) => id !== series.site.id) : [...current, series.site.id])} style={{ opacity: visibleSites.includes(series.site.id) ? 1 : .45 }}><i style={{ background: ['#087fa4', '#36a275', '#e17832', '#d6a52f'][index % 4] }}/>{series.site.name}</button>)}</div>
+          <p className="report-note"><ShieldCheck size={15}/> Monthly totals count visitors in confirmed or completed bookings by scheduled visit date. Cancelled and pending bookings are excluded{monthlyBookingMax === 0 ? `; no valid bookings recorded in ${selectedYear}.` : '.'}</p></> : loading ? <div className="empty-inline">Loading weekly bookings…</div> : <><div className="network-weekly-chart">{weeklyBookings.map((week) => { const max = Math.max(1, ...weeklyBookings.map((item) => item.count)); return <div key={week.week}><i style={{ height: `${Math.max(2, week.count / max * 100)}%` }} title={`Week ${week.week}: ${week.count} bookings`}/><small>Week {week.week}</small><b>{week.count}</b></div>; })}</div><p className="report-note">Bookings grouped by reservation date for {monthDate}.</p></> : !loading && lastDays.length ? <div className="bar-chart">{lastDays.map((row) => <div className="bar-column" key={row.report_date}><i style={{ height: (Number(row.visitor_count) / maxVisitors * 100) + '%' }}/><small>{String(row.report_date).slice(8)}</small></div>)}</div>
           : <div className="empty-inline">{loading ? 'Loading records…' : 'No booking records for this month.'}</div>}
         {props.role !== 'tourism_office' && <p className="report-note"><ShieldCheck size={15}/> Counts come from confirmed database records and are scoped by staff permissions.</p>}</div>
         <div className="activity-card"><div className="card-heading"><span><small>WORKSPACE</small><h3>Quick actions</h3></span><Activity size={18}/></div>
@@ -569,12 +603,12 @@ function SchedulePage(props: Props) {
     {!props.siteId && <div className="empty-card"><MapPin size={28}/><h3>No assigned destination</h3><p>Ask the Tourism Office to assign a site administrator account.</p></div>}
     {!!props.siteId && <><div className="schedule-card"><div className="schedule-head"><span><small>PHILIPPINE TIME · ASIA/MANILA</small><h3>Weekly operating hours</h3></span><button className="btn btn-primary" disabled={loading || saving} onClick={() => void saveHours()}>{saving ? 'Saving…' : 'Save hours'} <Check size={15}/></button></div>
       {loading ? <div className="empty-inline" role="status">Loading current operating hours…</div> : hours.map((hour) => <div className="schedule-row" key={hour.weekday}><label className="day-switch"><input type="checkbox" checked={!hour.is_closed} onChange={(event) => changeHour(hour.weekday, { is_closed: !event.target.checked })}/>{dayNames[hour.weekday]}</label>
-        {hour.is_closed ? <span className="closed-label">Closed</span> : <><input type="time" value={hour.opens_at} onChange={(event) => changeHour(hour.weekday, { opens_at: event.target.value })}/><span>to</span><input type="time" value={hour.closes_at} onChange={(event) => changeHour(hour.weekday, { closes_at: event.target.value })}/></>}
+        {hour.is_closed ? <span className="closed-label">Closed</span> : <><TimePicker value={hour.opens_at} onChange={(opens_at) => changeHour(hour.weekday, { opens_at })}/><span>to</span><TimePicker value={hour.closes_at} onChange={(closes_at) => changeHour(hour.weekday, { closes_at })}/></>}
       </div>)}</div>
       <div className="schedule-card"><div className="schedule-head"><span><small>DATE-SPECIFIC CAPACITY</small><h3>Add a visit slot</h3></span></div>
         <form className="slot-admin-form" onSubmit={(event) => void addSlot(event)}><label>Date<input type="date" min={phToday()} value={slotForm.date} onChange={(event) => setSlotForm({ ...slotForm, date: event.target.value })} required/></label>
-          <label>Starts<input type="time" value={slotForm.starts_at} onChange={(event) => setSlotForm({ ...slotForm, starts_at: event.target.value })} required/></label>
-          <label>Ends<input type="time" value={slotForm.ends_at} onChange={(event) => setSlotForm({ ...slotForm, ends_at: event.target.value })} required/></label>
+          <label>Starts<TimePicker value={slotForm.starts_at} onChange={(starts_at) => setSlotForm({ ...slotForm, starts_at })} required/></label>
+          <label>Ends<TimePicker value={slotForm.ends_at} onChange={(ends_at) => setSlotForm({ ...slotForm, ends_at })} required/></label>
           <label>Capacity<input type="number" min="1" max="100000" value={slotForm.capacity} onChange={(event) => setSlotForm({ ...slotForm, capacity: event.target.value })} required/></label>
           <button className="btn btn-primary" disabled={loading || saving}>{saving ? 'Saving…' : 'Add slot'} <Plus size={15}/></button></form>
         {!slots.length && <div className="empty-inline">{loading ? 'Loading…' : 'No upcoming slots have been added.'}</div>}
@@ -1223,7 +1257,7 @@ function SitesPage(props: Props) {
       <div className="form-two"><label>Max visitors / booking<input type="number" min="1" max="500" required value={draft.max_per_booking} onChange={(event) => change('max_per_booking', event.target.value)}/></label>
         <label>Cancellation cutoff (hours)<input type="number" min="0" max="8760" required value={draft.cancellation_cutoff_hours} onChange={(event) => change('cancellation_cutoff_hours', event.target.value)}/></label></div>
       {!editing && <><fieldset className="operating-days"><legend>Operating days</legend>{dayNames.map((day, weekday) => <label key={day}><input type="checkbox" checked={days.includes(weekday)} onChange={(event) => setDays(event.target.checked ? [...days, weekday] : days.filter((value) => value !== weekday))}/>{day.slice(0, 3)}</label>)}</fieldset>
-        <div className="form-two"><label>Opens at<input type="time" value={opens} onChange={(event) => setOpens(event.target.value)} required/></label><label>Closes at<input type="time" value={closes} onChange={(event) => setCloses(event.target.value)} required/></label></div></>}
+        <div className="form-two"><label>Opens at<TimePicker value={opens} onChange={setOpens} required/></label><label>Closes at<TimePicker value={closes} onChange={setCloses} required/></label></div></>}
       <button className="btn btn-primary btn-wide" disabled={loading}>{loading ? 'Saving…' : editing ? 'Save destination' : 'Create official destination'} <Check size={15}/></button>
       {editing && <button type="button" className="link-btn form-cancel" onClick={() => { setEditing(''); setDraft(emptyDraft()); }}>Cancel edit</button>}
       {!editing && <p className="field-hint">Once saved, the destination appears publicly. Add visit slots so visitors can book a time.</p>}
@@ -1267,7 +1301,7 @@ function DutyRosterPanel(props: Props & { site: Site }) {
   useEffect(() => { void refresh(); }, [refresh]);
   const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (!form.primary || form.end <= form.start) { props.notify('Choose a primary gatekeeper and valid shift hours.'); return; }
+    if (!form.primary || !form.start || !form.end || form.end <= form.start) { props.notify('Choose a primary gatekeeper and valid shift hours.'); return; }
     setSaving(true);
     try {
       const { error } = await db().rpc('create_gatekeeper_duty', {
@@ -1292,8 +1326,8 @@ function DutyRosterPanel(props: Props & { site: Site }) {
     <div className="duty-roster-filter"><label>Show roster for<input type="date" value={filterDate} onChange={(event) => setFilterDate(event.target.value)}/></label><span>{props.site.name}</span></div>
     <form className="duty-roster-form" onSubmit={(event) => void save(event)}>
       <label>Date<input type="date" min={phToday()} value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} required/></label>
-      <label>Start<input type="time" value={form.start} onChange={(event) => setForm({ ...form, start: event.target.value })} required/></label>
-      <label>End<input type="time" value={form.end} onChange={(event) => setForm({ ...form, end: event.target.value })} required/></label>
+      <label>Start<TimePicker value={form.start} onChange={(start) => setForm({ ...form, start })} required/></label>
+      <label>End<TimePicker value={form.end} onChange={(end) => setForm({ ...form, end })} required/></label>
       <label>Primary gatekeeper<select value={form.primary} onChange={(event) => setForm({ ...form, primary: event.target.value, supports: form.supports.filter((id) => id !== event.target.value) })} required><option value="">Choose primary</option>{gatekeepers.filter((person) => person.profile_id !== props.user?.id).map((person) => <option key={person.profile_id} value={person.profile_id}>{profileName(person.profiles)}</option>)}</select></label>
       {!!supportOptions.length && <fieldset><legend>Support gatekeepers</legend>{supportOptions.map((person) => <label key={person.profile_id}><input type="checkbox" checked={form.supports.includes(person.profile_id)} onChange={(event) => setForm({ ...form, supports: event.target.checked ? [...form.supports, person.profile_id] : form.supports.filter((id) => id !== person.profile_id) })}/>{profileName(person.profiles)}</label>)}</fieldset>}
       <button className="btn btn-primary" disabled={saving || loading || !gatekeepers.length}>{saving ? 'Scheduling…' : 'Schedule duty'} <Check size={15}/></button>
