@@ -2,6 +2,7 @@
 .duty-roster { margin-top: 1.25rem; padding: 1.1rem; border: 1px solid #d8e5ea; border-radius: 14px; background: #fff; }
 .duty-roster-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin-top: .8rem; align-items: end; }
 .duty-roster-form label, .duty-roster-form fieldset { display: grid; gap: .35rem; margin: 0; font-size: .78rem; font-weight: 700; color: #415d6b; }
+.duty-roster-form .time-picker-trigger { min-height: 23px; height: 23px; padding: 2px 7px; border-radius: 4px; font-size: .78rem; }
 .duty-roster-form fieldset { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); padding: .65rem; border: 1px solid #dce9ed; border-radius: 9px; }
 .duty-roster-form legend { padding: 0 .25rem; font-size: .75rem; color: #587481; }
 .duty-roster-form fieldset label { display: flex; align-items: center; gap: .35rem; }
