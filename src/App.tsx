@@ -168,12 +168,7 @@ export default function App() {
       return;
     }
     try {
-      let nextProfile = await loadProfile(nextUser.id);
-      if (nextProfile && nextUser.email_confirmed_at && nextProfile.email !== nextUser.email) {
-        const { error } = await db().from('profiles').update({ email: nextUser.email }).eq('id', nextUser.id);
-        if (error) console.warn('Could not sync confirmed email to profile', error);
-        else nextProfile = { ...nextProfile, email: nextUser.email ?? null };
-      }
+      const nextProfile = await loadProfile(nextUser.id);
       setProfile(nextProfile);
       if (nextProfile?.account_status === 'active' && nextProfile.role !== 'visitor') {
         void invokeFunction<{ accepted: number }>('accept-staff-invitation', {}).catch((error) => {

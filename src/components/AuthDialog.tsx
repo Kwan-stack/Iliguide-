@@ -66,6 +66,11 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
       setBusy(false);
       return;
     }
+    if (mode === 'reset' && newPassword !== confirmPassword) {
+      setError('New passwords do not match.');
+      setBusy(false);
+      return;
+    }
     if (!supabase) {
       setError('Add the Supabase project URL and publishable key to .env.local first.');
       setBusy(false);
@@ -110,12 +115,11 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
         if (resetError) throw resetError;
         setNotice('If an account uses that email, Supabase will send a password reset link.');
       } else {
-        await completePasswordReset(supabase.auth, new URLSearchParams(window.location.search).get('code'), newPassword);
+        const callbackParams = new URLSearchParams(window.location.search);
+        await completePasswordReset(supabase.auth, callbackParams.get('code'), newPassword, callbackParams.get('token_hash'));
         const callbackUrl = new URL(window.location.href);
-        if (callbackUrl.searchParams.has('code')) {
-          callbackUrl.searchParams.delete('code');
-          window.history.replaceState(window.history.state, '', callbackUrl.toString());
-        }
+        for (const key of ['code', 'token_hash', 'type']) callbackUrl.searchParams.delete(key);
+        window.history.replaceState(window.history.state, '', callbackUrl.toString());
         setNewPassword('');
         setPassword('');
         onSuccess();
@@ -159,7 +163,10 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
           <div className="auth-policy-copy"><b>Reservation terms</b><p>Reservations record your selected destination and time. The fee shown is based on the destination’s published rates; no online payment is collected. Present the QR ticket at the destination for validation. Admission follows the destination’s current rules.</p><b>Privacy notice</b><p>Account details, reservation history, and notifications are stored to provide this service. Profile photos are optional. Pending selections and saved destinations stay in this browser. No payment details are collected.</p></div>
           <label className="auth-consent"><input required type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)}/><span>I agree to the reservation terms and have read the privacy notice. <span className="required-mark" aria-hidden="true">*</span></span></label>
         </>}
-        {mode === 'reset' && <label><span>New password <span className="required-mark" aria-hidden="true">*</span></span><span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="At least 8 characters"/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>}
+        {mode === 'reset' && <>
+          <label><span>New password <span className="required-mark" aria-hidden="true">*</span></span><span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="At least 8 characters"/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
+          <label><span>Confirm new password <span className="required-mark" aria-hidden="true">*</span></span><span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)}/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
+        </>}
         {error && <p className="form-error" role="alert">{error}</p>}
         {notice && <p className="form-success" role="status">{notice}</p>}
         <button className="btn btn-primary btn-wide" type="submit" disabled={busy}>

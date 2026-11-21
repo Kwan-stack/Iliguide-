@@ -4,6 +4,11 @@ project_id = "xiyybsijpdrrkufwphuv"
 site_url = "https://iliguide.vercel.app/"
 additional_redirect_urls = ["https://iliguide.vercel.app/**", "http://localhost:3000/**"]
 
+[auth.email]
+enable_confirmations = true
+max_frequency = "1m"
+otp_length = 8
+
 [functions.paymongo-checkout]
 verify_jwt = false
 
