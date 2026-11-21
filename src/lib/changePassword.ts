@@ -1,6 +1,20 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 
 type PasswordAuth = Pick<SupabaseClient['auth'], 'signInWithPassword' | 'updateUser'>;
+type RecoveryAuth = Pick<SupabaseClient['auth'], 'getSession' | 'exchangeCodeForSession' | 'updateUser'>;
+
+export async function completePasswordReset(auth: RecoveryAuth, code: string | null, newPassword: string): Promise<void> {
+  let { data: { session }, error } = await auth.getSession();
+  if (error) throw error;
+  if (!session && code) {
+    const result = await auth.exchangeCodeForSession(code);
+    if (result.error) throw result.error;
+    session = result.data.session;
+  }
+  if (!session) throw new Error('Password reset session is missing. Request a new reset link and open it in the same browser.');
+  const { error: updateError } = await auth.updateUser({ password: newPassword });
+  if (updateError) throw updateError;
+}
 
 export async function changePassword(
   auth: PasswordAuth,

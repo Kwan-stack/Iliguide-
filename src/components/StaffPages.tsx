@@ -626,9 +626,9 @@ function PeoplePage(props: Props) {
     <div className="header-actions">{props.role === 'tourism_office' && <SiteSelector {...props}/>}<button className="btn btn-outline" onClick={() => void refresh()}><RefreshCw size={15}/></button></div></div>
     {props.role === 'site_admin' && <div className="workspace-panel-select"><label>Active destination <SiteSelector {...props}/></label></div>}
     <div className="schedule-card"><div className="schedule-head"><span><small>ROLE-BASED ACCESS</small><h3>Invite a team member</h3></span><Users size={18}/></div>
-      <form className="invite-form" onSubmit={(event) => void invite(event)}><label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required maxLength={254}/></label>
-        <label>Staff role<select value={inviteRole} onChange={(event) => setInviteRole(event.target.value)}><option value="gatekeeper">Gatekeeper</option>{props.role === 'tourism_office' && <><option value="site_admin">Site administrator</option><option value="tourism_office">Tourism Office</option></>}</select></label>
-        {inviteRole !== 'tourism_office' && props.role === 'tourism_office' && <label>Destination<SiteSelector {...props}/></label>}
+      <form className="invite-form" onSubmit={(event) => void invite(event)}><label><span>Email address <span className="required-mark" aria-hidden="true">*</span></span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required maxLength={254}/></label>
+        <label><span>Staff role <span className="required-mark" aria-hidden="true">*</span></span><select value={inviteRole} onChange={(event) => setInviteRole(event.target.value)}><option value="gatekeeper">Gatekeeper</option>{props.role === 'tourism_office' && <><option value="site_admin">Site administrator</option><option value="tourism_office">Tourism Office</option></>}</select></label>
+        {inviteRole !== 'tourism_office' && props.role === 'tourism_office' && <label><span>Destination <span className="required-mark" aria-hidden="true">*</span></span><SiteSelector {...props}/></label>}
         <button className="btn btn-primary" disabled={props.busy || !props.siteId && inviteRole !== 'tourism_office'}>{props.busy ? 'Sending…' : 'Send invitation'} <ArrowRight size={15}/></button>
       </form>
       <div className="table-card"><table><thead><tr><th>Staff member</th><th>Destination</th><th>Role</th><th>Access</th><th/></tr></thead><tbody>

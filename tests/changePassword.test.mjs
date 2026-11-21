@@ -7,8 +7,30 @@ const source = await readFile(new URL('../src/lib/changePassword.ts', import.met
 const compiled = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
 }).outputText;
-const { changePassword } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const { changePassword, completePasswordReset } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const user = { id: 'current-user', email: 'user@example.com' };
+
+test('exchanges the callback code before updating when no session exists yet', async () => {
+  let updatedPassword;
+  const auth = {
+    getSession: async () => ({ data: { session: null }, error: null }),
+    exchangeCodeForSession: async (code) => ({ data: { session: { access_token: 'valid' }, code }, error: null }),
+    updateUser: async ({ password }) => { updatedPassword = password; return { error: null }; },
+  };
+  await completePasswordReset(auth, 'callback-code', 'newpassword');
+  assert.equal(updatedPassword, 'newpassword');
+});
+
+test('does not update when reset callback has no session or code', async () => {
+  let updates = 0;
+  const auth = {
+    getSession: async () => ({ data: { session: null }, error: null }),
+    exchangeCodeForSession: async () => { throw new Error('should not exchange'); },
+    updateUser: async () => { updates++; return { error: null }; },
+  };
+  await assert.rejects(completePasswordReset(auth, null, 'newpassword'), /session is missing/);
+  assert.equal(updates, 0);
+});
 
 test('validates new password and confirmation before authentication', async () => {
   let signIns = 0;
