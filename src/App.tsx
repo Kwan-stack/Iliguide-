@@ -22,7 +22,7 @@ const StaffPages = lazy(() => import('./components/StaffPages').then((module) =>
 const DestinationMap = lazy(() => import('./components/DestinationMap'));
 
 type Page = AppPage;
-type StaffPage = Extract<Page, GatekeeperPage | 'Slots and closures' | 'Staff and accounts' | 'Sites and staff'>;
+type StaffPage = Extract<Page, GatekeeperPage | 'Activity' | 'Slots and closures' | 'Staff and accounts' | 'Sites and staff'>;
 const todayPh = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const timePh = () => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
 const destinationPhotos: Record<string, { src: string; author: string; source: string; license: string; licenseUrl: string }> = {

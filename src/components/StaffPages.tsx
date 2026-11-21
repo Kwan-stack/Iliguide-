@@ -15,7 +15,7 @@ import './DutyRoster.css';
 import './CancellationReview.css';
 
 type Role = Profile['role'];
-type Page = GatekeeperPage | 'Slots and closures' | 'Staff and accounts' | 'Sites and staff' | 'Duty roster';
+type Page = GatekeeperPage | 'Activity' | 'Slots and closures' | 'Staff and accounts' | 'Sites and staff' | 'Duty roster';
 type Props = {
   page: Page; role: Role; sites: Site[]; siteId: string; setSiteId: (value: string) => void;
   assignments: StaffAssignment[]; notify: (message: string) => void; busy: boolean;
@@ -28,8 +28,6 @@ const currentSlots = (rows: Slot[]) => {
   const now = phTime();
   return rows.filter((slot) => slot.slot_date === phToday() && slot.status === 'open' && slot.remaining_capacity > 0 && slot.starts_at.slice(0, 5) <= now && slot.ends_at.slice(0, 5) > now);
 };
-const localStart = (day: string) => new Date(day + 'T00:00:00+08:00').toISOString();
-const localEnd = (day: string) => new Date(day + 'T23:59:59.999+08:00').toISOString();
 
 export function StaffPages(props: Props) {
   const staffScopeKey = `${props.user?.id ?? 'staff'}:${props.role}:${props.siteId}`;
@@ -45,7 +43,6 @@ export function StaffPages(props: Props) {
     if (props.page === 'Capacity map') content = <CapacityMapPage {...props}/>;
     if (props.page === 'Duty details') content = <DutyDetailsPage {...props}/>;
     if (props.page === 'Reports') content = <ReportsPage {...props}/>;
-    if (props.page === 'Activity') content = <ActivityPage {...props}/>;
     return <StaffConsole {...props}><GatekeeperDutyGate {...props} content={<Fragment key={staffScopeKey}>{content}</Fragment>}/></StaffConsole>;
   }
   let content: ReactNode = <OverviewPage {...props}/>;
@@ -63,7 +60,7 @@ export function StaffPages(props: Props) {
 
 function StaffConsole(props: Props & { children: ReactNode }) {
   const items: Array<[string, Page, LucideIcon]> = props.role === 'gatekeeper'
-    ? [['Dashboard', 'Overview', LayoutDashboard], ['Reservations', 'Reservations', CalendarDays], ['Visitors', 'Visitor Management', Users], ['Check-in', 'Scan and exit', ScanLine], ['Walk-ins', 'Walk-in registration', TicketIcon], ['Daily logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Activity', 'Activity', History], ['Today’s duty', 'Duty details', CalendarClock]]
+    ? [['Dashboard', 'Overview', LayoutDashboard], ['Reservations', 'Reservations', CalendarDays], ['Visitors', 'Visitor Management', Users], ['Check-in', 'Scan and exit', ScanLine], ['Walk-ins', 'Walk-in registration', TicketIcon], ['Daily logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Today’s duty', 'Duty details', CalendarClock]]
     : props.role === 'tourism_office'
       ? [['Overview', 'Overview', LayoutDashboard], ['Duty roster', 'Duty roster', CalendarClock], ['Destinations & staff', 'Sites and staff', Building2], ['Operating hours & slots', 'Slots and closures', CalendarDays], ['Staff & accounts', 'Staff and accounts', Users], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Activity', 'Activity', History]]
       : [['Overview', 'Overview', LayoutDashboard], ['Operating hours & slots', 'Slots and closures', CalendarDays], ['Staff & accounts', 'Staff and accounts', Users], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Duty roster', 'Duty roster', CalendarClock], ['Reports', 'Reports', ChartNoAxesCombined]];
@@ -900,7 +897,6 @@ function VisitorLogbookPage(props: Props) {
 function ReportsPage(props: Props) {
   const [metrics, setMetrics] = useState<Array<Record<string, any>>>([]);
   const [paymentMetrics, setPaymentMetrics] = useState<Array<Record<string, any>>>([]);
-  const [audit, setAudit] = useState<Array<Record<string, any>>>([]);
   const [month, setMonth] = useState(phToday().slice(0, 7));
   const siteIds = props.role === 'tourism_office' ? props.sites.map((site) => site.id) : [props.siteId].filter(Boolean);
   const reportKey = `${props.user?.id ?? 'staff'}:${props.role}:${siteIds.join(',')}:${month}`;
@@ -908,7 +904,7 @@ function ReportsPage(props: Props) {
   const [loadedReportKey, setLoadedReportKey] = useState('');
   const reportCurrent = loadedReportKey === reportKey;
   const refresh = useCallback(async () => {
-    if (!siteIds.length) { setMetrics([]); setPaymentMetrics([]); setAudit([]); setLoadedReportKey(reportKey); finishLoading(); return; }
+    if (!siteIds.length) { setMetrics([]); setPaymentMetrics([]); setLoadedReportKey(reportKey); finishLoading(); return; }
     const start = month + '-01';
     const [year, monthNumber] = month.split('-').map(Number);
     const end = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
@@ -917,26 +913,20 @@ function ReportsPage(props: Props) {
         ? db().from('site_visit_daily_metrics').select('site_id,report_date,booking_count,pending_booking_count,confirmed_booking_count,cancelled_booking_count,expected_visitor_count,adult_count,child_count,checked_in_visitor_count')
         : db().from('booking_daily_metrics').select('site_id,report_date,booking_count,visitor_count,walk_in_count,online_count');
       metricQuery = metricQuery.gte('report_date', start).lte('report_date', end);
-      let auditQuery = db().from('audit_logs').select('id,actor_id,site_id,action,entity_type,entity_id,created_at')
-        .gte('created_at', localStart(start)).lte('created_at', localEnd(end)).order('created_at', { ascending: false }).limit(200);
       let paymentQuery = db().from('booking_payment_daily_metrics').select('site_id,report_date,online_pending_count,online_paid_count,onsite_pending_count,onsite_paid_count,failed_or_expired_count')
         .gte('report_date', start).lte('report_date', end);
       if (props.role !== 'tourism_office') {
         metricQuery = metricQuery.eq('site_id', props.siteId);
-        auditQuery = auditQuery.eq('site_id', props.siteId);
         paymentQuery = paymentQuery.eq('site_id', props.siteId);
       } else if (siteIds.length) {
         metricQuery = metricQuery.in('site_id', siteIds);
-        auditQuery = auditQuery.in('site_id', siteIds);
         paymentQuery = paymentQuery.in('site_id', siteIds);
       }
-      const [metricResult, auditResult, paymentResult] = await Promise.all([metricQuery.order('report_date'), auditQuery, paymentQuery]);
+      const [metricResult, paymentResult] = await Promise.all([metricQuery.order('report_date'), paymentQuery]);
       if (metricResult.error) throw metricResult.error;
-      if (auditResult.error) throw auditResult.error;
       if (paymentResult.error) throw paymentResult.error;
       setMetrics(metricResult.data ?? []);
       setPaymentMetrics(paymentResult.data ?? []);
-      setAudit(auditResult.data ?? []);
       setLoadedReportKey(reportKey);
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not load the report.'); }
     finally { finishLoading(); }
@@ -954,7 +944,7 @@ function ReportsPage(props: Props) {
       ? [[summary('expected_visitor_count').toLocaleString(), 'Expected visitors'], [summary('checked_in_visitor_count').toLocaleString(), 'Checked in'], [summary('adult_count').toLocaleString(), 'Adults'], [summary('child_count').toLocaleString(), 'Children']]
       : [[summary('visitor_count').toLocaleString(), 'Visitors'], [summary('online_count').toLocaleString(), 'Online bookings'], [summary('walk_in_count').toLocaleString(), 'Walk-ins'], [paymentSummary('online_paid_count').toLocaleString(), 'Online payments paid'], [paymentSummary('onsite_paid_count').toLocaleString(), 'Onsite payments collected'], [paymentSummary('online_pending_count').toLocaleString(), 'Online payments pending'], [paymentSummary('onsite_pending_count').toLocaleString(), 'Onsite payments due'], [paymentSummary('failed_or_expired_count').toLocaleString(), 'Failed or expired']])
       .map(([value, label]) => <div key={label}><b>{loading || !reportCurrent ? '…' : value}</b><small>{label}</small></div>)}</div>
-    <div className="report-grid"><div className="chart-card"><div className="card-heading"><span><small>{gatekeeperStats ? 'VISIT DATE · ' + month : 'BY DESTINATION · ' + month}</small><h3>{gatekeeperStats ? 'Daily visitor counts' : 'Recorded activity'}</h3></span></div>
+    <div className="report-grid" style={{ gridTemplateColumns: '1fr' }}><div className="chart-card"><div className="card-heading"><span><small>{gatekeeperStats ? 'VISIT DATE · ' + month : 'BY DESTINATION · ' + month}</small><h3>{gatekeeperStats ? 'Daily visitor counts' : 'Recorded activity'}</h3></span></div>
       {!reportCurrent && <div className="empty-inline">{loading ? 'Loading report…' : 'Report data for this period is unavailable.'}</div>}
       {reportCurrent && !loading && !metrics.length && <div className="empty-inline">No booking records for this reporting period.</div>}
        <div className="table-card"><table><thead><tr>{gatekeeperStats
@@ -963,10 +953,6 @@ function ReportsPage(props: Props) {
          <tbody>{reportCurrent && !loading && metrics.map((row, index) => <tr key={row.site_id + row.report_date + index}>{gatekeeperStats
            ? <><td>{dateLabel(row.report_date)}</td><td>{row.booking_count}</td><td>{row.expected_visitor_count}</td><td>{row.checked_in_visitor_count}</td><td>{row.adult_count}</td><td>{row.child_count}</td><td>{row.pending_booking_count}</td><td>{row.confirmed_booking_count}</td><td>{row.cancelled_booking_count}</td></>
            : <><td>{dateLabel(row.report_date)}</td><td>{siteName(row.site_id)}</td><td>{row.visitor_count}</td><td>{row.online_count}</td><td>{row.walk_in_count}</td></>}</tr>)}</tbody></table></div>
-    </div><div className="chart-card"><div className="card-heading"><span><small>RECORDED CHANGES</small><h3>Audit activity</h3></span><ShieldCheck size={17}/></div>
-      {!reportCurrent && <div className="empty-inline">{loading ? 'Loading audit history…' : 'Audit data for this period is unavailable.'}</div>}
-      {reportCurrent && !loading && !audit.length && <div className="empty-inline">No audit events in this period.</div>}
-      {reportCurrent && !loading && audit.map((row) => <div className="audit-row" key={row.id}><span><b>{row.action.replace(/_/g, ' ')}</b><small>{row.entity_type} · {siteName(row.site_id)}</small></span><time>{new Date(row.created_at).toLocaleString()}</time></div>)}
     </div></div>
     <p className="report-note"><ShieldCheck size={15}/> Reports are scoped by row level security. A zero count means no matching rows were recorded.</p>
   </section>;

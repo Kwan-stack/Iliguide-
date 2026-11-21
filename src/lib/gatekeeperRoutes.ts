@@ -8,7 +8,6 @@ export type GatekeeperPage =
   | 'Capacity map'
   | 'Duty details'
   | 'Reports'
-  | 'Activity'
   | 'Change password';
 
 const pageBySection: Record<string, GatekeeperPage> = {
@@ -21,7 +20,6 @@ const pageBySection: Record<string, GatekeeperPage> = {
   'capacity-map': 'Capacity map',
   duty: 'Duty details',
   reports: 'Reports',
-  activity: 'Activity',
   'change-password': 'Change password',
 };
 
