@@ -185,3 +185,5 @@
   .hero-image>img.hero-slide-image--3{object-position:center 92%}
 }
 .checkbox-field input{flex:none;width:16px;height:16px;margin:1px 0 0;accent-color:var(--deep)}
+.staff-assignment-edit-field{width:100%;min-width:110px;border:1px solid var(--line);border-radius:6px;padding:7px 8px;background:#fff;color:var(--ink);font:500 10px Manrope,sans-serif}
+.staff-assignment-edit-actions{display:flex;align-items:center;gap:8px;white-space:nowrap}

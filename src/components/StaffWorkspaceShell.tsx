@@ -23,8 +23,7 @@ export function StaffWorkspaceShell({ role, homePath, toast, dataError, onRetry,
   return <div className={`office-app-shell office-app-${role}`}>
     <header className="office-app-topbar">
       <Link className="office-app-brand" to={homePath} aria-label="Iliguide staff workspace">
-        <span className="office-app-mark"><img src="/iliguide-logo.svg" alt=""/></span>
-        <span><b>Iliguide</b><small>OFFICE WORKSPACE</small></span>
+        <span className="office-app-brand-lockup"><img src="/iliguide-staff-logo.png" alt="Iliguide"/><small>OFFICE WORKSPACE</small></span>
       </Link>
       <div className="office-app-actions">
         <span className="office-app-role"><ShieldCheck size={15}/>{roleLabel[role]}</span>

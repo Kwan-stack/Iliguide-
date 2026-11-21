@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Building2, CalendarClock, CalendarDays, Camera, ChartNoAxesCombined, Check, History, ImagePlus, KeyRound, LayoutDashboard, MapPin, MapPinned, Plus, Printer, RefreshCw, ScanLine, ShieldCheck, Ticket as TicketIcon, Users, UserRound, X, type LucideIcon } from 'lucide-react';
+import { Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Building2, CalendarClock, CalendarDays, Camera, ChartNoAxesCombined, Check, History, ImagePlus, KeyRound, LayoutDashboard, MapPin, MapPinned, Pencil, Plus, Printer, RefreshCw, ScanLine, ShieldCheck, Ticket as TicketIcon, Users, UserRound, X, type LucideIcon } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { db, dateLabel, exportCsv, invokeFunction, loadLiveOccupancy, loadMyActiveGatekeeperDuty, loadSlots, money, timeLabel, type GatekeeperDuty, type LiveOccupancy, type Profile, type Site, type Slot, type StaffAssignment } from '../lib/iliguide';
 import { emptyVisitorInformation, requiredVisitorFields, resizeVisitorInformation, visitorInformationComplete, visitorInformationPayload } from '../lib/visitorInformation';
@@ -525,6 +525,9 @@ function PeoplePage(props: Props) {
   const [staffLoadError, setStaffLoadError] = useState('');
   const [email, setEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('gatekeeper');
+  const [editingStaffId, setEditingStaffId] = useState('');
+  const [editStaffName, setEditStaffName] = useState('');
+  const [editStaffSiteId, setEditStaffSiteId] = useState('');
   const [decisionNotes, setDecisionNotes] = useState<Record<string, string>>({});
   const siteIds = props.role === 'tourism_office' ? props.sites.map((site) => site.id) : [props.siteId].filter(Boolean);
   const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${siteIds.join(',')}`);
@@ -622,6 +625,24 @@ function PeoplePage(props: Props) {
       else { props.notify('Site staff assignment disabled.'); await refresh(); }
     } finally { setActionBusy(false); }
   };
+  const saveStaffAssignment = async (assignment: Record<string, any>) => {
+    const fullName = editStaffName.trim();
+    if (!fullName || fullName.length > 120 || !props.sites.some((site) => site.id === editStaffSiteId)) {
+      props.notify('Enter a name and choose a destination.');
+      return;
+    }
+    setActionBusy(true);
+    try {
+      const { error } = await db().rpc('update_staff_assignment', {
+        p_assignment_id: assignment.id, p_full_name: fullName, p_site_id: editStaffSiteId,
+      });
+      if (error) throw error;
+      setEditingStaffId('');
+      props.notify('Staff name and destination updated.');
+      await refresh();
+    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not update this staff assignment.'); }
+    finally { setActionBusy(false); }
+  };
   return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> SITE ADMINISTRATION</span><h1>People & <em>access.</em></h1><p>Manage destination assignments, cancellation requests, and visitor support. Payments are not processed here.</p></div>
     <div className="header-actions">{props.role === 'tourism_office' && <SiteSelector {...props}/>}<button className="btn btn-outline" onClick={() => void refresh()}><RefreshCw size={15}/></button></div></div>
     {props.role === 'site_admin' && <div className="workspace-panel-select"><label>Active destination <SiteSelector {...props}/></label></div>}
@@ -632,10 +653,12 @@ function PeoplePage(props: Props) {
         <button className="btn btn-primary" disabled={props.busy || !props.siteId && inviteRole !== 'tourism_office'}>{props.busy ? 'Sending…' : 'Send invitation'} <ArrowRight size={15}/></button>
       </form>
       <div className="table-card"><table><thead><tr><th>Staff member</th><th>Destination</th><th>Role</th><th>Access</th><th/></tr></thead><tbody>
-        {!loading && staff.map((assignment) => { const person = Array.isArray(assignment.profiles) ? assignment.profiles[0] : assignment.profiles; const site = Array.isArray(assignment.tourism_sites) ? assignment.tourism_sites[0] : assignment.tourism_sites; return <tr key={assignment.id}>
-          <td>{person?.full_name || person?.email || assignment.profile_id}</td><td>{site?.name ?? '—'}</td><td>{assignment.staff_role.replace('_', ' ')}</td>
+        {!loading && staff.map((assignment) => { const person = Array.isArray(assignment.profiles) ? assignment.profiles[0] : assignment.profiles; const site = Array.isArray(assignment.tourism_sites) ? assignment.tourism_sites[0] : assignment.tourism_sites; const editing = editingStaffId === assignment.id; const canEdit = props.role === 'tourism_office' || assignment.staff_role === 'gatekeeper'; return <tr key={assignment.id}>
+          <td>{editing ? <input className="staff-assignment-edit-field" aria-label="Staff name" value={editStaffName} onChange={(event) => setEditStaffName(event.target.value)} maxLength={120}/> : person?.full_name || person?.email || assignment.profile_id}</td>
+          <td>{editing ? <select className="staff-assignment-edit-field" aria-label="Destination" value={editStaffSiteId} onChange={(event) => setEditStaffSiteId(event.target.value)}>{props.sites.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select> : site?.name ?? '—'}</td>
+          <td>{assignment.staff_role.replace('_', ' ')}</td>
           <td><span className={assignment.is_active ? 'status-tag paid' : 'status-tag'}>{assignment.is_active ? 'Active' : 'Disabled'}</span></td>
-          <td>{assignment.is_active && (props.role === 'tourism_office' || assignment.staff_role === 'gatekeeper') && <button className="link-btn" disabled={actionBusy} onClick={() => void disableAssignment(assignment)}>Disable</button>}</td>
+          <td>{editing ? <span className="staff-assignment-edit-actions"><button className="link-btn" disabled={actionBusy} onClick={() => void saveStaffAssignment(assignment)}>Save</button><button className="link-btn" disabled={actionBusy} onClick={() => setEditingStaffId('')}>Cancel</button></span> : <>{canEdit && <button className="link-btn" disabled={actionBusy} onClick={() => { setEditingStaffId(assignment.id); setEditStaffName(person?.full_name ?? ''); setEditStaffSiteId(assignment.site_id); }}><Pencil size={13}/> Edit</button>} {assignment.is_active && canEdit && <button className="link-btn" disabled={actionBusy} onClick={() => void disableAssignment(assignment)}>Disable</button>}</>}</td>
         </tr>; })}
         {loading && <tr><td colSpan={5}>Loading staff…</td></tr>}
         {!loading && !staff.length && <tr><td colSpan={5}>{staffLoadError ? 'Could not load assignments: ' + staffLoadError : 'No site staff assignments.'}</td></tr>}
