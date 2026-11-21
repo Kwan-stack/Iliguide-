@@ -109,8 +109,22 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
         if (resetError) throw resetError;
         setNotice('If an account uses that email, Supabase will send a password reset link.');
       } else {
+        let { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        const code = new URLSearchParams(window.location.search).get('code');
+        if (!session && code) {
+          const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+          if (exchangeError) throw exchangeError;
+          session = data.session;
+        }
+        if (!session) throw new Error('Password reset session is missing. Request a new reset link and open it in the same browser.');
         const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
         if (updateError) throw updateError;
+        const callbackUrl = new URL(window.location.href);
+        if (callbackUrl.searchParams.has('code')) {
+          callbackUrl.searchParams.delete('code');
+          window.history.replaceState(window.history.state, '', callbackUrl.toString());
+        }
         setNewPassword('');
         setPassword('');
         onSuccess();
@@ -142,17 +156,17 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
         : audience === 'staff' ? 'Choose a password to finish setting up your staff access.' : 'Set a new password for your account.'}</p>
       <form onSubmit={submit}>
         {mode === 'signup' && !awaitingConfirmation && <>
-          <div className="auth-name-grid"><label>First name<input required autoComplete="given-name" value={firstName} onChange={(event) => setFirstName(event.target.value)} maxLength={60}/></label>
-            <label>Last name<input required autoComplete="family-name" value={lastName} onChange={(event) => setLastName(event.target.value)} maxLength={60}/></label></div>
+          <div className="auth-name-grid"><label><span>First name <span className="required-mark" aria-hidden="true">*</span></span><input required pattern=".*\S.*" autoComplete="given-name" value={firstName} onChange={(event) => setFirstName(event.target.value)} maxLength={60}/></label>
+            <label><span>Last name <span className="required-mark" aria-hidden="true">*</span></span><input required pattern=".*\S.*" autoComplete="family-name" value={lastName} onChange={(event) => setLastName(event.target.value)} maxLength={60}/></label></div>
           <label>Phone <span className="field-optional">optional</span><input autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={40}/></label>
         </>}
-        {mode !== 'reset' && <label>Email<input required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={254} readOnly={mode === 'signup' && awaitingConfirmation}/></label>}
+        {mode !== 'reset' && <label><span>Email{mode === 'signup' && !awaitingConfirmation && <> <span className="required-mark" aria-hidden="true">*</span></>}</span><input required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={254} readOnly={mode === 'signup' && awaitingConfirmation}/></label>}
         {mode === 'login' && <label>Password<span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)}/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>}
         {mode === 'signup' && !awaitingConfirmation && <>
-          <label>Password<span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters"/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
-          <label>Confirm password<span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)}/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
+          <label><span>Password <span className="required-mark" aria-hidden="true">*</span></span><span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters"/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
+          <label><span>Confirm password <span className="required-mark" aria-hidden="true">*</span></span><span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)}/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
           <div className="auth-policy-copy"><b>Reservation terms</b><p>Reservations record your selected destination and time. The fee shown is based on the destination’s published rates; no online payment is collected. Present the QR ticket at the destination for validation. Admission follows the destination’s current rules.</p><b>Privacy notice</b><p>Account details, reservation history, and notifications are stored to provide this service. Profile photos are optional. Pending selections and saved destinations stay in this browser. No payment details are collected.</p></div>
-          <label className="auth-consent"><input required type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)}/><span>I agree to the reservation terms and have read the privacy notice.</span></label>
+          <label className="auth-consent"><input required type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)}/><span>I agree to the reservation terms and have read the privacy notice. <span className="required-mark" aria-hidden="true">*</span></span></label>
         </>}
         {mode === 'reset' && <label>New password<span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="At least 8 characters"/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>}
         {error && <p className="form-error" role="alert">{error}</p>}
