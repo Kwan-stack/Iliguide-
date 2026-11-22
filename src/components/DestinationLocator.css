@@ -2,3 +2,33 @@
 .destination-locator .section-heading h1 { margin-bottom: .5rem; }
 .destination-locator .section-heading p { max-width: 42rem; color: #617987; }
 .destination-locator .empty-state { margin-top: 1.2rem; }
+.destination-locator .locator-layout { grid-template-columns: minmax(0, 1.25fr) minmax(310px, .9fr); align-items: start; }
+.locator-map-column,.locator-details { min-width: 0; border: 1px solid #d5e7e9; border-radius: 16px; background: #fff; box-shadow: 0 10px 28px #0a526010; overflow: hidden; }
+.locator-toolbar { display: flex; justify-content: space-between; gap: .5rem; padding: .7rem; background: #f5fbfb; }
+.locator-toolbar > div { display: flex; gap: .3rem; flex-wrap: wrap; }
+.locator-toolbar button { display: inline-flex; align-items: center; gap: .35rem; padding: .48rem .7rem; border: 1px solid #c7e1e3; border-radius: 8px; background: #fff; color: #006e78; font-size: .75rem; font-weight: 700; cursor: pointer; }
+.locator-toolbar button[aria-pressed=true] { border-color: #00878a; background: #00878a; color: #fff; }
+.destination-locator .locator-map { height: clamp(340px, 42vw, 570px); border: 0; border-radius: 0; }
+.destination-locator .leaflet-container { font: inherit; }
+.destination-locator .leaflet-popup-content { min-width: 190px; }
+.destination-locator .leaflet-popup-content p { margin: .4rem 0; font-size: .75rem; }
+.destination-locator .leaflet-popup-content button { padding: .4rem .55rem; border: 0; border-radius: 6px; color: #fff; background: #007f86; cursor: pointer; font: inherit; font-size: .75rem; font-weight: 700; }
+.capacity-pin { --pin: #159b59; position: relative; }
+.capacity-pin span { display: block; width: 23px; height: 23px; border: 3px solid #fff; border-radius: 50% 50% 50% 0; background: var(--pin); transform: rotate(-45deg); box-shadow: 0 2px 8px #18363980; }
+.capacity-pin-near { --pin: #e3b000; }.capacity-pin-almost { --pin: #ee6e1b; }.capacity-pin-critical { --pin: #d52539; }.capacity-pin-unknown,.capacity-pin-unconfigured { --pin: #83969e; }
+.capacity-pin-selected span { box-shadow: 0 0 0 4px #fff, 0 2px 11px #173f5388; }
+.locator-legend { display: flex; gap: .5rem .9rem; flex-wrap: wrap; align-items: center; padding: .8rem 1rem .2rem; color: #3e5c68; font-size: .72rem; }
+.locator-legend b { margin-right: .3rem; color: #163b47; }.locator-legend span { display: inline-flex; align-items: center; gap: .3rem; }.locator-legend i { width: 10px; height: 10px; border-radius: 50%; }
+.locator-note { margin: .5rem 1rem .8rem; color: #58717a; font-size: .72rem; line-height: 1.5; }
+.locator-details { display: grid; gap: .5rem; padding: .7rem; }
+.destination-locator .locator-list { display: flex; gap: .4rem; padding: 0 0 .55rem; overflow-x: auto; border: 0; border-radius: 0; }
+.destination-locator .locator-list button { display: flex; flex: 0 0 auto; align-items: center; width: auto; max-width: 210px; padding: .48rem .6rem; border: 1px solid #dbe9eb; background: #f8fbfb; cursor: pointer; }
+.destination-locator .locator-list button.selected { border-color: #00878a; background: #e6f7f5; }
+.destination-locator .locator-list button small { white-space: nowrap; font-size: .68rem; }
+.destination-locator .locator-list .map-legend-level { width: .65rem; height: .65rem; flex: 0 0 auto; }
+.locator-selected > img { width: 100%; height: clamp(155px, 17vw, 220px); border-radius: 10px; object-fit: cover; }
+.locator-selected-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin: .7rem 0; }.locator-selected-heading h2 { margin: .2rem 0; font-size: 1.3rem; }.locator-selected-heading small { color: #5f7680; font-size: .7rem; }
+.locator-selected .occupancy-panel { margin-bottom: 0; }
+.locator-mobile-switch { display: none; }
+@media (max-width: 900px) { .destination-locator .locator-layout { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .locator-mobile-switch { display: flex; gap: .4rem; margin-top: 1rem; }.locator-mobile-switch button { flex: 1; padding: .6rem; border: 1px solid #b7d7db; border-radius: 8px; background: #fff; color: #006e78; font-weight: 700; }.locator-mobile-switch button[aria-pressed=true] { background: #00878a; color: #fff; }.destination-locator .locator-mobile-hidden { display: none; }.destination-locator .locator-map { height: 350px; }.destination-locator .locator-layout { margin-top: .7rem; } }

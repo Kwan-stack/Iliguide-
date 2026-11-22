@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import 'leaflet.heat';
 import { ArrowUpRight, Layers, MapPin } from 'lucide-react';
-import { loadLiveOccupancy, type LiveOccupancy, type Site } from '../lib/iliguide';
+import { type LiveOccupancy, type Site } from '../lib/iliguide';
+import { capacityHeatOpacity, capacityStatus, formatCapacityPercent } from '../lib/capacity';
+import { useLiveCapacity } from '../lib/useLiveCapacity';
 import './DestinationMap.css';
 
 type CapacityZone = {
@@ -19,21 +20,6 @@ type Props = {
   zones?: CapacityZone[];
   occupancy?: LiveOccupancy | null;
   compact?: boolean;
-};
-
-type HeatLayer = L.Layer & {
-  setOptions: (options: { radius: number; blur: number; maxZoom: number }) => HeatLayer;
-};
-
-type HeatLayerFactory = typeof L & {
-  heatLayer: (points: Array<[number, number, number]>, options: {
-    radius: number;
-    blur: number;
-    maxZoom: number;
-    max: number;
-    minOpacity: number;
-    gradient: Record<number, string>;
-  }) => HeatLayer;
 };
 
 const noZones: CapacityZone[] = [];
@@ -67,38 +53,15 @@ export default function DestinationMap({ site, zones = noZones, occupancy, compa
   const mapNode = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const overlayRef = useRef<L.LayerGroup | null>(null);
-  const [liveOccupancy, setLiveOccupancy] = useState<LiveOccupancy | null>(occupancy ?? null);
-  const [occupancyState, setOccupancyState] = useState<'loading' | 'ready' | 'unavailable'>(occupancy === undefined ? 'loading' : occupancy ? 'ready' : 'unavailable');
+  const live = useLiveCapacity(occupancy === undefined ? [site.id] : []);
+  const liveOccupancy = occupancy === undefined ? live.rows[site.id] ?? null : occupancy;
+  const occupancyState = occupancy === undefined ? live.state : occupancy ? 'ready' : 'unavailable';
   const latitude = site.latitude;
   const longitude = site.longitude;
-  const approvedLimit = liveOccupancy?.approved_visitor_limit;
-  const capacityEstimate = liveOccupancy?.capacity_estimate;
-  const heatReference = approvedLimit != null && approvedLimit > 0 ? approvedLimit
-    : capacityEstimate != null && capacityEstimate > 0 ? capacityEstimate : null;
-  const heatReferenceLabel = heatReference != null && heatReference === approvedLimit ? 'approved limit' : 'physical estimate';
+  const status = capacityStatus(liveOccupancy);
   const hasLocation = latitude !== null && longitude !== null
     && Number.isFinite(latitude) && Number.isFinite(longitude)
     && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
-
-  useEffect(() => {
-    let active = true;
-    if (occupancy !== undefined) {
-      setLiveOccupancy(occupancy);
-      setOccupancyState(occupancy ? 'ready' : 'unavailable');
-      return () => { active = false; };
-    }
-    setLiveOccupancy(null);
-    setOccupancyState('loading');
-    void loadLiveOccupancy(site.id).then((row) => {
-      if (active) {
-        setLiveOccupancy(row);
-        setOccupancyState(row ? 'ready' : 'unavailable');
-      }
-    }).catch(() => {
-      if (active) setOccupancyState('unavailable');
-    });
-    return () => { active = false; };
-  }, [occupancy, site.id]);
 
   useEffect(() => {
     if (!hasLocation || !mapNode.current) return;
@@ -160,32 +123,11 @@ export default function DestinationMap({ site, zones = noZones, occupancy, compa
     if (hasZoneBounds) map.fitBounds(bounds.pad(0.2), { maxZoom: 17, animate: false });
     else map.setView([latitude, longitude], 16, { animate: false });
 
-    const count = liveOccupancy?.current_visitor_count ?? 0;
-    if (count > 0) {
-      const intensity = Math.min(1, count / (heatReference ?? 100));
-      const heat = (L as HeatLayerFactory).heatLayer([[latitude, longitude, intensity]], {
-        radius: 1,
-        blur: 1,
-        maxZoom: map.getZoom(),
-        max: 1,
-        minOpacity: 0.2,
-        gradient: { 0: '#35ad78', 0.25: '#a4c94a', 0.5: '#f0d24d', 0.75: '#f18a3d', 1: '#c93845' },
-      }).addTo(overlays);
-      const updateHeatFootprint = () => {
-        const size = map.getSize();
-        if (!size.x || !size.y) return;
-        const point = map.latLngToContainerPoint([latitude, longitude]);
-        const radius = Math.ceil(Math.max(
-          Math.hypot(point.x, point.y), Math.hypot(size.x - point.x, point.y),
-          Math.hypot(point.x, size.y - point.y), Math.hypot(size.x - point.x, size.y - point.y),
-        ) * 1.05);
-        heat.setOptions({ radius, blur: Math.round(radius * 0.72), maxZoom: map.getZoom() });
-      };
-      updateHeatFootprint();
-      map.on('moveend resize', updateHeatFootprint);
-      zoneLayers.forEach((layer) => layer.addTo(overlays));
-      return () => { map.off('moveend resize', updateHeatFootprint); };
-    }
+    const level = capacityStatus(liveOccupancy).level;
+    if (liveOccupancy && status.percent != null && !['unknown', 'unconfigured'].includes(level)) L.marker([latitude, longitude], {
+      icon: L.divIcon({ className: `site-heat site-heat-${level}`, html: `<span style="--heat-opacity:${capacityHeatOpacity(status.percent)}"></span>`, iconSize: [192, 192], iconAnchor: [96, 96] }),
+      interactive: false,
+    }).addTo(overlays);
 
     zoneLayers.forEach((layer) => layer.addTo(overlays));
   }, [latitude, liveOccupancy, longitude, site.id, site.name, zones]);
@@ -194,13 +136,7 @@ export default function DestinationMap({ site, zones = noZones, occupancy, compa
     ? `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`
     : null;
   const zoneCount = zones.reduce((count, zone) => count + (zoneGeometry(zone.geometry) ? 1 : 0), 0);
-  const count = liveOccupancy?.current_visitor_count ?? 0;
-  const heatPercent = heatReference != null && heatReference > 0 && count > 0
-    ? Math.round(count / heatReference * 100)
-    : null;
-  const heatScaleLabel = heatReference != null && heatReference > 0
-    ? `${heatReference}+ people · ${heatReferenceLabel}`
-    : '100+ people';
+  const count = liveOccupancy?.current_visitor_count;
   const coordinateSource = site.slug === 'timoga-cold-springs'
     ? { note: 'Representative pin for the Timoga springs area, using Timoga Spring Pool.', label: 'Coordinate source', url: 'https://www.lakadpilipinas.com/2013/10/timoga-springs-iligan-city.html' }
     : site.slug === 'sikyop-agri-tourism-adventure'
@@ -219,20 +155,14 @@ export default function DestinationMap({ site, zones = noZones, occupancy, compa
         {coordinateSource && <p className="destination-map-source-note">{coordinateSource.note} <a href={coordinateSource.url} target="_blank" rel="noopener noreferrer">{coordinateSource.label} <ArrowUpRight size={12}/></a></p>}
         <div className="destination-map-legend">
           {zoneCount > 0 && <span><i className="map-legend-zone"/>Approved site zones</span>}
-          {occupancyState === 'ready' && count > 0 && <span><i className="map-legend-heat"/>{`Approximate heat · ${count} onsite${heatPercent != null ? ` · ${heatPercent}% of ${heatReferenceLabel}` : ''}`}</span>}
-          {occupancyState === 'ready' && count === 0 && <span><i className="map-legend-empty"/>No onsite attendance · heat off</span>}
+          {occupancyState === 'ready' && <><span><i className={`map-legend-level map-legend-${status.level}`}/>{status.label}{status.percent != null ? ` · ${count} / ${status.limit} ${status.basis === 'estimated' ? 'provisional estimate' : 'approved limit'} (${formatCapacityPercent(status.percent)})` : ''}</span>{status.percent != null && <span><i className="map-legend-heat"/>Site-wide capacity heat</span>}</>}
           {occupancyState === 'loading' && <span><i className="map-legend-empty"/>Loading attendance</span>}
           {occupancyState === 'unavailable' && <span><i className="map-legend-empty"/>Attendance unavailable</span>}
           {!zoneCount && <span><Layers size={13}/> No approved zone boundaries recorded</span>}
         </div>
-        {count > 0 && <div className="destination-heat-scale" role="img" aria-label={`Heat color is based on ${count} recorded people`}><span>Lower count</span><i/><span>{heatScaleLabel}</span></div>}
         <p className="destination-map-note">
-          {occupancyState === 'ready' && count > 0 && heatReference != null && heatReference > 0
-            ? `The approximate site-wide heat circle fills the map view and is centered on the destination pin. Its color reflects ${count} recorded people relative to ${liveOccupancy?.approved_visitor_limit != null ? 'the approved limit' : 'the physical estimate'} of ${heatReference}; visitor positions are not tracked.`
-            : occupancyState === 'ready' && count > 0
-              ? `The approximate site-wide heat circle fills the map view and is centered on the destination pin. Its color uses a 0–100-person visual scale; visitor positions are not tracked.`
-            : occupancyState === 'ready'
-              ? 'No onsite attendance is recorded, so the occupancy heat layer is off. Visitor positions are not tracked.'
+          {occupancyState === 'ready'
+              ? status.basis === 'estimated' ? 'Crowd color uses a provisional school-project map estimate, not an approved admission limit. Occupancy comes from recorded arrivals and departures; individual or zone locations are not tracked.' : 'Capacity is estimated from recorded arrivals and departures. The indicator represents the whole destination; individual visitor positions and zone occupancy are not tracked.'
               : occupancyState === 'loading'
                 ? 'Loading recorded occupancy. The map remains available while attendance is checked.'
                 : 'Recorded attendance is unavailable. The map remains focused on the destination location.'}

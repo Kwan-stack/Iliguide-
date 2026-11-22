@@ -54,6 +54,21 @@ test('successful staff sign-in returns to its workspace, never the visitor home'
   assert.equal(routes.authSuccessPath('visitor', '/workspace'), '/');
 });
 
+test('Site Admin has distinct protected portal routes while Tourism Office keeps office routes', () => {
+  assert.equal(routes.staffPortalPath('site_admin', 'Overview'), '/site-admin');
+  assert.equal(routes.staffPortalPath('site_admin', 'Staff and accounts'), '/site-admin/team');
+  assert.equal(routes.staffPortalPath('site_admin', 'Schedule & Operations'), '/site-admin/schedule-operations');
+  assert.equal(routes.staffPortalPath('tourism_office', 'Overview'), '/workspace');
+  assert.equal(routes.staffPortalPath('tourism_office', 'Schedule & Operations'), '/workspace/schedule-operations');
+  assert.equal(routes.pageFromPath('/site-admin'), 'Overview');
+  assert.equal(routes.pageFromPath('/site-admin/team'), 'Staff and accounts');
+  assert.equal(routes.pageFromPath('/site-admin/schedule-operations'), 'Schedule & Operations');
+  assert.equal(routes.isWorkspacePath('/site-admin/reports'), true);
+  assert.equal(routes.staffReturnPath('/site-admin/team'), '/site-admin/team');
+  assert.equal(routes.canShowVisitorAuthModal('/site-admin'), false);
+  assert.equal(routes.isKnownAppPath('/site-admin'), true);
+});
+
 test('password recovery returns to the matching account portal', () => {
   assert.equal(routes.passwordRecoveryPath('visitor'), '/login?mode=reset');
   assert.equal(routes.passwordRecoveryPath('gatekeeper'), '/staff/login?mode=reset');
@@ -73,7 +88,13 @@ test('route matching resolves workspace and destination pages', () => {
   assert.equal(routes.visitorRoutePaths.Discover, '/discover');
   assert.equal(routes.visitorRoutePaths.Destinations, '/destinations');
   assert.equal(routes.pageFromPath('/workspace/reservations'), 'Reservations');
+  assert.equal(routes.pageFromPath('/workspace/schedule-operations'), 'Schedule & Operations');
+  assert.equal(routes.pageFromPath('/workspace/schedule'), 'Slots and closures');
+  assert.equal(routes.pageFromPath('/workspace/duty-roster'), 'Duty roster');
   assert.equal(routes.pageFromPath('/workspace/account/password'), 'Change password');
+  assert.equal(routes.pageFromPath('/workspace/feedback'), 'Feedback & Reviews');
+  assert.equal(routes.pageFromPath('/site-admin/feedback'), 'Feedback & Reviews');
+  assert.equal(routes.isKnownAppPath('/site-admin/feedback'), true);
   assert.equal(routes.pageFromPath('/workspace/unrecognized'), 'Overview');
   assert.equal(routes.pageFromPath('/discover'), 'Discover');
   assert.equal(routes.pageFromPath('/destinations'), 'Destinations');

@@ -14,14 +14,26 @@ export const workspaceRoutePaths: Partial<Record<AppPage, string>> = {
   'Scan and exit': '/workspace/scan', 'Walk-in registration': '/workspace/walk-ins',
   'Capacity map': '/workspace/capacity', 'Duty details': '/workspace/duty',
   Reports: '/workspace/reports', Activity: '/workspace/activity',
-  'Slots and closures': '/workspace/schedule', 'Staff and accounts': '/workspace/team',
+  'Slots and closures': '/workspace/schedule', 'Schedule & Operations': '/workspace/schedule-operations', 'Staff and accounts': '/workspace/team',
   'Sites and staff': '/workspace/sites', 'Duty roster': '/workspace/duty-roster',
+  'Payment verification': '/workspace/payment-verification', 'Payment settings': '/workspace/payment-settings',
+  'Feedback & Reviews': '/workspace/feedback',
   'Change password': '/workspace/account/password',
 };
+
+export const siteAdminRoutePaths: Partial<Record<AppPage, string>> = Object.fromEntries(
+  Object.entries(workspaceRoutePaths).map(([page, path]) => [page, path.replace(/^\/workspace/, '/site-admin')]),
+) as Partial<Record<AppPage, string>>;
+
+export function staffPortalPath(role: AccountRole, page: AppPage): string {
+  return (role === 'site_admin' ? siteAdminRoutePaths[page] : workspaceRoutePaths[page])
+    ?? (role === 'site_admin' ? '/site-admin' : '/workspace');
+}
 
 export const visitorRoutePaths: Partial<Record<AppPage, string>> = {
   Landing: '/', Discover: '/discover', Destinations: '/destinations', 'Destination map': '/map',
   'How it works': '/how-it-works', Bookings: '/bookings', Tickets: '/tickets', Account: '/account',
+  Payment: '/payment', 'Booking confirmation': '/booking-confirmation',
   'Visitor login': VISITOR_LOGIN_PATH, 'Staff login': STAFF_LOGIN_PATH,
 };
 
@@ -29,11 +41,15 @@ export function pageFromPath(pathname: string): AppPage {
   const gatekeeper = parseGatekeeperRoute(pathname);
   if (gatekeeper) return gatekeeper.page;
   const path = pathname.replace(/\/+$/, '') || '/';
+  if (/^\/destinations\/[^/]+\/book$/.test(path)) return 'Booking';
+  if (/^\/payment\/[^/]+$/.test(path)) return 'Payment';
+  if (/^\/booking-confirmation\/[^/]+$/.test(path)) return 'Booking confirmation';
   if (path === VISITOR_LOGIN_PATH) return 'Visitor login';
   if (path === STAFF_LOGIN_PATH) return 'Staff login';
   if (path === '/destinations') return 'Destinations';
   if (path.startsWith('/gatekeeper/')) return 'Overview';
-  const workspace = Object.entries(workspaceRoutePaths).find(([, value]) => value === path)?.[0] as AppPage | undefined;
+  const routePaths = path === '/site-admin' || path.startsWith('/site-admin/') ? siteAdminRoutePaths : workspaceRoutePaths;
+  const workspace = Object.entries(routePaths).find(([, value]) => value === path)?.[0] as AppPage | undefined;
   if (workspace) return workspace;
   if (path.startsWith('/workspace/')) return 'Overview';
   if (path.startsWith('/destinations/')) return 'Destination';
@@ -41,13 +57,14 @@ export function pageFromPath(pathname: string): AppPage {
 }
 
 export function destinationSlugFromPath(pathname: string): string {
-  const match = pathname.match(/^\/destinations\/([^/]+)\/?$/);
+  const match = pathname.match(/^\/destinations\/([^/]+)(?:\/book)?\/?$/);
   if (!match) return '';
   try { return decodeURIComponent(match[1]); } catch { return ''; }
 }
 
 export function isWorkspacePath(pathname: string): boolean {
-  return pathname === '/workspace' || pathname.startsWith('/workspace/');
+  return pathname === '/workspace' || pathname.startsWith('/workspace/')
+    || pathname === '/site-admin' || pathname.startsWith('/site-admin/');
 }
 
 export function isAuthPath(pathname: string): boolean {
@@ -64,8 +81,9 @@ export function isKnownAppPath(pathname: string): boolean {
     || isAuthPath(path)
     || path === '/destinations'
     || Boolean(destinationSlugFromPath(path))
+    || /^\/(?:payment|booking-confirmation)\/[^/]+$/.test(path)
+    || isWorkspacePath(path)
     || Object.values(workspaceRoutePaths).includes(path)
-    || path.startsWith('/workspace/')
     || Object.values(visitorRoutePaths).includes(path)
     || isGatekeeperPath(path);
 }
@@ -80,7 +98,8 @@ function safeInternalPath(candidate: string | null | undefined): string {
 
 export function visitorReturnPath(candidate: string | null | undefined): string {
   const path = safeInternalPath(candidate);
-  if (path === '/' || path === '/discover' || path === '/destinations' || ['/map', '/how-it-works', '/bookings', '/tickets', '/account'].includes(path)) return path;
+  if (path === '/' || path === '/discover' || path === '/destinations' || ['/map', '/how-it-works', '/bookings', '/tickets', '/account'].includes(path)
+    || /^\/destinations\/[^/]+\/book$/.test(path) || /^\/(?:payment|booking-confirmation)\/[^/]+$/.test(path)) return path;
   return destinationSlugFromPath(path) ? path : '/';
 }
 

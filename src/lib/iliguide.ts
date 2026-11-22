@@ -40,6 +40,7 @@ export type Site = {
   longitude: number | null;
   timezone: string;
   status: 'draft' | 'published' | 'inactive' | 'temporarily_closed';
+  management_organization_id?: string;
   adult_fee: number;
   child_fee: number;
   pwd_discount_percent: number;
@@ -49,6 +50,7 @@ export type Site = {
   cancellation_cutoff_hours: number;
   images: SiteImage[];
   operating_hours: Array<{ weekday: number; opens_at: string | null; closes_at: string | null; is_closed: boolean }>;
+  operating_exceptions: Array<{ exception_date: string; opens_at: string | null; closes_at: string | null; is_closed: boolean; reason: string }>;
   closures: Array<{ starts_on: string; ends_on: string; starts_at: string | null; ends_at: string | null; reason: string }>;
 };
 export type Slot = {
@@ -69,7 +71,13 @@ export type LiveOccupancy = {
   last_recorded_at: string | null;
   calculated_at: string;
   approved_visitor_limit: number | null;
+  estimated_live_capacity?: number | null;
+  estimate_basis?: string | null;
   capacity_estimate: number | null;
+  near_threshold_percent?: number;
+  almost_threshold_percent?: number;
+  critical_threshold_percent?: number;
+  restrict_at_warning?: boolean;
 };
 export type GatekeeperDuty = {
   duty_id: string;
@@ -104,6 +112,10 @@ export type Booking = {
   cancellation_cutoff_at: string | null;
   hold_expires_at: string | null;
   created_at: string;
+  manual_payment_id?: string | null;
+  manual_payment_status?: string | null;
+  manual_payment_mode?: string | null;
+  payment_receipt_reference?: string | null;
 };
 export type CreatedHold = {
   booking_id: string;
@@ -140,6 +152,11 @@ export function message(error: unknown): string {
   return 'Something went wrong. Please try again.';
 }
 
+export function timestampTimeLabel(value: string, timeZone = 'Asia/Manila'): string {
+  const timestamp = new Date(value);
+  if (!Number.isFinite(timestamp.getTime())) return 'Time unavailable';
+  return new Intl.DateTimeFormat('en-PH', { timeZone, hour: 'numeric', minute: '2-digit' }).format(timestamp);
+}
 export async function loadProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await db().from('profiles')
     .select('id, full_name, email, phone, avatar_path, role, account_status')
@@ -164,17 +181,28 @@ export async function loadAssignments(userId: string): Promise<StaffAssignment[]
 }
 
 export async function loadSites(includeUnpublished = false): Promise<Site[]> {
-  let query = db().from('tourism_sites')
-    .select(
-      'id, name, slug, category, description, address, latitude, longitude, timezone, status,' +
-      ' settings:site_settings(adult_fee, child_fee, pwd_discount_percent, max_per_booking, daily_capacity, fee_information_confirmed, cancellation_cutoff_hours),' +
-      ' images:site_images(id, storage_path, image_role, alt_text, sort_order),' +
-      ' operating_hours:site_operating_hours(weekday, opens_at, closes_at, is_closed),' +
-      ' closures:site_closures(starts_on, ends_on, starts_at, ends_at, reason)',
-    )
-    .order('name');
-  if (!includeUnpublished) query = query.eq('status', 'published');
-  const { data, error } = await query;
+  const selectSites = (includeManagementOrganizationId: boolean) => {
+    let query = db().from('tourism_sites')
+      .select(
+        'id, name, slug, category, description, address, latitude, longitude, timezone, status,' +
+        (includeManagementOrganizationId ? ' management_organization_id,' : '') +
+        ' settings:site_settings(adult_fee, child_fee, pwd_discount_percent, max_per_booking, daily_capacity, fee_information_confirmed, cancellation_cutoff_hours),' +
+        ' images:site_images(id, storage_path, image_role, alt_text, sort_order),' +
+        ' operating_hours:site_operating_hours(weekday, opens_at, closes_at, is_closed),' +
+        ' operating_exceptions:site_operating_exceptions(exception_date, opens_at, closes_at, is_closed, reason),' +
+        ' closures:site_closures(starts_on, ends_on, starts_at, ends_at, reason)',
+      )
+      .order('name');
+    if (!includeUnpublished) query = query.eq('status', 'published');
+    return query;
+  };
+
+  let { data, error } = await selectSites(includeUnpublished);
+  if (includeUnpublished && error &&
+    ['PGRST204', '42703'].includes(error.code) &&
+    error.message.includes('management_organization_id')) {
+    ({ data, error } = await selectSites(false));
+  }
   if (error) throw error;
   const rows = (data ?? []) as Array<Record<string, any>>;
   if (!rows.length) return [];
@@ -202,6 +230,7 @@ export async function loadSites(includeUnpublished = false): Promise<Site[]> {
       cancellation_cutoff_hours: Number(settings?.cancellation_cutoff_hours ?? 24),
       images,
       operating_hours: row.operating_hours ?? [],
+      operating_exceptions: row.operating_exceptions ?? [],
       closures: row.closures ?? [],
     } as Site;
   });
@@ -218,7 +247,11 @@ export async function loadSlots(siteId: string, from: string, to: string): Promi
 }
 
 export async function loadLiveOccupancy(siteId: string): Promise<LiveOccupancy | null> {
-  const { data, error } = await db().rpc('site_live_occupancy', { p_site_id: siteId });
+  let result = await db().rpc('site_capacity_snapshot', { p_site_id: siteId });
+  if (result.error?.code === 'PGRST202') {
+    result = await db().rpc('site_live_occupancy', { p_site_id: siteId });
+  }
+  const { data, error } = result;
   if (error) throw error;
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) return null;
@@ -228,7 +261,13 @@ export async function loadLiveOccupancy(siteId: string): Promise<LiveOccupancy |
     arrivals_today: Number(row.arrivals_today ?? 0),
     departures_today: Number(row.departures_today ?? 0),
     approved_visitor_limit: row.approved_visitor_limit == null ? null : Number(row.approved_visitor_limit),
+    estimated_live_capacity: row.estimated_live_capacity == null ? null : Number(row.estimated_live_capacity),
+    estimate_basis: row.estimate_basis == null ? null : String(row.estimate_basis),
     capacity_estimate: row.capacity_estimate == null ? null : Number(row.capacity_estimate),
+    near_threshold_percent: Number(row.near_threshold_percent ?? 70),
+    almost_threshold_percent: Number(row.almost_threshold_percent ?? 85),
+    critical_threshold_percent: Number(row.critical_threshold_percent ?? 95),
+    restrict_at_warning: Boolean(row.restrict_at_warning),
   } as LiveOccupancy;
 }
 
@@ -253,11 +292,14 @@ export async function loadOwnBookings(): Promise<Booking[]> {
       'id, booking_reference, visitor_name, visitor_email, visitor_phone, visitor_count,' +
       ' adult_count, child_count, pwd_count, total_amount, currency, payment_status, payment_method, booking_status,' +
       ' booking_source, site_id, cancellation_cutoff_at, hold_expires_at, created_at,' +
-      ' tourism_sites(name), site_slots(slot_date, starts_at, ends_at)',
+      ' tourism_sites(name), site_slots(slot_date, starts_at, ends_at), payments!payments_booking_id_fkey(id,provider,payment_mode,payment_status,payment_deadline,receipt_reference,verified_at,amount,payment_application)',
     )
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((row: any) => ({
+  return (data ?? []).map((row: any) => {
+    const manualPayment = (row.payments ?? []).find((payment: Record<string, string>) => payment.provider === 'manual');
+    const paidPayment = (row.payments ?? []).find((payment: Record<string, string>) => payment.payment_status === 'paid');
+    return ({
     booking_id: row.id,
     booking_reference: row.booking_reference,
     visitor_name: row.visitor_name,
@@ -281,7 +323,12 @@ export async function loadOwnBookings(): Promise<Booking[]> {
     cancellation_cutoff_at: row.cancellation_cutoff_at,
     hold_expires_at: row.hold_expires_at,
     created_at: row.created_at,
-  })) as Booking[];
+    manual_payment_id: manualPayment?.id ?? null,
+    manual_payment_status: manualPayment?.payment_status ?? null,
+    manual_payment_mode: (row.payments ?? []).find((payment: Record<string, string>) => payment.payment_mode === 'demo')?.payment_mode ?? null,
+    payment_receipt_reference: paidPayment?.receipt_reference ?? null,
+  });
+  }) as Booking[];
 }
 
 export async function createHold(input: {

@@ -1,10 +1,11 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Building2, CalendarClock, CalendarDays, Camera, ChartNoAxesCombined, Check, History, ImagePlus, KeyRound, LayoutDashboard, MapPin, MapPinned, Pencil, Plus, Printer, RefreshCw, ScanLine, ShieldCheck, Ticket as TicketIcon, Users, UserRound, X, type LucideIcon } from 'lucide-react';
+import { Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BadgeCheck, BookOpen, Building2, CalendarClock, CalendarDays, Camera, ChartNoAxesCombined, Check, ChevronLeft, ChevronRight, Clock3, CreditCard, History, ImagePlus, KeyRound, LayoutDashboard, MapPin, MapPinned, MessageSquareText, Pencil, Plus, Printer, RefreshCw, ScanLine, ShieldCheck, Ticket as TicketIcon, Users, UserRound, X, type LucideIcon } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
-import { calculateBookingTotal, db, dateLabel, exportCsv, invokeFunction, loadLiveOccupancy, loadMyActiveGatekeeperDuty, loadSlots, money, monthDateRange, timeLabel, type GatekeeperDuty, type LiveOccupancy, type Profile, type Site, type Slot, type StaffAssignment } from '../lib/iliguide';
+import { calculateBookingTotal, db, dateLabel, exportCsv, invokeFunction, loadMyActiveGatekeeperDuty, loadSlots, money, monthDateRange, timeLabel, timestampTimeLabel, type GatekeeperDuty, type Profile, type Site, type Slot, type StaffAssignment } from '../lib/iliguide';
 import { emptyVisitorInformation, requiredVisitorFields, resizeVisitorInformation, visitorInformationComplete, visitorInformationPayload } from '../lib/visitorInformation';
 import { bookingContactError } from '../lib/bookingValidation';
+import { applyOperatingHoursTemplate } from '../lib/operatingHours';
 import { paymentStatusLabel } from '../lib/paymentStatus';
 import { useSilentLoad } from '../lib/useSilentLoad';
 import { VisitorInformationForm } from './VisitorInformationForm';
@@ -14,13 +15,18 @@ import DestinationMap from './DestinationMap';
 import type { GatekeeperPage } from '../lib/gatekeeperRoutes';
 import './DutyRoster.css';
 import './CancellationReview.css';
+import type { ManualPaymentSettings } from './VisitorBookingFlow';
+import { DutyDetailsPage, DutyRosterPage } from './DutyRosterCalendar';
+import { capacityStatus } from '../lib/capacity';
+import { useLiveCapacity } from '../lib/useLiveCapacity';
+import { FeedbackManagementPage } from './ReviewPages';
 
 type Role = Profile['role'];
-type Page = GatekeeperPage | 'Activity' | 'Slots and closures' | 'Staff and accounts' | 'Sites and staff' | 'Duty roster';
+type Page = GatekeeperPage | 'Activity' | 'Slots and closures' | 'Schedule & Operations' | 'Staff and accounts' | 'Sites and staff' | 'Duty roster' | 'Payment verification' | 'Payment settings' | 'Feedback & Reviews';
 type Props = {
   page: Page; role: Role; sites: Site[]; siteId: string; setSiteId: (value: string) => void;
   assignments: StaffAssignment[]; notify: (message: string) => void; busy: boolean;
-  setBusy: (value: boolean) => void; refresh: () => void; go: (page: Page) => void;
+  setBusy: (value: boolean) => void; refresh: () => void; go: (page: Page, tab?: 'duty' | 'hours' | 'capacity') => void;
   user: User | null;
 };
 const phToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
@@ -44,15 +50,20 @@ export function StaffPages(props: Props) {
     if (props.page === 'Capacity map') content = <CapacityMapPage {...props}/>;
     if (props.page === 'Duty details') content = <DutyDetailsPage {...props}/>;
     if (props.page === 'Reports') content = <ReportsPage {...props}/>;
+    if (props.page === 'Payment verification') content = <ManualPaymentVerificationPage {...props}/>;
     return <StaffConsole {...props}><GatekeeperDutyGate {...props} content={<Fragment key={staffScopeKey}>{content}</Fragment>}/></StaffConsole>;
   }
   let content: ReactNode = <OverviewPage {...props}/>;
   if (props.page === 'Scan and exit' || props.page === 'Walk-in registration') content = <AccessNotice/>;
   else if (props.page === 'Slots and closures') content = props.role === 'site_admin' || props.role === 'tourism_office' ? <SchedulePage {...props}/> : <AccessNotice/>;
+  else if (props.page === 'Schedule & Operations') content = props.role === 'tourism_office' || props.role === 'site_admin' ? <ScheduleOperationsPage {...props}/> : <AccessNotice/>;
   else if (props.page === 'Staff and accounts') content = props.role === 'site_admin' || props.role === 'tourism_office' ? <PeoplePage {...props}/> : <AccessNotice/>;
   else if (props.page === 'Reports') content = props.role === 'site_admin' || props.role === 'tourism_office' ? <ReportsPage {...props}/> : <AccessNotice/>;
   else if (props.page === 'Sites and staff') content = props.role === 'tourism_office' ? <SitesPage {...props}/> : <AccessNotice/>;
   else if (props.page === 'Duty roster') content = props.role === 'site_admin' || props.role === 'tourism_office' ? <DutyRosterPage {...props}/> : <AccessNotice/>;
+  else if (props.page === 'Payment verification') content = props.role === 'site_admin' ? <ManualPaymentVerificationPage {...props}/> : <AccessNotice/>;
+  else if (props.page === 'Payment settings') content = props.role === 'tourism_office' || props.role === 'site_admin' ? <PaymentSettingsPage {...props}/> : <AccessNotice/>;
+  else if (props.page === 'Feedback & Reviews') content = props.role === 'tourism_office' || props.role === 'site_admin' ? <FeedbackManagementPage role={props.role} sites={props.sites} notify={props.notify}/> : <AccessNotice/>;
   else if (props.page === 'Capacity map') content = <CapacityMapPage {...props}/>;
   else if (props.page === 'Visitor Logbook') content = props.role === 'site_admin' || props.role === 'tourism_office' ? <VisitorLogbookPage {...props}/> : <AccessNotice/>;
   else if (props.page === 'Activity') content = props.role === 'tourism_office' ? <ActivityPage {...props}/> : <AccessNotice/>;
@@ -61,10 +72,10 @@ export function StaffPages(props: Props) {
 
 function StaffConsole(props: Props & { children: ReactNode }) {
   const items: Array<[string, Page, LucideIcon]> = props.role === 'gatekeeper'
-    ? [['Dashboard', 'Overview', LayoutDashboard], ['Reservations', 'Reservations', CalendarDays], ['Visitors', 'Visitor Management', Users], ['Check-in', 'Scan and exit', ScanLine], ['Walk-ins', 'Walk-in registration', TicketIcon], ['Daily logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Today’s duty', 'Duty details', CalendarClock]]
+    ? [['Dashboard', 'Overview', LayoutDashboard], ['Reservations', 'Reservations', CalendarDays], ['Visitors', 'Visitor Management', Users], ['Check-in', 'Scan and exit', ScanLine], ['Walk-ins', 'Walk-in registration', TicketIcon], ['Payment verification', 'Payment verification', BadgeCheck], ['Daily logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Today’s duty', 'Duty details', CalendarClock]]
     : props.role === 'tourism_office'
-      ? [['Overview', 'Overview', LayoutDashboard], ['Duty roster', 'Duty roster', CalendarClock], ['Destinations & staff', 'Sites and staff', Building2], ['Operating hours & slots', 'Slots and closures', CalendarDays], ['Staff & accounts', 'Staff and accounts', Users], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Activity', 'Activity', History]]
-      : [['Overview', 'Overview', LayoutDashboard], ['Operating hours & slots', 'Slots and closures', CalendarDays], ['Staff & accounts', 'Staff and accounts', Users], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Duty roster', 'Duty roster', CalendarClock], ['Reports', 'Reports', ChartNoAxesCombined]];
+      ? [['Overview', 'Overview', LayoutDashboard], ['Schedule & Operations', 'Schedule & Operations', CalendarClock], ['Destinations & staff', 'Sites and staff', Building2], ['Staff & accounts', 'Staff and accounts', Users], ['Payment settings', 'Payment settings', CreditCard], ['Feedback & Reviews', 'Feedback & Reviews', MessageSquareText], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Activity', 'Activity', History]]
+      : [['Overview', 'Overview', LayoutDashboard], ['Schedule & Operations', 'Schedule & Operations', CalendarClock], ['Staff & accounts', 'Staff and accounts', Users], ['Payment verification', 'Payment verification', BadgeCheck], ['Payment settings', 'Payment settings', CreditCard], ['Feedback & Reviews', 'Feedback & Reviews', MessageSquareText], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined]];
   items.push(['Account & security', 'Change password', KeyRound]);
   const roleName = props.role === 'tourism_office' ? 'Tourism Office' : props.role === 'site_admin' ? 'Site administrator' : 'Site gatekeeper';
   const userName = String(props.user?.user_metadata?.full_name ?? props.user?.email ?? 'Staff account');
@@ -105,24 +116,35 @@ function ChangePasswordPage(props: Props) {
 function GatekeeperDutyGate(props: Props & { content: ReactNode }) {
   const site = assignedGatekeeperSite(props);
   const [duty, setDuty] = useState<GatekeeperDuty | null>(null);
-  const [state, setState] = useState<'loading' | 'ready' | 'locked' | 'unavailable'>('loading');
+  const [state, setState] = useState<'loading' | 'ready' | 'scheduled' | 'completed' | 'locked' | 'unavailable'>('loading');
   useEffect(() => {
     let active = true;
     if (!site) { setState('locked'); return () => { active = false; }; }
     setState('loading');
-    void loadMyActiveGatekeeperDuty(site.id).then((row) => {
+    const refresh = () => void loadMyActiveGatekeeperDuty(site.id).then((row) => {
       if (!active) return;
       setDuty(row);
-      setState(row ? 'ready' : 'locked');
+      setState(!row ? 'locked' : ['on_duty', 'active'].includes(row.effective_status) ? 'ready'
+        : row.effective_status === 'scheduled_today' ? 'scheduled' : 'completed');
     }).catch(() => { if (active) setState('unavailable'); });
-    return () => { active = false; };
+    refresh();
+    const interval = window.setInterval(refresh, 60000);
+    return () => { active = false; window.clearInterval(interval); };
   }, [site?.id]);
+  const dutyLabel = state === 'ready' ? 'On Duty' : state === 'scheduled' ? 'Scheduled Today' : 'Duty completed';
+  const context = duty && <section className="duty-context"><ShieldCheck size={17}/><span><b>{site?.name}</b><small>{props.user?.email}</small> · {duty.duty_role === 'primary' ? 'Primary Gatekeeper' : 'Support Gatekeeper'} · {new Intl.DateTimeFormat('en-PH', { timeZone: site?.timezone || 'Asia/Manila', dateStyle: 'medium' }).format(new Date(duty.duty_date + 'T00:00:00+08:00'))} · {timestampTimeLabel(duty.shift_start_at, site?.timezone)}–{timestampTimeLabel(duty.shift_end_at, site?.timezone)}</span><b className={'duty-on-status' + (state === 'ready' ? '' : ' duty-scheduled-status')}>{dutyLabel}</b></section>;
   return <>
     {state === 'loading' && <section className="dashboard-page section-wrap"><div className="empty-card"><ShieldCheck size={30}/><h3>Checking gatekeeper duty</h3><p>Loading the active duty roster for this destination.</p></div></section>}
     {state === 'unavailable' && <section className="dashboard-page section-wrap"><div className="empty-card"><ShieldCheck size={30}/><h3>Duty roster setup is unavailable</h3><p>Apply the latest database migration, then create an active duty roster entry.</p></div></section>}
     {state === 'locked' && <>{props.page === 'Duty details' ? props.content : <section className="dashboard-page"><div className="empty-card"><ShieldCheck size={30}/><h3>Gatekeeper duty required</h3><p>Your account is active, but you are not assigned as gatekeeper for this destination and shift. Contact your supervisor.</p><button className="btn btn-outline" onClick={() => props.go('Duty details')}>View assigned duty</button></div></section>}</>}
-    {state === 'ready' && <><section className="duty-context"><ShieldCheck size={17}/><span><b>{site?.name}</b><small>{props.user?.email}</small> · {duty?.duty_role === 'primary' ? 'Primary Responsible Gatekeeper' : 'Support Gatekeeper'} · Primary: {duty?.primary_gatekeeper_name} · {new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium' }).format(new Date(duty!.duty_date + 'T00:00:00+08:00'))} · Ends {new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }).format(new Date(duty!.shift_end_at))}</span><b className="duty-on-status">On Duty</b></section>{props.content}</>}
+    {state === 'ready' && <>{context}{props.content}</>}
+    {state === 'scheduled' && <>{context}{props.page === 'Duty details' ? props.content : <DutyAccessNotice title="Scheduled Today" text="Operational access starts at the assigned opening time. Duty assignment does not record physical presence." onView={() => props.go('Duty details')}/>}</>}
+    {state === 'completed' && <>{context}{props.page === 'Duty details' ? props.content : <DutyAccessNotice title="Duty window ended" text="This scheduled shift has ended. Attendance is recorded only through the check-in process." onView={() => props.go('Duty details')}/>}</>}
   </>;
+}
+
+function DutyAccessNotice({ title, text, onView }: { title: string; text: string; onView: () => void }) {
+  return <section className="dashboard-page"><div className="empty-card"><ShieldCheck size={30}/><h3>{title}</h3><p>{text}</p><button className="btn btn-outline" onClick={onView}>View assigned duty</button></div></section>;
 }
 
 function assignedGatekeeperSite(props: Props) {
@@ -148,8 +170,6 @@ function OverviewPage(props: Props) {
   const [visibleSites, setVisibleSites] = useState<string[]>([]);
   const [networkSiteId, setNetworkSiteId] = useState('all');
   const [todayMetrics, setTodayMetrics] = useState<Record<string, any> | null>(null);
-  const [liveOccupancy, setLiveOccupancy] = useState<LiveOccupancy | null>(null);
-  const [dailyBookingCapacity, setDailyBookingCapacity] = useState<number | null>(null);
   const [totalReservations, setTotalReservations] = useState(0);
   const [upcoming, setUpcoming] = useState<Array<Record<string, any>>>([]);
   const [gatekeeperAttendance, setGatekeeperAttendance] = useState<Array<{ scanned_at: string; visitor_count: number }>>([]);
@@ -158,6 +178,8 @@ function OverviewPage(props: Props) {
   const monthEnd = new Date(Number(monthDate.slice(0, 4)), Number(monthDate.slice(5, 7)), 0).getDate();
   const isGatekeeper = props.role === 'gatekeeper';
   const site = isGatekeeper ? assignedGatekeeperSite(props) : props.sites.find((item) => item.id === props.siteId);
+  const capacityFeed = useLiveCapacity(isGatekeeper && site ? [site.id] : []);
+  const liveOccupancy = site && capacityFeed.state === 'ready' ? capacityFeed.rows[site.id] ?? null : null;
   const dashboardSites = props.role === 'tourism_office' ? props.sites.filter((item) => networkSiteId === 'all' || item.id === networkSiteId) : site ? [site] : [];
   const siteScope = props.role === 'tourism_office' ? props.sites.map((item) => item.id).join(',') : site?.id ?? props.siteId;
   const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${siteScope}:${networkSiteId}:${networkSiteId === 'all' ? selectedYear : monthStart}`);
@@ -170,24 +192,20 @@ function OverviewPage(props: Props) {
         const horizon = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() + 7 * 86400000));
         const monthStartAt = new Date(`${monthStart}T00:00:00+08:00`).toISOString();
         const monthEndAt = new Date(Date.parse(`${monthDate}-${String(monthEnd).padStart(2, '0')}T00:00:00+08:00`) + 86400000).toISOString();
-        const [daily, total, reservations, occupancy, attendance, siteSettings] = await Promise.all([
+        const [daily, total, reservations, attendance] = await Promise.all([
           db().from('site_visit_daily_metrics').select('*').eq('site_id', site.id).eq('report_date', today).maybeSingle(),
           db().from('bookings').select('id', { count: 'exact', head: true }).eq('site_id', site.id).neq('booking_status', 'expired'),
           db().from('bookings').select('id,booking_reference,visitor_name,visitor_count,booking_status,site_slots!inner(slot_date,starts_at)')
             .eq('site_id', site.id).gte('site_slots.slot_date', today).lte('site_slots.slot_date', horizon)
             .in('booking_status', ['confirmed', 'awaiting_payment']).order('created_at').limit(12),
-          loadLiveOccupancy(site.id).catch(() => null),
           db().from('attendance_logs').select('scanned_at,booking:bookings!attendance_logs_booking_id_fkey(visitor_count)')
             .eq('site_id', site.id).eq('action', 'entry').gte('scanned_at', monthStartAt).lt('scanned_at', monthEndAt).order('scanned_at').limit(2000),
-          db().from('site_settings').select('daily_capacity').eq('site_id', site.id).maybeSingle(),
         ]);
-        for (const result of [daily, total, reservations, attendance, siteSettings]) if (result.error) throw result.error;
+        for (const result of [daily, total, reservations, attendance]) if (result.error) throw result.error;
         if (request !== requestVersion.current) return;
         setTodayMetrics(daily.data ?? null);
         setTotalReservations(total.count ?? 0);
         setUpcoming((reservations.data ?? []) as Array<Record<string, any>>);
-        setLiveOccupancy(occupancy);
-        setDailyBookingCapacity(siteSettings.data?.daily_capacity ?? null);
         setGatekeeperAttendance((attendance.data ?? []).map((row: any) => ({ scanned_at: row.scanned_at, visitor_count: Number(Array.isArray(row.booking) ? row.booking[0]?.visitor_count : row.booking?.visitor_count ?? 0) })));
       } else {
         let query = db().from('booking_daily_metrics')
@@ -271,20 +289,24 @@ function OverviewPage(props: Props) {
       <div className="stats-grid gatekeeper-primary-stats">{[
         [liveOccupancy?.current_visitor_count ?? '—', 'Currently inside', Users],
         [todayMetrics?.expected_visitor_count ?? 0, 'Expected visitors today', CalendarDays],
-        [liveOccupancy?.arrivals_today ?? 0, 'Arrivals today', ArrowRight],
-        [liveOccupancy?.departures_today ?? 0, 'Departures today', ArrowLeft],
+        [liveOccupancy?.arrivals_today ?? '—', 'Arrivals today', ArrowRight],
+        [liveOccupancy?.departures_today ?? '—', 'Departures today', ArrowLeft],
       ].map(([value, label, Icon]) => <div key={String(label)}><Icon size={19}/><small>{label}</small><b>{loading ? '…' : value}</b></div>)}</div>
       {(() => {
-        const current = liveOccupancy?.current_visitor_count ?? 0;
-        const approvedLimit = liveOccupancy?.approved_visitor_limit;
-        const capacity = approvedLimit ?? liveOccupancy?.capacity_estimate ?? dailyBookingCapacity;
-        const estimated = approvedLimit == null;
-        const percent = capacity ? Math.min(100, Math.round(current / capacity * 100)) : null;
-        const remaining = capacity == null ? null : Math.max(0, capacity - current);
-        const status = percent == null ? 'Capacity estimate unavailable' : percent >= 100 ? 'Full / Overcrowded' : percent >= 90 ? 'Almost Full' : percent >= 70 ? 'Near Capacity' : 'Available';
-        const capacitySource = approvedLimit != null ? 'Approved visitor limit' : liveOccupancy?.capacity_estimate != null ? 'Assessment estimate' : 'Daily booking limit estimate';
-        return <div className="gatekeeper-dashboard-grid"><section className="capacity-live-card"><div className="card-heading"><span><small>LIVE DESTINATION CAPACITY</small><h3>{site?.name}</h3></span><span className={`capacity-state ${percent != null && percent >= 90 ? 'capacity-state-warning' : ''}`}>{estimated && percent != null ? 'Estimated · ' : ''}{status}</span></div>{capacity == null ? <p>Capacity estimate unavailable.</p> : <><p className="capacity-total"><b>{current.toLocaleString()}</b> / {estimated ? '~' : ''}{capacity.toLocaleString()} <span>visitors</span></p><div className="capacity-progress" role="progressbar" aria-label={estimated ? 'Estimated destination capacity' : 'Approved destination capacity'} aria-valuemin={0} aria-valuemax={capacity} aria-valuenow={Math.min(current, capacity)}><i className={percent! >= 90 ? 'capacity-progress-high' : percent! >= 70 ? 'capacity-progress-near' : ''} style={{ width: `${percent}%` }}/></div><div className="capacity-meta"><b>{estimated ? '~' : ''}{percent}% occupied</b><span>{estimated ? '~' : ''}{remaining?.toLocaleString()} spaces remaining</span></div></>}<p className="daily-booking-capacity">{capacitySource}: {capacity == null ? 'Not configured' : `${capacity.toLocaleString()} visitors`}{estimated ? '. Estimate only; not an approved simultaneous occupancy limit.' : '.'}</p>{percent != null && percent >= 70 && <p className="capacity-warning">{estimated ? 'Estimated occupancy is nearing the estimated limit.' : 'Destination is nearing its approved visitor limit.'}</p>}</section>
-        <section className="quick-actions-card"><div className="card-heading"><span><small>QUICK ACTIONS</small><h3>Visitor operations</h3></span><Activity size={18}/></div><div className="gatekeeper-actions"><button className="gatekeeper-action-primary" onClick={() => props.go('Scan and exit')}><ScanLine/>Scan check-in</button><button onClick={() => props.go('Scan and exit')}><ArrowLeft/>Record check-out</button><button onClick={() => props.go('Walk-in registration')}><TicketIcon/>Walk-in visitor</button><button onClick={() => props.go('Reservations')}><CalendarDays/>Reservations</button></div></section></div>; })()}
+        const crowd = capacityStatus(liveOccupancy);
+        const current = liveOccupancy?.current_visitor_count;
+        const limit = crowd.limit;
+        const percent = crowd.percent;
+        const warning = crowd.level === 'near' ? 'Visitor occupancy is increasing. Monitor incoming visitors.'
+          : crowd.level === 'almost' ? 'The destination is approaching maximum capacity. Prepare to limit entry and advise visitors about alternatives.'
+            : crowd.level === 'critical' ? 'Critical capacity warning. Follow the destination’s configured entry restrictions and safety procedures.' : null;
+        return <div className="gatekeeper-dashboard-grid"><section className="capacity-live-card"><div className="card-heading"><span><small>LIVE DESTINATION CAPACITY</small><h3>{site?.name}</h3></span><span className={`capacity-state capacity-level-${crowd.level}`}>{crowd.label}</span></div>
+          <p className="capacity-total"><b>{current == null ? '—' : current.toLocaleString()}</b> / {limit == null ? 'Capacity Not Configured' : `${limit.toLocaleString()}${crowd.basis === 'estimated' ? ' provisional estimate' : ''}`} <span>visitors</span></p>
+          {percent != null && limit != null && <><div className="capacity-progress" role="progressbar" aria-label="Recorded occupancy" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(percent))}><i className={`capacity-progress-${crowd.level}`} style={{ width: `${Math.min(100, percent)}%` }}/></div><div className="capacity-meta"><b>{Math.round(percent)}% occupied</b><span>{Math.max(0, limit - current!)} spaces remaining</span></div></>}
+          {warning && <p className="capacity-warning" role="status">{warning}{crowd.basis === 'estimated' ? ' Map estimate only; does not restrict admission.' : percent != null && percent < 100 && crowd.level === 'critical' ? ' Approved maximum not yet reached.' : ''}</p>}
+          <p className="daily-booking-capacity">{capacityFeed.state === 'stale' ? 'Live update interrupted. ' : ''}Last successful update: {capacityFeed.updatedAt ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' }).format(new Date(capacityFeed.updatedAt)) : 'Unavailable'}.</p>
+        </section><section className="quick-actions-card"><div className="card-heading"><span><small>QUICK ACTIONS</small><h3>Visitor operations</h3></span><Activity size={18}/></div><div className="gatekeeper-actions"><button className="gatekeeper-action-primary" onClick={() => props.go('Scan and exit')}><ScanLine/>Scan check-in</button><button onClick={() => props.go('Scan and exit')}><ArrowLeft/>Record check-out</button><button onClick={() => props.go('Walk-in registration')}><TicketIcon/>Walk-in visitor</button><button onClick={() => props.go('Reservations')}><CalendarDays/>Reservations</button><button onClick={() => props.go('Visitor Logbook')}><History/>Attendance log</button><button onClick={() => props.go('Capacity map')}><MapPinned/>Capacity map</button></div></section></div>; })()}
+      {site && <DestinationMap site={site} occupancy={liveOccupancy}/>}
       <div className="gatekeeper-dashboard-grid"><section className="chart-card"><div className="card-heading"><span><small>RECORDED ATTENDANCE · ASIA/MANILA</small><h3>Visitor activity</h3></span><CalendarDays size={18}/></div>{loading ? <div className="empty-inline">Loading attendance…</div> : gatekeeperAttendance.length ? <><div className="gatekeeper-trend-chart" style={{ gridTemplateColumns: `repeat(${monthEnd}, minmax(3px, 1fr))` }} role="img" aria-label={`Daily checked-in visitors at ${site?.name} for ${monthDate}`}>{gatekeeperDailyCounts.map((count, i) => { const day = i + 1; return <div key={day} title={`${day}: ${count} visitors`}><i style={{ height: `${count / gatekeeperDailyMax * 100}%` }}/>{(day === 1 || day % 5 === 0 || day === monthEnd) && <small>{day}</small>}</div>; })}</div><p className="report-note">Daily visitor count from recorded ticket check-ins for this destination.</p></> : <div className="empty-inline">No visitor attendance recorded for this month.</div>}</section>
         <section className="arrivals-card"><div className="card-heading"><span><small>UPCOMING · ASSIGNED DESTINATION</small><h3>Reservations</h3></span><button className="link-btn" onClick={() => props.go('Reservations')}>View all <ArrowRight size={14}/></button></div>
       {loading && <div className="empty-inline">Loading reservations…</div>}
@@ -314,7 +336,7 @@ function OverviewPage(props: Props) {
         {props.role !== 'tourism_office' && <p className="report-note"><ShieldCheck size={15}/> Counts come from confirmed database records and are scoped by staff permissions.</p>}</div>
         <div className="activity-card"><div className="card-heading"><span><small>WORKSPACE</small><h3>Quick actions</h3></span><Activity size={18}/></div>
           {props.role === 'tourism_office' ? <><button className="quick-row" onClick={() => props.go('Sites and staff')}><MapPin size={17}/> Manage destinations <ArrowRight size={14}/></button><button className="quick-row" onClick={() => props.go('Reports')}><ArrowDownToLine size={17}/> Export reports <ArrowRight size={14}/></button></>
-            : <><button className="quick-row" onClick={() => props.go('Slots and closures')}><CalendarDays size={17}/> Manage visit slots <ArrowRight size={14}/></button><button className="quick-row" onClick={() => props.go('Staff and accounts')}><Users size={17}/> Staff & accounts <ArrowRight size={14}/></button></>}</div></div>
+            : <><button className="quick-row" onClick={() => props.go(props.role === 'site_admin' ? 'Schedule & Operations' : 'Slots and closures', 'capacity')}><CalendarDays size={17}/> Manage visit slots <ArrowRight size={14}/></button><button className="quick-row" onClick={() => props.go('Staff and accounts')}><Users size={17}/> Staff & accounts <ArrowRight size={14}/></button></>}</div></div>
     </>}
   </section>;
 }
@@ -344,7 +366,7 @@ function ReservationsPage(props: Props) {
     setRefreshing(true);
     void (async () => {
       let query = db().from('bookings').select(
-        'id,booking_reference,visitor_name,visitor_count,adult_count,child_count,total_amount,payment_method,booking_status,payment_status,booking_source,created_at,site_slots!inner(slot_date,starts_at,ends_at),reservation_visitors(id,sequence_number,visitor_type,full_name,address,gender,nationality,check_in_status,checked_in_at)',
+        'id,booking_reference,visitor_name,visitor_count,adult_count,child_count,total_amount,payment_method,booking_status,payment_status,booking_source,created_at,site_slots!inner(slot_date,starts_at,ends_at),reservation_visitors(id,sequence_number,visitor_type,full_name,address,gender,nationality,check_in_status,checked_in_at),payments(payment_mode)',
         { count: 'exact' },
       ).eq('site_id', site.id);
       if (visitDate) query = query.eq('site_slots.slot_date', visitDate);
@@ -367,7 +389,7 @@ function ReservationsPage(props: Props) {
     try {
       const { error } = await db().rpc('record_onsite_payment', { p_booking_id: booking.id });
       if (error) throw error;
-      props.notify('Onsite payment recorded.');
+      props.notify('Simulated onsite payment recorded.');
       setRefreshKey((current) => current + 1);
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not record onsite payment.'); }
     finally { setPaymentBusy(''); }
@@ -388,7 +410,7 @@ function ReservationsPage(props: Props) {
     {!loading && !refreshing && resultsCurrent && !rows.length && <div className="empty-inline">No bookings match these filters.</div>}
     {loading && <div className="empty-inline" role="status">Loading reservations…</div>}
     {!loading && !!rows.length && <div className="table-card gatekeeper-bookings-table" aria-busy={refreshing || !resultsCurrent}><table><thead><tr><th>Reference</th><th>Booking contact</th><th>Visit</th><th>Visitors</th><th>Payment</th><th>Status</th><th>Created</th></tr></thead>
-      <tbody>{rows.map((booking) => { const slot = Array.isArray(booking.site_slots) ? booking.site_slots[0] : booking.site_slots; const visitors = booking.reservation_visitors ?? [];
+      <tbody>{rows.map((booking) => { const slot = Array.isArray(booking.site_slots) ? booking.site_slots[0] : booking.site_slots; const visitors = booking.reservation_visitors ?? []; const payment = Array.isArray(booking.payments) ? booking.payments[0] : booking.payments; const demoPaid = booking.payment_status === 'paid' && payment?.payment_mode === 'demo';
         return <tr key={booking.id}><td><b>{booking.booking_reference}</b><small>{booking.booking_source.replace('_', ' ')}</small></td>
           <td>{booking.visitor_name}</td><td>{dateLabel(slot?.slot_date)}<small>{slot?.starts_at ? timeLabel(slot.starts_at) : ''}</small></td>
           <td>{booking.visitor_count}<small>{booking.adult_count} adults · {booking.child_count} children</small>
@@ -398,12 +420,163 @@ function ReservationsPage(props: Props) {
               {requiredVisitorFields(site.slug).includes('nationality') && <small>Nationality: {visitor.nationality ?? '—'}</small>}
               <small>{visitor.check_in_status === 'checked_in' ? 'Checked in' : 'Not checked in'}</small>
             </article>)}</div></details></td>
-          <td>{booking.payment_method === 'onsite' ? 'Pay onsite' : 'Online'}<small>{money(Number(booking.total_amount))} due · {paymentStatusLabel(String(booking.payment_status), Number(booking.total_amount))}</small>{booking.payment_method === 'onsite' && booking.payment_status === 'pending' && booking.booking_status === 'confirmed' && <button className="link-btn" disabled={Boolean(paymentBusy)} onClick={() => void recordOnsitePayment(booking)}>{paymentBusy === booking.id ? 'Recording…' : 'Record payment collected'}</button>}</td>
-          <td><span className="status-tag">{String(booking.booking_status).replace(/_/g, ' ')}</span><small>{paymentStatusLabel(String(booking.payment_status), Number(booking.total_amount))}</small></td>
+          <td>{booking.payment_method === 'onsite' ? 'Pay onsite' : 'Online'}<small>{money(Number(booking.total_amount))} · {demoPaid ? 'Demo paid' : paymentStatusLabel(String(booking.payment_status), Number(booking.total_amount))}</small>{booking.payment_method === 'onsite' && booking.payment_status === 'pending' && booking.booking_status === 'confirmed' && <button className="link-btn" disabled={Boolean(paymentBusy)} onClick={() => void recordOnsitePayment(booking)}>{paymentBusy === booking.id ? 'Recording…' : 'Record simulated payment'}</button>}</td>
+          <td><span className="status-tag">{String(booking.booking_status).replace(/_/g, ' ')}</span><small>{demoPaid ? 'Demo paid' : paymentStatusLabel(String(booking.payment_status), Number(booking.total_amount))}</small></td>
           <td>{new Date(booking.created_at).toLocaleString()}</td></tr>;
       })}</tbody></table></div>}
     <div className="staff-quick"><button className="btn btn-outline" disabled={loading || refreshing || !resultsCurrent || page === 0} onClick={() => setPage((current) => current - 1)}><ArrowLeft size={15}/> Previous</button>
       <button className="btn btn-outline" disabled={loading || refreshing || !resultsCurrent || page + 1 >= pageCount} onClick={() => setPage((current) => current + 1)}>Next <ArrowRight size={15}/></button></div></>}
+  </section>;
+}
+
+const emptyManualPaymentSettings: ManualPaymentSettings = {
+  demo_mode: true, payment_window_minutes: 15,
+  gcash_enabled: true, gcash_account_name: 'Illiguide Demo Tourism Office', gcash_account_identifier: 'DEMO-GCASH-001',
+  maya_enabled: true, maya_account_name: 'Illiguide Demo Tourism Office', maya_account_identifier: 'DEMO-MAYA-001',
+  onsite_instructions: 'Present your booking reference at the destination entrance and complete payment with the authorized Gatekeeper.',
+};
+
+function PaymentSettingsPage(props: Props) {
+  const [settings, setSettings] = useState<ManualPaymentSettings>(emptyManualPaymentSettings);
+  const [saved, setSaved] = useState<ManualPaymentSettings>(emptyManualPaymentSettings);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const siteId = props.sites.some((site) => site.id === props.siteId) ? props.siteId : props.sites[0]?.id ?? '';
+  useEffect(() => {
+    let active = true;
+    if (!siteId) { setSettings(emptyManualPaymentSettings); setSaved(emptyManualPaymentSettings); setLoading(false); return; }
+    setLoading(true);
+    void (async () => {
+      try {
+        const [globalResult, siteResult] = await Promise.all([
+          db().from('tourism_payment_settings').select('demo_mode,payment_window_minutes').eq('id', true).maybeSingle(),
+          db().from('site_demo_payment_settings').select('gcash_enabled,gcash_account_name,gcash_account_identifier,maya_enabled,maya_account_name,maya_account_identifier,onsite_instructions').eq('site_id', siteId).maybeSingle(),
+        ]);
+        if (!active) return;
+        if (globalResult.error || siteResult.error) props.notify(globalResult.error?.message ?? siteResult.error?.message ?? 'Could not load payment settings.');
+        else {
+          const next = { ...emptyManualPaymentSettings,
+            gcash_account_identifier: `DEMO-GCASH-${siteId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+            maya_account_identifier: `DEMO-MAYA-${siteId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+            ...globalResult.data, ...siteResult.data,
+          } as ManualPaymentSettings;
+          setSettings(next); setSaved(next);
+        }
+      } catch (error) {
+        if (active) props.notify(error instanceof Error ? error.message : 'Could not load payment settings.');
+      } finally { if (active) setLoading(false); }
+    })();
+    return () => { active = false; };
+  }, [props.notify, siteId]);
+  const change = <K extends keyof ManualPaymentSettings>(key: K, value: ManualPaymentSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
+  const save = async (event: FormEvent) => {
+    event.preventDefault(); setSaving(true);
+    try {
+      if (!siteId) throw new Error('Choose a destination before saving payment settings.');
+      const { error } = await db().from('site_demo_payment_settings').upsert({
+        site_id: siteId, gcash_enabled: settings.gcash_enabled, gcash_account_name: settings.gcash_account_name.trim(),
+        gcash_account_identifier: settings.gcash_account_identifier.trim().toUpperCase(),
+        maya_enabled: settings.maya_enabled, maya_account_name: settings.maya_account_name.trim(),
+        maya_account_identifier: settings.maya_account_identifier.trim().toUpperCase(),
+        onsite_instructions: settings.onsite_instructions.trim(), updated_by: props.user?.id,
+      }, { onConflict: 'site_id' });
+      if (error) throw error;
+      const normalized = { ...settings, gcash_account_identifier: settings.gcash_account_identifier.trim().toUpperCase(), maya_account_identifier: settings.maya_account_identifier.trim().toUpperCase() };
+      setSettings(normalized); setSaved(normalized); props.notify('Payment settings saved.');
+    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not save payment settings.'); }
+    finally { setSaving(false); }
+  };
+  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><h1>Payment <em>settings.</em></h1><p>Configure fictional payment options for each destination.</p></div>
+    {props.role === 'tourism_office' && <label className="payment-site-picker">Destination<select value={siteId} onChange={(event) => props.setSiteId(event.target.value)}>{props.sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>}</div>
+    {loading ? <div className="empty-inline" role="status">Loading payment settings…</div> : !siteId ? <div className="empty-card"><CreditCard size={26}/><h3>No destination available</h3><p>Payment settings need an assigned destination.</p></div> : <form className="manual-payment-settings" onSubmit={(event) => void save(event)}>
+      <div className="demo-payment-banner"><strong>DEMO MODE ACTIVE — NO REAL PAYMENTS</strong><span>All payment accounts, QR codes, and transactions are simulated for demonstration purposes.</span></div>
+      <div className="demo-payment-settings-heading"><div><h2>{props.sites.find((site) => site.id === siteId)?.name ?? 'Destination'} payment methods</h2><p>Identifiers must start with the matching DEMO prefix. These QR codes cannot accept money.</p></div><span className="demo-window"><Clock3 size={16}/> {settings.payment_window_minutes} minutes to complete payment</span></div>
+      <div className="demo-payment-settings-grid">
+        <DemoPaymentMethodSettings method="gcash" settings={settings} change={change}/>
+        <DemoPaymentMethodSettings method="maya" settings={settings} change={change}/>
+      </div>
+      <label>Onsite payment instructions<textarea rows={3} maxLength={1000} required value={settings.onsite_instructions} onChange={(event) => change('onsite_instructions', event.target.value)}/><small>Shown on visitor booking confirmation. Gatekeepers record onsite demo collections.</small></label>
+      <div className="demo-payment-actions"><button type="button" className="btn btn-outline" disabled={saving} onClick={() => setSettings(saved)}>Discard changes</button><button className="btn btn-primary" disabled={saving || !settings.onsite_instructions.trim()}>{saving ? 'Saving…' : 'Save settings'} <Check size={15}/></button></div>
+    </form>}
+  </section>;
+}
+
+function DemoPaymentMethodSettings({ method, settings, change }: {
+  method: 'gcash' | 'maya'; settings: ManualPaymentSettings;
+  change: <K extends keyof ManualPaymentSettings>(key: K, value: ManualPaymentSettings[K]) => void;
+}) {
+  const [showQr, setShowQr] = useState(true);
+  const label = method === 'gcash' ? 'GCash' : 'Maya';
+  const enabledKey = `${method}_enabled` as 'gcash_enabled' | 'maya_enabled';
+  const nameKey = `${method}_account_name` as 'gcash_account_name' | 'maya_account_name';
+  const idKey = `${method}_account_identifier` as 'gcash_account_identifier' | 'maya_account_identifier';
+  const accountId = settings[idKey];
+  const qrPayload = `DEMO_ILLIGUIDE_PAYMENT\nPayment Method: ${label} Demo\nAccount ID: ${accountId}\nMode: SIMULATION_ONLY`;
+  return <fieldset className="demo-payment-method">
+    <legend>{label} Demo</legend>
+    <div className="demo-method-heading"><span><b>{label} · Demo</b><small>Internal simulation account</small></span>
+      <button type="button" role="switch" aria-checked={settings[enabledKey]} aria-label={`${settings[enabledKey] ? 'Disable' : 'Enable'} ${label} Demo`} className={'demo-method-switch' + (settings[enabledKey] ? ' enabled' : '')} onClick={() => change(enabledKey, !settings[enabledKey])}><span/></button>
+    </div>
+    <div className="demo-method-fields"><label>Account name<input required minLength={3} maxLength={120} pattern=".*[Dd][Ee][Mm][Oo].*" title="Use a fictional name containing ‘Demo’." value={settings[nameKey]} onChange={(event) => change(nameKey, event.target.value)}/></label>
+      <label>Account identifier<input required minLength={14} maxLength={60} pattern={`DEMO-${method.toUpperCase()}-[A-Za-z0-9-]{3,40}`} title={`Use a fictional identifier beginning DEMO-${method.toUpperCase()}-.`} value={accountId} onChange={(event) => change(idKey, event.target.value)}/></label>
+    </div>
+    {settings[enabledKey] && <div className="demo-qr-preview"><div><strong>DEMO QR — NOT PAYABLE</strong><small>Simulation details only. No payment address or live link.</small></div>
+      {showQr ? <QRCodeSVG value={qrPayload} size={132} level="M" title={`${label} demo QR code, not payable`} includeMargin/> : <span className="demo-qr-placeholder">QR preview hidden</span>}
+      <button type="button" className="btn btn-outline" aria-expanded={showQr} onClick={() => setShowQr((value) => !value)}>{showQr ? 'Hide QR preview' : 'Generate Demo QR Code'}</button>
+    </div>}
+  </fieldset>;
+}
+
+type ManualPaymentReview = Record<string, any> & { id: string; proof_storage_path: string; payment_application: string; amount: number; transaction_reference: string; proof_submitted_at: string; payment_status: string; rejection_reason: string | null };
+function ManualPaymentVerificationPage(props: Props) {
+  const [rows, setRows] = useState<ManualPaymentReview[]>([]);
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refresh = useCallback(async () => {
+    let query = db().from('payments').select('id,booking_id,payment_mode,payment_application,amount,currency,payment_status,transaction_reference,proof_storage_path,proof_submitted_at,booking:bookings!payments_booking_id_fkey(booking_reference,visitor_name,visitor_email,visitor_phone,site_id,total_amount,tourism_sites(name),site_slots(slot_date,starts_at))')
+      .eq('provider', 'manual').eq('payment_mode', 'demo').eq('payment_status', 'pending_verification');
+    if ((props.role === 'site_admin' || props.role === 'gatekeeper') && props.siteId) query = query.eq('booking.site_id', props.siteId);
+    const { data, error } = await query.order('proof_submitted_at', { ascending: true });
+    if (error) throw error;
+    const signed = await Promise.all((data ?? []).map(async (item: any) => {
+      const { data: url } = await db().storage.from('manual-payment-proofs').createSignedUrl(item.proof_storage_path, 300);
+      return { ...item, proof_url: url?.signedUrl ?? '' };
+    }));
+    setRows(signed as ManualPaymentReview[]);
+  }, [props.role, props.siteId]);
+  useEffect(() => {
+    let active = true;
+    const run = () => void refresh().catch((error) => { if (active) props.notify(error instanceof Error ? error.message : 'Could not load payment submissions.'); }).finally(() => { if (active) setLoading(false); });
+    run(); const timer = window.setInterval(run, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [props.notify, refresh, refreshKey]);
+  const review = async (row: ManualPaymentReview, approve: boolean) => {
+    const reason = (reasons[row.id] ?? '').trim();
+    if (!approve && !reason) { props.notify('Enter a rejection reason.'); return; }
+    setBusy(row.id);
+    try {
+      const { error } = await db().rpc('review_manual_payment', { p_payment_id: row.id, p_approve: approve, p_rejection_reason: approve ? null : reason });
+      if (error) throw error;
+      const booking = Array.isArray(row.booking) ? row.booking[0] : row.booking;
+      if (approve && booking?.booking_reference) void invokeFunction('send-booking-email', { booking_reference: booking.booking_reference, event: 'confirmed' })
+        .catch(() => props.notify('Payment verified, but the confirmation email could not be sent.'));
+      props.notify(approve ? 'Demo payment approved and booking confirmed.' : 'Demo payment rejected. Visitor notified in their account.');
+      setRefreshKey((value) => value + 1);
+    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not review payment.'); }
+    finally { setBusy(''); }
+  };
+  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><h1>Demo payment <em>verification.</em></h1><p>Review fictional transaction references and generated sample proof. No real money is accepted.</p></div><button className="btn btn-outline" onClick={() => setRefreshKey((value) => value + 1)}><RefreshCw size={15}/> Refresh</button></div>
+    {loading && <div className="empty-inline" role="status">Loading payment submissions…</div>}
+    {!loading && !rows.length && <div className="empty-card"><BadgeCheck size={26}/><h3>No payments awaiting verification</h3><p>New proof submissions appear here.</p></div>}
+    <div className="manual-payment-review-list">{rows.map((row) => { const booking = Array.isArray(row.booking) ? row.booking[0] : row.booking; const site = Array.isArray(booking?.tourism_sites) ? booking.tourism_sites[0] : booking?.tourism_sites; const slot = Array.isArray(booking?.site_slots) ? booking.site_slots[0] : booking?.site_slots; return <article className="manual-payment-review" key={row.id}>
+      <div><small>{booking?.booking_reference}</small><h2>{booking?.visitor_name} · {site?.name}</h2><p>{booking?.visitor_email || booking?.visitor_phone} · {slot?.slot_date} {slot?.starts_at ? timeLabel(slot.starts_at) : ''}</p></div>
+      <dl><div><dt>Mode</dt><dd>DEMO · No funds transferred</dd></div><div><dt>Application</dt><dd>{row.payment_application?.toUpperCase()} · Demo</dd></div><div><dt>Simulated amount</dt><dd>{money(Number(row.amount))}</dd></div><div><dt>Demo transaction reference</dt><dd>{row.transaction_reference}</dd></div><div><dt>Submitted</dt><dd>{new Date(row.proof_submitted_at).toLocaleString()}</dd></div></dl>
+      {row.proof_url && <a className="btn btn-outline" href={row.proof_url} target="_blank" rel="noreferrer">View private proof <ArrowRight size={14}/></a>}
+      <label>Rejection reason<textarea value={reasons[row.id] ?? ''} onChange={(event) => setReasons((current) => ({ ...current, [row.id]: event.target.value }))} maxLength={1000} rows={2}/></label>
+      <div className="manual-payment-review-actions"><button className="btn btn-outline" disabled={Boolean(busy)} onClick={() => void review(row, false)}>{busy === row.id ? 'Saving…' : 'Reject proof'}</button><button className="btn btn-primary" disabled={Boolean(busy)} onClick={() => void review(row, true)}>{busy === row.id ? 'Saving…' : 'Verify payment'} <Check size={15}/></button></div>
+    </article>; })}</div>
   </section>;
 }
 
@@ -507,43 +680,88 @@ function scanLabel(result: string) {
 
 type Hour = { weekday: number; opens_at: string; closes_at: string; is_closed: boolean };
 const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-function SchedulePage(props: Props) {
-  const [hours, setHours] = useState<Hour[]>(dayNames.map((_, weekday) => ({ weekday, opens_at: '', closes_at: '', is_closed: true })));
+const scheduleMonthStart = (date: string) => date.slice(0, 7) + '-01';
+const scheduleMonthEnd = (month: string) => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).toISOString().slice(0, 10);
+const shiftScheduleMonth = (month: string, delta: number) => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1 + delta, 1)).toISOString().slice(0, 7) + '-01';
+const scheduleMonthLabel = (month: string) => new Intl.DateTimeFormat('en-PH', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(month + 'T00:00:00Z'));
+function ScheduleOperationsPage(props: Props) {
+  const [tab, setTab] = useState<'duty' | 'hours' | 'capacity'>(() => {
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    return requested === 'hours' || requested === 'capacity' ? requested : 'duty';
+  });
+  const tabs = [['duty', 'Duty Calendar', CalendarDays], ['hours', 'Operating Hours', CalendarClock], ['capacity', 'Capacity & Booking Slots', MapPinned]] as const;
+  return <section className="dashboard-page section-wrap schedule-operations-page">
+    <div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> TOURISM OFFICE · OPERATIONS</span><h1>Schedule & <em>Operations.</em></h1><p>Manage gatekeeper assignments, operating hours, and booking capacity by destination.</p></div>
+      <label className="staff-site-picker">Destination<SiteSelector {...props}/></label></div>
+    <div className="schedule-operation-tabs" role="tablist" aria-label="Schedule and operations">
+      {tabs.map(([id, label, Icon]) => <button key={id} id={`schedule-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="schedule-tab-panel" tabIndex={tab === id ? 0 : -1} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}><Icon size={18}/>{label}</button>)}
+    </div>
+    <div id="schedule-tab-panel" className="schedule-tab-panel" role="tabpanel" aria-labelledby={`schedule-tab-${tab}`}>
+      {tab === 'duty' ? <DutyRosterPage key={props.siteId} {...props} embedded/> : <SchedulePage key={props.siteId} {...props} view={tab} embedded/>}
+    </div>
+  </section>;
+}
+
+function SchedulePage(props: Props & { view?: 'all' | 'hours' | 'capacity'; embedded?: boolean }) {
+  const view = props.view ?? 'all';
+  const showHours = view !== 'capacity';
+  const showCapacity = view !== 'hours';
+  const closedHours = () => dayNames.map((_, weekday): Hour => ({ weekday, opens_at: '', closes_at: '', is_closed: true }));
+  const [hours, setHours] = useState<Hour[]>(closedHours);
+  const [savedHours, setSavedHours] = useState<Hour[]>(closedHours);
+  const [specialHours, setSpecialHours] = useState<Array<Record<string, any>>>([]);
   const [slots, setSlots] = useState<Array<Record<string, any>>>([]);
+  const [dailyCapacity, setDailyCapacity] = useState('');
   const [closures, setClosures] = useState<Array<Record<string, any>>>([]);
+  const [specialMonth, setSpecialMonth] = useState(() => scheduleMonthStart(phToday()));
+  const [selectedSpecialDate, setSelectedSpecialDate] = useState(phToday());
+  const [dateEditor, setDateEditor] = useState<'' | 'special' | 'closure'>('');
+  const [specialForm, setSpecialForm] = useState({ date: phToday(), opens_at: '', closes_at: '', is_closed: false, reason: '' });
   const [slotForm, setSlotForm] = useState({ date: phToday(), starts_at: '', ends_at: '', capacity: '' });
   const [closureForm, setClosureForm] = useState({ starts_on: phToday(), ends_on: phToday(), reason: '' });
   const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${props.siteId}`);
   const [saving, setSaving] = useState(false);
+  const site = props.sites.find((item) => item.id === props.siteId);
+  useEffect(() => setDailyCapacity(site?.daily_capacity == null ? '' : String(site.daily_capacity)), [site?.id, site?.daily_capacity]);
   const refresh = useCallback(async () => {
     if (!props.siteId) {
-      setHours(dayNames.map((_, weekday) => ({ weekday, opens_at: '', closes_at: '', is_closed: true })));
-      setSlots([]); setClosures([]); finishLoading(); return;
+      setHours(closedHours()); setSavedHours(closedHours());
+      setSpecialHours([]); setSlots([]); setClosures([]); finishLoading(); return;
     }
     try {
-      const [hourResult, slotResult, closureResult] = await Promise.all([
+      const monthEnd = scheduleMonthEnd(specialMonth);
+      const [hourResult, slotResult, closureResult, exceptionResult] = await Promise.all([
         db().from('site_operating_hours').select('weekday,opens_at,closes_at,is_closed').eq('site_id', props.siteId).order('weekday'),
         db().from('site_slots').select('id,slot_date,starts_at,ends_at,capacity,status').eq('site_id', props.siteId).gte('slot_date', phToday()).order('slot_date').order('starts_at').limit(120),
-        db().from('site_closures').select('id,starts_on,ends_on,starts_at,ends_at,reason').eq('site_id', props.siteId).gte('ends_on', phToday()).order('starts_on').limit(60),
+        db().from('site_closures').select('id,starts_on,ends_on,starts_at,ends_at,reason').eq('site_id', props.siteId).lte('starts_on', monthEnd).gte('ends_on', specialMonth).order('starts_on').limit(60),
+        db().from('site_operating_exceptions').select('id,exception_date,opens_at,closes_at,is_closed,reason').eq('site_id', props.siteId).gte('exception_date', specialMonth).lte('exception_date', monthEnd).order('exception_date').limit(120),
       ]);
       if (hourResult.error) throw hourResult.error;
       if (slotResult.error) throw slotResult.error;
       if (closureResult.error) throw closureResult.error;
+      if (exceptionResult.error) throw exceptionResult.error;
       const stored = new Map((hourResult.data ?? []).map((row) => [row.weekday, row]));
-      setHours(dayNames.map((_, weekday) => {
+      const loadedHours = dayNames.map((_, weekday): Hour => {
         const row = stored.get(weekday);
         return row ? { weekday, opens_at: String(row.opens_at ?? '').slice(0, 5), closes_at: String(row.closes_at ?? '').slice(0, 5), is_closed: row.is_closed }
           : { weekday, opens_at: '', closes_at: '', is_closed: true };
-      }));
+      });
+      setHours(loadedHours); setSavedHours(loadedHours);
       setSlots(slotResult.data ?? []);
       setClosures(closureResult.data ?? []);
+      setSpecialHours(exceptionResult.data ?? []);
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not load site schedule.'); }
     finally { finishLoading(); }
-  }, [finishLoading, props.notify, props.siteId]);
+  }, [finishLoading, props.notify, props.siteId, specialMonth]);
   useEffect(() => { void refresh(); }, [refresh]);
 
   const changeHour = (weekday: number, change: Partial<Hour>) => setHours((current) =>
     current.map((row) => row.weekday === weekday ? { ...row, ...change } : row));
+  const applyHoursTemplate = (days: number[]) => {
+    const next = applyOperatingHoursTemplate(hours, days);
+    if (!next) { props.notify('Set opening and closing hours on an open day first.'); return; }
+    setHours(next);
+  };
   const saveHours = async () => {
     if (hours.some((row) => !row.is_closed && (!row.opens_at || !row.closes_at || row.closes_at <= row.opens_at))) {
       props.notify('Enter valid opening and closing times for every open day.'); return;
@@ -590,8 +808,31 @@ function SchedulePage(props: Props) {
       if (error) throw error;
       props.notify('Closure saved. New booking holds will respect this date range.');
       setClosureForm({ ...closureForm, reason: '' });
+      setDateEditor('');
       await refresh();
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not add the closure.'); }
+    finally { setSaving(false); }
+  };
+  const saveSpecialHours = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!props.siteId || !specialForm.reason.trim() || (!specialForm.is_closed
+      && (!specialForm.opens_at || !specialForm.closes_at || specialForm.closes_at <= specialForm.opens_at))) {
+      props.notify('Enter a reason and valid special operating hours.'); return;
+    }
+    setSaving(true);
+    try {
+      const { error } = await db().from('site_operating_exceptions').upsert({
+        site_id: props.siteId, exception_date: specialForm.date,
+        opens_at: specialForm.is_closed ? null : specialForm.opens_at,
+        closes_at: specialForm.is_closed ? null : specialForm.closes_at,
+        is_closed: specialForm.is_closed, reason: specialForm.reason.trim(),
+      }, { onConflict: 'site_id,exception_date' });
+      if (error) throw error;
+      props.notify('Special operating hours saved.');
+      setSpecialForm({ date: phToday(), opens_at: '', closes_at: '', is_closed: false, reason: '' });
+      setDateEditor('');
+      await refresh();
+    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not save special hours.'); }
     finally { setSaving(false); }
   };
   const toggleSlot = async (slot: Record<string, any>) => {
@@ -600,14 +841,98 @@ function SchedulePage(props: Props) {
     if (error) props.notify(error.message);
     else { props.notify('Slot status updated.'); await refresh(); }
   };
-  const site = props.sites.find((item) => item.id === props.siteId);
-  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> SITE ADMINISTRATION</span><h1>Hours that work <em>for you.</em></h1><p>Manage published hours, date-specific capacity, and closure notices{site ? ' for ' + site.name : ''}.</p></div>
-    <div className="header-actions"><SiteSelector {...props}/><button className="btn btn-outline" onClick={() => void refresh()}><RefreshCw size={15}/></button></div></div>
+  const saveDailyCapacity = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!site || !props.user) return;
+    const value = dailyCapacity.trim() ? Number(dailyCapacity) : null;
+    if (value !== null && (!Number.isInteger(value) || value < 1 || value > 100000)) {
+      props.notify('Enter a whole-number daily booking limit from 1 to 100000, or leave blank.'); return;
+    }
+    setSaving(true);
+    try {
+      const { error } = await db().from('site_settings').upsert({ site_id: site.id, daily_capacity: value, updated_by: props.user.id }, { onConflict: 'site_id' });
+      if (error) throw error;
+      props.notify('Daily booking limit saved.');
+      props.refresh();
+    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not save the daily booking limit.'); }
+    finally { setSaving(false); }
+  };
+  const hoursDirty = JSON.stringify(hours) !== JSON.stringify(savedHours);
+  const openDays = hours.filter((hour) => !hour.is_closed);
+  const regularSchedules = [...new Set(openDays.map((hour) => `${hour.opens_at}|${hour.closes_at}`))];
+  const regularHoursLabel = regularSchedules.length === 1
+    ? `${timeLabel(openDays[0].opens_at)} – ${timeLabel(openDays[0].closes_at)}`
+    : regularSchedules.length ? 'Varies by day' : 'No open days';
+  const [calendarYear, calendarMonth] = specialMonth.slice(0, 7).split('-').map(Number);
+  const calendarOffset = new Date(Date.UTC(calendarYear, calendarMonth - 1, 1)).getUTCDay();
+  const calendarDayCount = new Date(Date.UTC(calendarYear, calendarMonth, 0)).getUTCDate();
+  const calendarDates: Array<string | null> = [...Array(calendarOffset).fill(null), ...Array.from({ length: calendarDayCount }, (_, index) =>
+    `${specialMonth.slice(0, 7)}-${String(index + 1).padStart(2, '0')}`)];
+  const selectSpecialDate = (date: string) => {
+    setSpecialMonth(scheduleMonthStart(date));
+    setSelectedSpecialDate(date);
+    const existing = specialHours.find((item) => item.exception_date === date);
+    setSpecialForm(existing ? {
+      date, opens_at: String(existing.opens_at ?? '').slice(0, 5), closes_at: String(existing.closes_at ?? '').slice(0, 5),
+      is_closed: Boolean(existing.is_closed), reason: String(existing.reason ?? ''),
+    } : { date, opens_at: '', closes_at: '', is_closed: false, reason: '' });
+    setClosureForm((current) => ({ ...current, starts_on: date, ends_on: date }));
+  };
+  return <section className={props.embedded ? 'schedule-embedded' : 'dashboard-page section-wrap'}>
+    {!props.embedded && <div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> SITE ADMINISTRATION</span><h1>Hours that work <em>for you.</em></h1><p>Manage weekly and special operating hours, visit capacity, and closures{site ? ' for ' + site.name : ''}.</p></div>
+      <div className="header-actions"><SiteSelector {...props}/><button className="btn btn-outline" onClick={() => void refresh()}><RefreshCw size={15}/></button></div></div>}
     {!props.siteId && <div className="empty-card"><MapPin size={28}/><h3>No assigned destination</h3><p>Ask the Tourism Office to assign a site administrator account.</p></div>}
-    {!!props.siteId && <><div className="schedule-card"><div className="schedule-head"><span><small>PHILIPPINE TIME · ASIA/MANILA</small><h3>Weekly operating hours</h3></span><button className="btn btn-primary" disabled={loading || saving} onClick={() => void saveHours()}>{saving ? 'Saving…' : 'Save hours'} <Check size={15}/></button></div>
-      {loading ? <div className="empty-inline" role="status">Loading current operating hours…</div> : hours.map((hour) => <div className="schedule-row" key={hour.weekday}><label className="day-switch"><input type="checkbox" checked={!hour.is_closed} onChange={(event) => changeHour(hour.weekday, { is_closed: !event.target.checked })}/>{dayNames[hour.weekday]}</label>
-        {hour.is_closed ? <span className="closed-label">Closed</span> : <><TimePicker value={hour.opens_at} onChange={(opens_at) => changeHour(hour.weekday, { opens_at })}/><span>to</span><TimePicker value={hour.closes_at} onChange={(closes_at) => changeHour(hour.weekday, { closes_at })}/></>}
-      </div>)}</div>
+    {!!props.siteId && <>{showHours && <><div className="operating-hours-layout">
+      <section className="schedule-card weekly-hours-card"><div className="schedule-head"><span><small>PHILIPPINE TIME · ASIA/MANILA</small><h3>Weekly Operating Hours</h3><p>Set regular opening and closing times for each day.</p></span></div>
+        <div className="operating-hours-shortcuts"><button type="button" className="btn btn-outline" disabled={loading || saving} onClick={() => applyHoursTemplate([1, 2, 3, 4, 5])}>Apply to Weekdays</button><button type="button" className="btn btn-outline" disabled={loading || saving} onClick={() => applyHoursTemplate([0, 1, 2, 3, 4, 5, 6])}>Apply to All 7 Days</button></div>
+        <div className="weekly-hours-list" aria-label="Weekly operating hours">{loading ? <div className="empty-inline" role="status">Loading current operating hours…</div> : hours.map((hour) => <div className="weekly-hours-row" key={hour.weekday}>
+          <b>{dayNames[hour.weekday]}</b><span className={'weekly-hours-status' + (hour.is_closed ? ' closed' : '')}>{hour.is_closed ? 'Closed' : 'Open'}</span>
+          {hour.is_closed ? <span className="weekly-hours-closed">No operating hours</span> : <div className="weekly-hours-range"><TimePicker value={hour.opens_at} onChange={(opens_at) => changeHour(hour.weekday, { opens_at })}/><span>–</span><TimePicker value={hour.closes_at} onChange={(closes_at) => changeHour(hour.weekday, { closes_at })}/></div>}
+          <label className="weekly-hours-switch"><input type="checkbox" aria-label={`${hour.is_closed ? 'Open' : 'Close'} ${dayNames[hour.weekday]}`} checked={!hour.is_closed} onChange={(event) => changeHour(hour.weekday, { is_closed: !event.target.checked })}/><span/></label>
+        </div>)}</div>
+      </section>
+      <div className="operating-hours-side">
+        <section className="schedule-card special-dates-card"><header className="schedule-head"><span><small>DATE OVERRIDES · ASIA/MANILA</small><h3>Special Dates & Closures</h3><p>Set custom hours or close the destination on selected dates.</p></span><CalendarDays size={20}/></header>
+          <div className="special-dates-layout"><div className="special-calendar">
+            <div className="special-calendar-month"><button type="button" className="btn btn-outline" aria-label="Previous month" onClick={() => selectSpecialDate(shiftScheduleMonth(specialMonth, -1))}><ChevronLeft size={17}/></button><h4>{scheduleMonthLabel(specialMonth)}</h4><button type="button" className="btn btn-outline" aria-label="Next month" onClick={() => selectSpecialDate(shiftScheduleMonth(specialMonth, 1))}><ChevronRight size={17}/></button></div>
+            <div className="special-calendar-weekdays">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span key={day}>{day}</span>)}</div>
+            <div className="special-calendar-grid">{calendarDates.map((date, index) => {
+              if (!date) return <span key={`blank-${index}`} aria-hidden="true"/>;
+              const special = specialHours.find((item) => item.exception_date === date);
+              const closure = closures.find((item) => date >= item.starts_on && date <= item.ends_on);
+              const marker = special ? special.is_closed ? 'closed' : 'special' : closure ? 'closed' : '';
+              return <button key={date} type="button" className={[date === selectedSpecialDate ? 'selected' : '', marker].filter(Boolean).join(' ')} aria-pressed={date === selectedSpecialDate}
+                aria-label={`${dateLabel(date)}${special ? special.is_closed ? ', closed' : ', special hours' : closure ? ', temporary closure' : ''}`}
+                onClick={() => selectSpecialDate(date)}><span>{Number(date.slice(-2))}</span>{marker && <i aria-hidden="true"/>}</button>;
+            })}</div>
+          </div><div className="special-date-events">
+            {loading ? <div className="empty-inline" role="status">Loading special dates…</div> : <>
+              {specialHours.map((item) => <article key={item.id} className={item.is_closed ? 'closed' : ''}><span className="special-event-icon"><CalendarClock size={17}/></span><span><b>{dateLabel(item.exception_date)}</b><small>{item.is_closed ? 'Closed' : 'Special hours · ' + timeLabel(item.opens_at) + ' – ' + timeLabel(item.closes_at)}</small></span><button type="button" className="link-btn" aria-label={`Remove special hours for ${dateLabel(item.exception_date)}`} onClick={async () => { const { error } = await db().from('site_operating_exceptions').delete().eq('id', item.id); if (error) props.notify(error.message); else await refresh(); }}>Remove</button></article>)}
+              {closures.map((item) => <article key={item.id} className="closed"><span className="special-event-icon"><CalendarDays size={17}/></span><span><b>{dateLabel(item.starts_on)}{item.ends_on !== item.starts_on ? ` – ${dateLabel(item.ends_on)}` : ''}</b><small>Temporary closure · {item.reason}</small></span><button type="button" className="link-btn" aria-label={`Remove closure starting ${dateLabel(item.starts_on)}`} onClick={async () => { const { error } = await db().from('site_closures').delete().eq('id', item.id); if (error) props.notify(error.message); else await refresh(); }}>Remove</button></article>)}
+              {!specialHours.length && !closures.length && <div className="empty-inline">No special dates or closures this month.</div>}
+            </>}
+            <div className="special-date-actions"><button type="button" className="btn btn-outline" onClick={() => { const next = dateEditor === 'special' ? '' : 'special'; setDateEditor(next); selectSpecialDate(selectedSpecialDate); }}><Plus size={15}/> Add Special Date</button><button type="button" className="btn btn-outline" onClick={() => { const next = dateEditor === 'closure' ? '' : 'closure'; setDateEditor(next); selectSpecialDate(selectedSpecialDate); }}><Plus size={15}/> Add Temporary Closure</button></div>
+          </div></div>
+          {dateEditor === 'special' && <form className="special-date-form" onSubmit={(event) => void saveSpecialHours(event)}><h4>Special date details</h4>
+            <label>Date<input type="date" min={phToday()} value={specialForm.date} onChange={(event) => { setSpecialForm({ ...specialForm, date: event.target.value }); setSelectedSpecialDate(event.target.value); setSpecialMonth(scheduleMonthStart(event.target.value)); }} required/></label>
+            {!specialForm.is_closed && <><label>Opens<TimePicker value={specialForm.opens_at} onChange={(opens_at) => setSpecialForm({ ...specialForm, opens_at })} required/></label><label>Closes<TimePicker value={specialForm.closes_at} onChange={(closes_at) => setSpecialForm({ ...specialForm, closes_at })} required/></label></>}
+            <label className="special-hours-closed"><input type="checkbox" checked={specialForm.is_closed} onChange={(event) => setSpecialForm({ ...specialForm, is_closed: event.target.checked })}/> Closed all day</label>
+            <label>Reason<input value={specialForm.reason} onChange={(event) => setSpecialForm({ ...specialForm, reason: event.target.value })} maxLength={500} required/></label>
+            <button className="btn btn-primary" disabled={loading || saving}>{saving ? 'Saving…' : 'Save Special Date'} <Check size={15}/></button></form>}
+          {dateEditor === 'closure' && <form className="special-date-form" onSubmit={(event) => void addClosure(event)}><h4>Temporary closure details</h4>
+            <label>From<input type="date" min={phToday()} value={closureForm.starts_on} onChange={(event) => setClosureForm({ ...closureForm, starts_on: event.target.value, ends_on: closureForm.ends_on < event.target.value ? event.target.value : closureForm.ends_on })} required/></label>
+            <label>Through<input type="date" min={closureForm.starts_on} value={closureForm.ends_on} onChange={(event) => setClosureForm({ ...closureForm, ends_on: event.target.value })} required/></label>
+            <label>Reason<input value={closureForm.reason} onChange={(event) => setClosureForm({ ...closureForm, reason: event.target.value })} maxLength={500} required/></label>
+            <button className="btn btn-primary" disabled={loading || saving}>{saving ? 'Saving…' : 'Save Closure'} <Check size={15}/></button></form>}
+        </section>
+        <section className="schedule-card schedule-summary"><div className="schedule-head"><span><small>WEEKLY SCHEDULE</small><h3>Schedule Summary</h3></span><CalendarDays size={19}/></div>
+          <div className="schedule-summary-metrics"><div><CalendarClock size={19}/><span><small>Operating Days</small><b>{openDays.length} days / week</b></span></div><div><CalendarClock size={19}/><span><small>Regular Hours</small><b>{regularHoursLabel}</b></span></div></div>
+        </section>
+      </div>
+    </div><div className="schedule-settings-actions"><button type="button" className="btn btn-outline" disabled={loading || saving || !hoursDirty} onClick={() => setHours(savedHours)}>Discard Changes</button><button type="button" className="btn btn-primary" disabled={loading || saving || !hoursDirty} onClick={() => void saveHours()}>{saving ? 'Saving…' : 'Save Operating Hours'} <Check size={15}/></button></div></>}{showCapacity && <>
+      {props.role === 'tourism_office' && site && <div className="schedule-card"><div className="schedule-head"><span><small>VISITOR BOOKING AVAILABILITY</small><h3>Daily booking limit</h3></span></div>
+        <form className="slot-admin-form" onSubmit={(event) => void saveDailyCapacity(event)}><label>Visitors per day<input type="number" min="1" max="100000" step="1" value={dailyCapacity} onChange={(event) => setDailyCapacity(event.target.value)} placeholder="No configured limit"/></label><span className="field-hint">Shared across this destination’s booking slots. Leave blank for no configured daily limit.</span><button className="btn btn-primary" disabled={loading || saving}>{saving ? 'Saving…' : 'Save daily limit'} <Check size={15}/></button></form>
+      </div>}
       <div className="schedule-card"><div className="schedule-head"><span><small>DATE-SPECIFIC CAPACITY</small><h3>Add a visit slot</h3></span></div>
         <form className="slot-admin-form" onSubmit={(event) => void addSlot(event)}><label>Date<input type="date" min={phToday()} value={slotForm.date} onChange={(event) => setSlotForm({ ...slotForm, date: event.target.value })} required/></label>
           <label>Starts<TimePicker value={slotForm.starts_at} onChange={(starts_at) => setSlotForm({ ...slotForm, starts_at })} required/></label>
@@ -619,14 +944,9 @@ function SchedulePage(props: Props) {
           <td>{dateLabel(slot.slot_date)}</td><td>{timeLabel(slot.starts_at)} – {timeLabel(slot.ends_at)}</td><td>{slot.capacity}</td><td><span className={slot.status === 'open' ? 'status-tag paid' : 'status-tag'}>{slot.status}</span></td>
           <td><button className="link-btn" onClick={() => void toggleSlot(slot)}>{slot.status === 'open' ? 'Close' : 'Open'}</button></td></tr>)}</tbody></table></div>}
       </div>
-      <div className="schedule-card"><div className="schedule-head"><span><small>SPECIAL DATES</small><h3>Closures</h3></span></div>
-        <form className="closure-admin-form" onSubmit={(event) => void addClosure(event)}><label>From<input type="date" min={phToday()} value={closureForm.starts_on} onChange={(event) => setClosureForm({ ...closureForm, starts_on: event.target.value })} required/></label>
-          <label>Through<input type="date" min={closureForm.starts_on} value={closureForm.ends_on} onChange={(event) => setClosureForm({ ...closureForm, ends_on: event.target.value })} required/></label>
-          <label>Reason<input value={closureForm.reason} onChange={(event) => setClosureForm({ ...closureForm, reason: event.target.value })} maxLength={500} required/></label>
-          <button className="btn btn-outline" disabled={loading || saving}>{saving ? 'Saving…' : 'Add closure'} <Plus size={15}/></button></form>
-        {!loading && !closures.length && <div className="empty-inline">No future closures recorded.</div>}
-        {!loading && closures.map((closure) => <div className="closure-row" key={closure.id}><span className="closure-date">{String(closure.starts_on).slice(5, 7)}<br/><b>{String(closure.starts_on).slice(8, 10)}</b></span><span><b>{dateLabel(closure.starts_on)}{closure.ends_on !== closure.starts_on ? ' – ' + dateLabel(closure.ends_on) : ''}</b><small>{closure.reason}</small></span><button className="link-btn" onClick={async () => { const { error } = await db().from('site_closures').delete().eq('id', closure.id); if (error) props.notify(error.message); else await refresh(); }}>Remove</button></div>)}
-      </div></>}
+      {props.role === 'tourism_office' && site && <CapacityPanel key={site.id} {...props} site={site} canSetApprovedLimit/>}
+      </>}
+    </>}
   </section>;
 }
 
@@ -1025,11 +1345,11 @@ function ActivityPage(props: Props) {
 type SiteDraft = {
   name: string; category: string; description: string; address: string;
   latitude: string; longitude: string;
-  adult_fee: string; child_fee: string; pwd_discount_percent: string; daily_capacity: string;
+  adult_fee: string; child_fee: string; pwd_discount_percent: string;
   fee_information_confirmed: boolean; max_per_booking: string; cancellation_cutoff_hours: string;
 };
 type PendingSitePhoto = { file: File; preview: string };
-const emptyDraft = (): SiteDraft => ({ name: '', category: '', description: '', address: '', latitude: '', longitude: '', adult_fee: '', child_fee: '', pwd_discount_percent: '0', daily_capacity: '', fee_information_confirmed: false, max_per_booking: '20', cancellation_cutoff_hours: '24' });
+const emptyDraft = (): SiteDraft => ({ name: '', category: '', description: '', address: '', latitude: '', longitude: '', adult_fee: '', child_fee: '', pwd_discount_percent: '0', fee_information_confirmed: false, max_per_booking: '20', cancellation_cutoff_hours: '24' });
 function SitesPage(props: Props) {
   const [draft, setDraft] = useState<SiteDraft>(emptyDraft());
   const [photos, setPhotos] = useState<PendingSitePhoto[]>([]);
@@ -1071,7 +1391,7 @@ function SitesPage(props: Props) {
       name: site.name, category: site.category, description: site.description, address: site.address,
       latitude: site.latitude == null ? '' : String(site.latitude), longitude: site.longitude == null ? '' : String(site.longitude),
       adult_fee: String(site.adult_fee), child_fee: String(site.child_fee),
-      pwd_discount_percent: String(site.pwd_discount_percent), daily_capacity: site.daily_capacity == null ? '' : String(site.daily_capacity),
+      pwd_discount_percent: String(site.pwd_discount_percent),
       fee_information_confirmed: site.fee_information_confirmed,
       max_per_booking: String(site.max_per_booking), cancellation_cutoff_hours: String(site.cancellation_cutoff_hours),
     });
@@ -1090,11 +1410,9 @@ function SitesPage(props: Props) {
     }
     const adultFee = Number(draft.adult_fee), childFee = Number(draft.child_fee);
     const pwdDiscount = Number(draft.pwd_discount_percent), maxPerBooking = Number(draft.max_per_booking);
-    const dailyCapacity = draft.daily_capacity.trim() ? Number(draft.daily_capacity) : null;
     if (!Number.isFinite(adultFee) || adultFee < 0 || !Number.isFinite(childFee) || childFee < 0 ||
       !Number.isInteger(maxPerBooking) || maxPerBooking < 1 || maxPerBooking > 500 ||
-      !Number.isFinite(pwdDiscount) || pwdDiscount < 0 || pwdDiscount > 100 ||
-      dailyCapacity !== null && (!Number.isInteger(dailyCapacity) || dailyCapacity < 1 || dailyCapacity > 100000)) {
+      !Number.isFinite(pwdDiscount) || pwdDiscount < 0 || pwdDiscount > 100) {
       props.notify('Enter valid fees and booking limits.'); return;
     }
     if (pwdDiscount > 0 && adultFee !== childFee) {
@@ -1135,7 +1453,6 @@ function SitesPage(props: Props) {
         adult_fee: adultFee,
         child_fee: childFee,
         pwd_discount_percent: pwdDiscount,
-        daily_capacity: dailyCapacity,
         fee_information_confirmed: draft.fee_information_confirmed,
         max_per_booking: Number(draft.max_per_booking),
         cancellation_cutoff_hours: Number(draft.cancellation_cutoff_hours),
@@ -1253,9 +1570,8 @@ function SitesPage(props: Props) {
       </div>}
       <div className="form-two"><label>Adult fee (PHP)<input type="number" min="0" step="0.01" required value={draft.adult_fee} onChange={(event) => change('adult_fee', event.target.value)}/></label>
         <label>Child fee (PHP)<input type="number" min="0" step="0.01" required value={draft.child_fee} onChange={(event) => change('child_fee', event.target.value)}/></label></div>
-      <div className="form-two"><label>PWD discount (%)<input type="number" min="0" max="100" step="0.01" required value={draft.pwd_discount_percent} onChange={(event) => change('pwd_discount_percent', event.target.value)}/></label>
-        <label>Daily visitor limit<input type="number" min="1" max="100000" step="1" value={draft.daily_capacity} onChange={(event) => change('daily_capacity', event.target.value)} placeholder="No limit"/></label></div>
-      <small className="field-hint">Set a PWD discount only when adult and child admission fees match. Leave the daily limit blank if none has been approved.</small>
+      <label>PWD discount (%)<input type="number" min="0" max="100" step="0.01" required value={draft.pwd_discount_percent} onChange={(event) => change('pwd_discount_percent', event.target.value)}/></label>
+      <small className="field-hint">Set a PWD discount only when adult and child admission fees match. Manage daily booking limits in Schedule &amp; Operations.</small>
       <label className="checkbox-field"><input type="checkbox" checked={draft.fee_information_confirmed} onChange={(event) => setDraft((current) => ({ ...current, fee_information_confirmed: event.target.checked }))}/> I confirm these are the destination’s current admission fees.</label>
       <div className="form-two"><label>Max visitors / booking<input type="number" min="1" max="500" required value={draft.max_per_booking} onChange={(event) => change('max_per_booking', event.target.value)}/></label>
         <label>Cancellation cutoff (hours)<input type="number" min="0" max="8760" required value={draft.cancellation_cutoff_hours} onChange={(event) => change('cancellation_cutoff_hours', event.target.value)}/></label></div>
@@ -1265,164 +1581,115 @@ function SitesPage(props: Props) {
       {editing && <button type="button" className="link-btn form-cancel" onClick={() => { setEditing(''); setDraft(emptyDraft()); }}>Cancel edit</button>}
       {!editing && <p className="field-hint">Once saved, the destination appears publicly. Add visit slots so visitors can book a time.</p>}
     </form></div></div>
-    {site && <><div className="workspace-panel-select"><label>Manage destination photos <SiteSelector {...props}/></label></div><SiteImagesManager {...props}/></>}
+    {site && <><div className="workspace-panel-select"><label>Manage destination photos <SiteSelector {...props}/></label></div><SiteManagementPanel site={site} notify={props.notify} refresh={props.refresh}/><SiteImagesManager {...props}/></>}
   </section>;
 }
 
-type ProfileName = { full_name: string; account_status?: string; role?: string };
-type GatekeeperOption = { profile_id: string; profiles: ProfileName | ProfileName[] | null };
-type DutyRow = {
-  id: string; duty_date: string; shift_start_at: string; shift_end_at: string; status: string;
-  primary_gatekeeper_id?: string;
-  primary: ProfileName | ProfileName[] | null;
-  supports: Array<{ gatekeeper_id: string; gatekeeper: ProfileName | ProfileName[] | null }>;
-};
-const profileName = (profile: ProfileName | ProfileName[] | null) => (Array.isArray(profile) ? profile[0] : profile)?.full_name ?? 'Gatekeeper';
-function DutyRosterPanel(props: Props & { site: Site }) {
-  const [gatekeepers, setGatekeepers] = useState<GatekeeperOption[]>([]);
-  const [duties, setDuties] = useState<DutyRow[]>([]);
-  const [form, setForm] = useState({ date: phToday(), start: '', end: '', primary: '', supports: [] as string[] });
-  const [filterDate, setFilterDate] = useState(phToday());
-  const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.site.id}:${filterDate}`);
-  const [saving, setSaving] = useState(false);
-  const refresh = useCallback(async () => {
-    try {
-      const [staff, roster] = await Promise.all([
-        db().from('staff_assignments').select('profile_id, profiles!staff_assignments_profile_id_fkey(full_name,account_status,role)')
-          .eq('site_id', props.site.id).eq('staff_role', 'gatekeeper').eq('is_active', true),
-        db().from('site_gatekeeper_duties').select(
-          'id,duty_date,shift_start_at,shift_end_at,status,primary_gatekeeper_id,primary:profiles!site_gatekeeper_duties_primary_gatekeeper_id_fkey(full_name),supports:site_gatekeeper_duty_support!site_gatekeeper_duty_support_duty_id_fkey(gatekeeper_id,gatekeeper:profiles!site_gatekeeper_duty_support_gatekeeper_id_fkey(full_name))',
-        ).eq('site_id', props.site.id).eq('duty_date', filterDate).order('shift_start_at').limit(100),
-      ]);
-      if (staff.error) throw staff.error;
-      setGatekeepers((staff.data ?? []) as unknown as GatekeeperOption[]);
-      if (roster.error) throw roster.error;
-      setDuties((roster.data ?? []) as unknown as DutyRow[]);
-    } catch (error) { props.notify(error instanceof Error ? error.message : typeof error === 'object' && error !== null && 'message' in error ? String(error.message) : 'Could not load the duty roster.'); }
-    finally { finishLoading(); }
-  }, [filterDate, finishLoading, props.notify, props.site.id]);
-  useEffect(() => { void refresh(); }, [refresh]);
-  const save = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!form.primary || !form.start || !form.end || form.end <= form.start) { props.notify('Choose a primary gatekeeper and valid shift hours.'); return; }
-    setSaving(true);
-    try {
-      const { error } = await db().rpc('create_gatekeeper_duty', {
-        p_site_id: props.site.id,
-        p_duty_date: form.date,
-        p_shift_start_at: new Date(`${form.date}T${form.start}:00+08:00`).toISOString(),
-        p_shift_end_at: new Date(`${form.date}T${form.end}:00+08:00`).toISOString(),
-        p_primary_gatekeeper_id: form.primary,
-        p_support_gatekeeper_ids: form.supports,
-      });
-      if (error) throw error;
-      props.notify('Gatekeeper duty scheduled.');
-      setForm((current) => ({ ...current, primary: '', supports: [] }));
-      await refresh();
-    } catch (error) { props.notify(error instanceof Error ? error.message : typeof error === 'object' && error !== null && 'message' in error ? String(error.message) : 'Could not schedule gatekeeper duty.'); }
-    finally { setSaving(false); }
-  };
-  const supportOptions = gatekeepers.filter((person) => person.profile_id !== form.primary && person.profile_id !== props.user?.id);
-  return <section className="duty-roster"><div className="card-heading"><span><small>DAILY ACCOUNTABILITY</small><h3>Gatekeeper duty roster</h3></span><CalendarDays size={18}/></div>
-    <p className="field-hint">One primary gatekeeper is required for every shift. Support staff are optional. Times use Asia/Manila.</p>
-    {!gatekeepers.length && !loading && <div className="empty-inline">Assign an active gatekeeper to this destination before scheduling a shift.</div>}
-    <div className="duty-roster-filter"><label>Show roster for<input type="date" value={filterDate} onChange={(event) => setFilterDate(event.target.value)}/></label><span>{props.site.name}</span></div>
-    <form className="duty-roster-form" onSubmit={(event) => void save(event)}>
-      <label>Date<input type="date" min={phToday()} value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} required/></label>
-      <label>Start<TimePicker value={form.start} onChange={(start) => setForm({ ...form, start })} required/></label>
-      <label>End<TimePicker value={form.end} onChange={(end) => setForm({ ...form, end })} required/></label>
-      <label>Primary gatekeeper<select value={form.primary} onChange={(event) => setForm({ ...form, primary: event.target.value, supports: form.supports.filter((id) => id !== event.target.value) })} required><option value="">Choose primary</option>{gatekeepers.filter((person) => person.profile_id !== props.user?.id).map((person) => <option key={person.profile_id} value={person.profile_id}>{profileName(person.profiles)}</option>)}</select></label>
-      {!!supportOptions.length && <fieldset><legend>Support gatekeepers</legend>{supportOptions.map((person) => <label key={person.profile_id}><input type="checkbox" checked={form.supports.includes(person.profile_id)} onChange={(event) => setForm({ ...form, supports: event.target.checked ? [...form.supports, person.profile_id] : form.supports.filter((id) => id !== person.profile_id) })}/>{profileName(person.profiles)}</label>)}</fieldset>}
-      <button className="btn btn-primary" disabled={saving || loading || !gatekeepers.length}>{saving ? 'Scheduling…' : 'Schedule duty'} <Check size={15}/></button>
-    </form>
-    <div className="duty-list">{loading && <div className="empty-inline">Loading roster…</div>}{!loading && !duties.length && <div className="empty-inline">No upcoming duty shifts scheduled.</div>}
-      {!loading && duties.map((duty) => <article key={duty.id}><span><b>{dateLabel(duty.duty_date)}</b><small>{new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }).format(new Date(duty.shift_start_at))} – {new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }).format(new Date(duty.shift_end_at))}</small></span><span><b>{profileName(duty.primary)}</b><small>{duty.supports.length ? `Support: ${duty.supports.map((support) => profileName(support.gatekeeper)).join(', ')}` : 'No support staff'}</small></span><span className="status-tag">{duty.status}</span></article>)}</div>
-  </section>;
-}
+type ManagementOrganization = { id: string; name: string; authority: 'tourism_office' | 'private_site' };
 
-function DutyRosterPage(props: Props) {
-  const site = props.sites.find((item) => item.id === props.siteId);
-  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> OPERATIONS · STAFF COVERAGE</span><h1>Duty <em>roster.</em></h1><p>Assign one primary gatekeeper and optional support for each site shift.</p></div><label className="staff-site-picker">Destination<SiteSelector {...props}/></label></div>
-    {site ? <DutyRosterPanel {...props} site={site}/> : <div className="empty-card"><CalendarClock size={28}/><h3>No destination available</h3><p>Assign this account to a destination before managing its duty roster.</p></div>}
-  </section>;
-}
-
-function DutyDetailsPage(props: Props) {
-  const site = assignedGatekeeperSite(props);
-  const [duties, setDuties] = useState<DutyRow[]>([]);
-  const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${site?.id ?? 'unassigned'}`);
+function SiteManagementPanel({ site, notify, refresh }: { site: Site; notify: Props['notify']; refresh: Props['refresh'] }) {
+  const [organizations, setOrganizations] = useState<ManagementOrganization[]>([]);
+  const [organizationId, setOrganizationId] = useState(site.management_organization_id ?? '');
+  const [newOrganizationName, setNewOrganizationName] = useState('');
+  const [loading, setLoading] = useState(false);
+  useEffect(() => setOrganizationId(site.management_organization_id ?? ''), [site.id, site.management_organization_id]);
   useEffect(() => {
     let active = true;
-    if (!site) { setDuties([]); finishLoading(); return () => { active = false; }; }
     void (async () => {
       try {
-        const { data, error } = await db().from('site_gatekeeper_duties').select('id,duty_date,shift_start_at,shift_end_at,status,primary_gatekeeper_id,primary:profiles!site_gatekeeper_duties_primary_gatekeeper_id_fkey(full_name),supports:site_gatekeeper_duty_support!site_gatekeeper_duty_support_duty_id_fkey(gatekeeper_id,gatekeeper:profiles!site_gatekeeper_duty_support_gatekeeper_id_fkey(full_name))')
-          .eq('site_id', site.id).gte('duty_date', phToday()).in('status', ['scheduled', 'active']).order('shift_start_at').limit(30);
+        const { data, error } = await db().from('management_organizations').select('id,name,authority').order('name');
         if (error) throw error;
-        if (active) setDuties((data ?? []) as unknown as DutyRow[]);
-      } catch (error) { if (active) props.notify(error instanceof Error ? error.message : typeof error === 'object' && error !== null && 'message' in error ? String(error.message) : 'Could not load your duty details.'); }
-      finally { if (active) finishLoading(); }
+        if (active) setOrganizations((data ?? []) as ManagementOrganization[]);
+      } catch (error) {
+        if (active) notify(error instanceof Error ? error.message : 'Could not load management organizations.');
+      }
     })();
     return () => { active = false; };
-  }, [finishLoading, props.notify, site?.id]);
-  const assigned = (duty: DutyRow) => duty.primary_gatekeeper_id === props.user?.id
-    ? 'Primary gatekeeper' : duty.supports.some((support) => support.gatekeeper_id === props.user?.id) ? 'Support gatekeeper' : 'Site shift';
-  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> GATEKEEPER · ASSIGNMENTS</span><h1>Your duty <em>details.</em></h1><p>Upcoming shifts for {site?.name ?? 'your assigned destination'}.</p></div></div>
-    <div className="duty-details-list">{loading && <div className="empty-inline">Loading assignments…</div>}{!loading && !duties.length && <div className="empty-card"><CalendarClock size={28}/><h3>No upcoming shifts</h3><p>Ask the Tourism Office to add you to a scheduled shift.</p></div>}
-      {duties.map((duty) => <article key={duty.id}><div className="duty-date-tile"><b>{new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', day: '2-digit' }).format(new Date(duty.duty_date + 'T00:00:00+08:00'))}</b><small>{new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short' }).format(new Date(duty.duty_date + 'T00:00:00+08:00'))}</small></div><div><span className="status-tag">{assigned(duty)}</span><h3>{new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'full' }).format(new Date(duty.duty_date + 'T00:00:00+08:00'))}</h3><p>{new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }).format(new Date(duty.shift_start_at))} – {new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }).format(new Date(duty.shift_end_at))} · Asia/Manila</p><small>Primary: {profileName(duty.primary)} · {duty.supports.length ? `Support: ${duty.supports.map((item) => profileName(item.gatekeeper)).join(', ')}` : 'No support gatekeeper'}</small></div><span className="status-tag">{duty.status}</span></article>)}</div>
+  }, [notify]);
+
+  const assign = async (managementOrganizationId: string | null, privateOrganizationName: string | null) => {
+    setLoading(true);
+    try {
+      const { error } = await db().rpc('assign_site_management_organization', {
+        p_site_id: site.id,
+        p_management_organization_id: managementOrganizationId,
+        p_new_private_organization_name: privateOrganizationName,
+      });
+      if (error) throw error;
+      notify('Destination management organization updated. Staff access remains limited to active site assignments.');
+      setNewOrganizationName('');
+      refresh();
+      const { data, error: organizationsError } = await db().from('management_organizations').select('id,name,authority').order('name');
+      if (organizationsError) throw organizationsError;
+      setOrganizations((data ?? []) as ManagementOrganization[]);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not update the destination management organization.');
+    } finally { setLoading(false); }
+  };
+
+  const currentOrganization = organizations.find((organization) => organization.id === site.management_organization_id);
+  return <section className="form-card site-management-card">
+    <div className="card-heading"><span><small>DESTINATION OWNERSHIP</small><h3>Management authority</h3></span><Building2 size={18}/></div>
+    <p>Current authority: <b>{currentOrganization?.name ?? 'Tourism Office'}</b>{currentOrganization?.authority === 'private_site' ? ' · Private site administration' : ' · Tourism Office'}</p>
+    <label>Assign existing organization<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>
+      <option value="" disabled>Select management organization</option>
+      {organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name} · {organization.authority === 'private_site' ? 'Private' : 'Tourism Office'}</option>)}
+    </select></label>
+    <button className="btn btn-outline" type="button" disabled={loading || !organizationId || organizationId === site.management_organization_id}
+      onClick={() => void assign(organizationId, null)}>{loading ? 'Saving…' : 'Assign organization'}</button>
+    <form className="site-management-create" onSubmit={(event) => { event.preventDefault(); void assign(null, newOrganizationName.trim()); }}>
+      <label>Or create a private organization<input value={newOrganizationName} onChange={(event) => setNewOrganizationName(event.target.value)} minLength={2} maxLength={160} required placeholder="Organization name"/></label>
+      <button className="btn btn-outline" type="submit" disabled={loading}>{loading ? 'Saving…' : 'Create and assign'}</button>
+    </form>
+    <p className="field-hint">Ownership changes only after save. Site Admin access still requires an active assignment to this destination.</p>
   </section>;
 }
 
 function CapacityMapPage(props: Props) {
   const gatekeeper = props.role === 'gatekeeper';
   const site = props.sites.find((item) => item.id === props.siteId);
-  const [occupancy, setOccupancy] = useState<LiveOccupancy | null>(null);
+  const capacityFeed = useLiveCapacity(site ? [site.id] : []);
+  const occupancy = site && capacityFeed.state === 'ready' ? capacityFeed.rows[site.id] ?? null : null;
   const [zones, setZones] = useState<CapacityZoneRow[]>([]);
-  const [warningThreshold, setWarningThreshold] = useState<number | null>(null);
   const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${site?.id ?? 'unselected'}`);
   useEffect(() => {
     let active = true;
-    if (!site) { setOccupancy(null); setZones([]); setWarningThreshold(null); finishLoading(); return () => { active = false; }; }
-    setOccupancy(null); setZones([]); setWarningThreshold(null);
+    if (!site) { setZones([]); finishLoading(); return () => { active = false; }; }
+    setZones([]);
     void Promise.all([
-      loadLiveOccupancy(site.id),
       db().from('site_capacity_zones').select('id,name,zone_type,measured_area,area_unit,estimated_capacity,plan_reference,geometry').eq('site_id', site.id).order('zone_type').order('name'),
-      db().from('site_approved_visitor_limits').select('approaching_threshold_percent,effective_from,effective_to').eq('site_id', site.id).eq('status', 'active').lte('effective_from', phToday()).order('effective_from', { ascending: false }).limit(20),
-    ]).then(([live, zoneResult, limitResult]) => {
+    ]).then(([zoneResult]) => {
       if (zoneResult.error) throw zoneResult.error;
-      if (limitResult.error) throw limitResult.error;
       if (active) {
-        setOccupancy(live);
         setZones((zoneResult.data ?? []) as typeof zones);
-        const today = phToday();
-        const activeLimit = limitResult.data?.find((row) => row.effective_to == null || row.effective_to >= today);
-        setWarningThreshold(activeLimit?.approaching_threshold_percent ?? null);
       }
     })
       .catch((error) => { if (active) props.notify(error instanceof Error ? error.message : 'Could not load capacity data.'); })
       .finally(() => { if (active) finishLoading(); });
     return () => { active = false; };
-  }, [finishLoading, gatekeeper, props.notify, site?.id]);
+  }, [finishLoading, props.notify, site?.id]);
+  const crowd = capacityStatus(occupancy);
   const approvedLimit = occupancy?.approved_visitor_limit;
+  const mapLimit = crowd.limit;
   const atLimit = approvedLimit != null && (occupancy?.current_visitor_count ?? 0) >= approvedLimit;
-  const limitPercent = approvedLimit ? Math.min(100, Math.round((occupancy?.current_visitor_count ?? 0) / approvedLimit * 100)) : null;
-  const approachingLimit = !atLimit && limitPercent != null && warningThreshold != null && limitPercent >= warningThreshold;
-  const remaining = approvedLimit == null ? null : Math.max(0, approvedLimit - (occupancy?.current_visitor_count ?? 0));
-  const capacityStatus = site?.status !== 'published' ? 'Closed / restricted' : atLimit ? 'At approved limit' : approachingLimit ? 'Approaching limit' : approvedLimit == null ? 'Limit not approved' : 'Below approved limit';
+  const limitPercent = crowd.percent;
+  const approachingLimit = ['near', 'almost', 'critical'].includes(crowd.level) && !atLimit;
+  const remaining = mapLimit == null ? null : Math.max(0, mapLimit - (occupancy?.current_visitor_count ?? 0));
+  const capacityLabel = site?.status !== 'published' ? 'Closed / restricted' : crowd.label;
   return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> OPERATIONS · SITE CAPACITY</span><h1>Capacity <em>map.</em></h1><p>Live attendance and verified site-location records for {site?.name ?? 'the selected destination'}.</p></div>{!gatekeeper && <label className="staff-site-picker">Destination<SiteSelector {...props}/></label>}</div>
-    {!site ? <div className="empty-card"><MapPinned size={28}/><h3>No destination selected</h3><p>Select a site assigned to your staff account.</p></div> : loading ? <div className="empty-card" role="status"><MapPinned size={28}/><h3>Loading capacity data</h3><p>Getting the records for {site.name}.</p></div> : <><div className="capacity-status-card"><div className={'capacity-status-label ' + (atLimit || site.status !== 'published' ? 'warning' : approachingLimit || approvedLimit == null ? 'informational' : 'available')}><span className="status-dot"/>{capacityStatus}</div>
-        {approvedLimit != null ? <><div className="capacity-status-headline"><b>{loading ? '—' : occupancy?.current_visitor_count ?? '—'}</b><span>estimated visitors currently inside</span><strong>{remaining ?? '—'} remaining</strong></div><div className="capacity-progress" role="img" aria-label={`${limitPercent}% of approved visitor limit`}><i style={{ width: `${limitPercent}%` }}/></div><div className="capacity-progress-label"><span>{limitPercent}% of approved visitor limit</span><span>Limit: {approvedLimit}</span></div></>
-          : <p>No operational limit is approved. Physical estimates remain informational and do not determine admission status.</p>}
+    {!site ? <div className="empty-card"><MapPinned size={28}/><h3>No destination selected</h3><p>Select a site assigned to your staff account.</p></div> : loading ? <div className="empty-card" role="status"><MapPinned size={28}/><h3>Loading capacity data</h3><p>Getting the records for {site.name}.</p></div> : <><div className="capacity-status-card"><div className={'capacity-status-label ' + (atLimit || site.status !== 'published' ? 'warning' : approachingLimit || approvedLimit == null ? 'informational' : 'available')}><span className="status-dot"/>{capacityLabel}</div>
+        {mapLimit != null ? <><div className="capacity-status-headline"><b>{loading ? '—' : occupancy?.current_visitor_count ?? '—'}</b><span>estimated visitors currently inside</span><strong>{remaining ?? '—'} remaining</strong></div><div className="capacity-progress" role="progressbar" aria-label="Recorded occupancy against map reference" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(limitPercent ?? 0))}><i style={{ width: `${Math.min(100, limitPercent ?? 0)}%` }}/></div><div className="capacity-progress-label"><span>{Math.round(limitPercent ?? 0)}% of {crowd.basis === 'estimated' ? 'provisional map estimate' : 'approved visitor limit'}</span><span>{crowd.basis === 'estimated' ? 'Estimate' : 'Limit'}: {mapLimit}</span></div>{crowd.basis === 'estimated' && <p className="field-hint">Provisional estimate for map coloring only. It does not restrict admission.</p>}</>
+          : <p>{occupancy ? 'Capacity Not Configured. Physical estimates remain informational and do not determine admission status.' : 'Capacity Data Unavailable. Refresh to try again.'}</p>}
         {atLimit && <div className="capacity-limit-alert"><ShieldCheck size={18}/><span>Approved visitor limit reached. New ticket arrivals and walk-in admissions will be rejected by the database.</span></div>}
-        {approachingLimit && <p className="field-hint">Occupancy reached the configured warning threshold of {warningThreshold}%. Approved limit remains {approvedLimit} visitors.</p>}
+        {approachingLimit && <p className="field-hint">{crowd.label}: {Math.round(limitPercent!)}% recorded occupancy. Approved limit remains {approvedLimit} visitors.</p>}
         {site.status !== 'published' && <div className="capacity-limit-alert"><ShieldCheck size={18}/><span>This destination is not published. Follow the site’s approved closure procedure.</span></div>}
-        <div className="capacity-live-grid">{[['Currently onsite', occupancy?.current_visitor_count], ['Arrivals today', occupancy?.arrivals_today], ['Departures today', occupancy?.departures_today], ['Physical estimate', occupancy?.capacity_estimate]].map(([label, value]) => <article key={String(label)}><small>{label}{label === 'Physical estimate' ? ' · informational' : ''}</small><b>{loading ? '—' : value ?? 'Not recorded'}</b></article>)}</div>
+        <div className="capacity-live-grid">{[['Currently onsite', occupancy?.current_visitor_count], ['Arrivals today', occupancy?.arrivals_today], ['Departures today', occupancy?.departures_today], ['Provisional map estimate', occupancy?.estimated_live_capacity], ['Physical estimate', occupancy?.capacity_estimate]].map(([label, value]) => <article key={String(label)}><small>{label}{label === 'Physical estimate' || label === 'Provisional map estimate' ? ' · informational' : ''}</small><b>{loading ? '—' : value ?? 'Not recorded'}</b></article>)}</div>
         <p className="field-hint">Physical estimate and approved visitor limit are separate. No per-zone occupancy is inferred from the site-wide count.</p>
-        <p className="field-hint">Calculated {occupancy?.calculated_at ? new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(occupancy.calculated_at)) : 'not available'} · last attendance event {occupancy?.last_recorded_at ? new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(occupancy.last_recorded_at)) : 'none recorded'} · Asia/Manila</p>
+        <p className="field-hint">Last successful update {capacityFeed.updatedAt ? new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(capacityFeed.updatedAt)) : 'unavailable'} · last attendance event {occupancy?.last_recorded_at ? new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(occupancy.last_recorded_at)) : 'none recorded'} · Asia/Manila{capacityFeed.state === 'stale' ? ' · live update interrupted' : ''}</p>
       </div>
       <section className="capacity-map-zones"><div className="card-heading"><span><small>GIS SITE PLAN · NORTH UP</small><h3>Site boundaries and attendance</h3></span><MapPinned size={18}/></div><DestinationMap site={site} zones={zones} occupancy={occupancy}/><p className="field-hint">Approved GeoJSON boundaries are drawn over satellite imagery. Heat uses site-wide occupancy only; visitor positions and per-zone counts are not collected or inferred.</p>{!!zones.length && <div className="capacity-zone-records">{zones.map((zone) => <article key={zone.id}><span><b>{zone.name}</b><small>{zone.zone_type.replace('_', ' ')} · {zone.measured_area == null ? 'Area not measured' : `${zone.measured_area} ${zone.area_unit.replace('_', ' ')}`}</small></span><b>{zone.estimated_capacity == null ? 'No zone estimate' : `${zone.estimated_capacity} estimated visitors`}</b></article>)}</div>}</section>
     </>}
-    {site && !gatekeeper && <CapacityPanel key={site.id} {...props} site={site} canSetApprovedLimit={props.role === 'tourism_office'}/>}
+    {site && props.role === 'site_admin' && <CapacityPanel key={site.id} {...props} site={site}/>}
   </section>;
 }
 
@@ -1459,22 +1726,27 @@ function CapacityPanel(props: Props & { site: Site; canSetApprovedLimit?: boolea
   const [limits, setLimits] = useState<ApprovedLimitRow[]>([]);
   const [assessment, setAssessment] = useState({ methodology: '', estimate: '', date: phToday(), assumptions: '', source: '' });
   const [zone, setZone] = useState({ name: '', type: 'usable', area: '', estimate: '', unit: 'square_meters', plan: '', assessmentId: '', geometry: '' });
-  const [limit, setLimit] = useState({ value: '', date: phToday(), assessmentId: '', reference: '', threshold: '' });
+  const [limit, setLimit] = useState({ value: '', date: phToday(), assessmentId: '', reference: '' });
+  const [rules, setRules] = useState({ near: 70, almost: 85, critical: 95, restrict: false, estimate: '', basis: '' });
   const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${props.site.id}`);
   const [saving, setSaving] = useState(false);
   const refresh = useCallback(async () => {
     try {
-      const [assessmentResult, zoneResult, limitResult] = await Promise.all([
+      const [assessmentResult, zoneResult, limitResult, rulesResult] = await Promise.all([
         db().from('site_capacity_assessments').select('id,methodology,estimated_capacity,assessment_date,status').eq('site_id', props.site.id).order('assessment_date', { ascending: false }),
         db().from('site_capacity_zones').select('id,name,zone_type,measured_area,area_unit,estimated_capacity,plan_reference,geometry').eq('site_id', props.site.id).order('zone_type').order('name'),
         db().from('site_approved_visitor_limits').select('id,visitor_limit,effective_from,effective_to,status,approaching_threshold_percent').eq('site_id', props.site.id).order('effective_from', { ascending: false }),
+        db().from('site_capacity_rules').select('near_threshold_percent,almost_threshold_percent,critical_threshold_percent,restrict_at_warning,estimated_live_capacity,estimate_basis').eq('site_id', props.site.id).maybeSingle(),
       ]);
       if (assessmentResult.error) throw assessmentResult.error;
       if (zoneResult.error) throw zoneResult.error;
       if (limitResult.error) throw limitResult.error;
+      if (rulesResult.error) throw rulesResult.error;
       setAssessments((assessmentResult.data ?? []) as CapacityAssessmentRow[]);
       setZones((zoneResult.data ?? []) as CapacityZoneRow[]);
       setLimits((limitResult.data ?? []) as ApprovedLimitRow[]);
+      const row = rulesResult.data;
+      setRules({ near: row?.near_threshold_percent ?? 70, almost: row?.almost_threshold_percent ?? 85, critical: row?.critical_threshold_percent ?? 95, restrict: row?.restrict_at_warning ?? false, estimate: row?.estimated_live_capacity == null ? '' : String(row.estimated_live_capacity), basis: row?.estimate_basis ?? '' });
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not load capacity records.'); }
     finally { finishLoading(); }
   }, [finishLoading, props.notify, props.site.id]);
@@ -1521,10 +1793,10 @@ function CapacityPanel(props: Props & { site: Site; canSetApprovedLimit?: boolea
       const { error } = await db().from('site_approved_visitor_limits').insert({
         site_id: props.site.id, visitor_limit: Number(limit.value), effective_from: limit.date,
         supporting_assessment_id: limit.assessmentId || null, policy_reference: limit.reference.trim(),
-        approaching_threshold_percent: limit.threshold ? Number(limit.threshold) : null,
+        approaching_threshold_percent: rules.near,
       });
       if (error) throw error;
-      setLimit({ value: '', date: phToday(), assessmentId: '', reference: '', threshold: '' });
+      setLimit({ value: '', date: phToday(), assessmentId: '', reference: '' });
       props.notify('Approved visitor limit recorded.'); await refresh();
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not record the approved limit.'); }
     finally { setSaving(false); }
@@ -1536,17 +1808,35 @@ function CapacityPanel(props: Props & { site: Site; canSetApprovedLimit?: boolea
       props.notify('Assessment marked reviewed. An approved visitor limit remains separate.'); await refresh();
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not review this assessment.'); }
   };
+  const saveRules = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!(rules.near >= 1 && rules.near < rules.almost && rules.almost < rules.critical && rules.critical <= 100)) {
+      props.notify('Use increasing thresholds between 1% and 100%.'); return;
+    }
+    setSaving(true);
+    try {
+      const { error } = await db().from('site_capacity_rules').upsert({ site_id: props.site.id,
+        near_threshold_percent: rules.near, almost_threshold_percent: rules.almost,
+        critical_threshold_percent: rules.critical, restrict_at_warning: rules.restrict,
+        estimated_live_capacity: rules.estimate ? Number(rules.estimate) : null,
+        estimate_basis: rules.basis.trim() || null,
+      }, { onConflict: 'site_id' });
+      if (error) throw error;
+      props.notify('Capacity warning settings saved.'); await refresh();
+    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not save capacity warnings.'); }
+    finally { setSaving(false); }
+  };
   return <section className="capacity-panel"><div className="card-heading"><span><small>CAPACITY EVIDENCE</small><h3>Capacity assessments and site map</h3></span><Activity size={18}/></div>
     <p className="field-hint">Physical estimates, approved visitor limits, and daily booking capacity are separate. No visitor limit is created from an assessment automatically.</p>
     <div className="capacity-state"><span><b>{zones.length}</b> measured zone{zones.length === 1 ? '' : 's'} recorded</span><span><b>{limits.filter((row) => row.status === 'active').length}</b> active approved limit{limits.filter((row) => row.status === 'active').length === 1 ? '' : 's'}</span><span>Map geometry: {zones.some((row) => row.geometry) ? 'recorded' : 'not recorded'}</span></div>
-    <div className="capacity-form-grid"><form onSubmit={(event) => void saveAssessment(event)}><h4>Physical capacity assessment</h4><label>Methodology<input value={assessment.methodology} onChange={(event) => setAssessment({ ...assessment, methodology: event.target.value })} placeholder="Measured usable area ÷ stated space per visitor" required maxLength={500}/></label><div className="form-two"><label>Estimated capacity<input type="number" min="1" value={assessment.estimate} onChange={(event) => setAssessment({ ...assessment, estimate: event.target.value })}/></label><label>Assessment date<input type="date" value={assessment.date} onChange={(event) => setAssessment({ ...assessment, date: event.target.value })} required/></label></div><label>Assumptions<textarea value={assessment.assumptions} onChange={(event) => setAssessment({ ...assessment, assumptions: event.target.value })} rows={2}/></label><label>Source or survey reference<input value={assessment.source} onChange={(event) => setAssessment({ ...assessment, source: event.target.value })} maxLength={500}/></label><button className="btn btn-outline" disabled={saving || loading}>Save for review</button></form>
+    <div className="capacity-form-grid"><form onSubmit={(event) => void saveRules(event)}><h4>Crowd warning settings</h4><p className="field-hint">Thresholds use recorded occupancy against the approved visitor limit. The approved maximum remains separate.</p><div className="form-two"><label>Near capacity (%)<input type="number" min="1" max="98" value={rules.near} onChange={(event) => setRules({ ...rules, near: Number(event.target.value) })} required/></label><label>Almost full (%)<input type="number" min="2" max="99" value={rules.almost} onChange={(event) => setRules({ ...rules, almost: Number(event.target.value) })} required/></label></div><label>Critical warning (%)<input type="number" min="3" max="100" value={rules.critical} onChange={(event) => setRules({ ...rules, critical: Number(event.target.value) })} required/></label><label>Provisional map estimate<input type="number" min="1" value={rules.estimate} onChange={(event) => setRules({ ...rules, estimate: event.target.value })} placeholder="Not set"/></label><label>Estimate basis<input value={rules.basis} onChange={(event) => setRules({ ...rules, basis: event.target.value })} maxLength={500} placeholder="School-project planning estimate"/></label><p className="field-hint">Map display and recommendations only. Does not set or enforce an admissions limit.</p><label><input type="checkbox" checked={rules.restrict} onChange={(event) => setRules({ ...rules, restrict: event.target.checked })}/> Restrict new admissions at the critical warning threshold</label><p className="field-hint">Admissions are always blocked at the approved maximum. This option applies an earlier restriction.</p><button className="btn btn-primary" disabled={saving || loading}>Save warning settings</button></form><form onSubmit={(event) => void saveAssessment(event)}><h4>Physical capacity assessment</h4><label>Methodology<input value={assessment.methodology} onChange={(event) => setAssessment({ ...assessment, methodology: event.target.value })} placeholder="Measured usable area ÷ stated space per visitor" required maxLength={500}/></label><div className="form-two"><label>Estimated capacity<input type="number" min="1" value={assessment.estimate} onChange={(event) => setAssessment({ ...assessment, estimate: event.target.value })}/></label><label>Assessment date<input type="date" value={assessment.date} onChange={(event) => setAssessment({ ...assessment, date: event.target.value })} required/></label></div><label>Assumptions<textarea value={assessment.assumptions} onChange={(event) => setAssessment({ ...assessment, assumptions: event.target.value })} rows={2}/></label><label>Source or survey reference<input value={assessment.source} onChange={(event) => setAssessment({ ...assessment, source: event.target.value })} maxLength={500}/></label><button className="btn btn-outline" disabled={saving || loading}>Save for review</button></form>
       <form onSubmit={(event) => void saveZone(event)}><h4>Capacity-map zone</h4><label>Zone name<input value={zone.name} onChange={(event) => setZone({ ...zone, name: event.target.value })} required maxLength={120}/></label><div className="form-two"><label>Type<select value={zone.type} onChange={(event) => setZone({ ...zone, type: event.target.value, geometry: '' })}><option value="usable">Usable area</option><option value="restricted">Restricted area</option><option value="access_path">Access path</option></select></label><label>Assessment<select value={zone.assessmentId} onChange={(event) => setZone({ ...zone, assessmentId: event.target.value })}><option value="">No linked assessment</option>{assessments.map((row) => <option key={row.id} value={row.id}>{row.assessment_date} · {row.methodology}</option>)}</select></label></div><div className="form-two"><label>Measured area<input type="number" min="0" step="0.01" value={zone.area} onChange={(event) => setZone({ ...zone, area: event.target.value })}/></label><label>Estimated zone visitors<input type="number" min="1" step="1" value={zone.estimate} onChange={(event) => setZone({ ...zone, estimate: event.target.value })}/></label></div><label>Area unit<select value={zone.unit} onChange={(event) => setZone({ ...zone, unit: event.target.value })}><option value="square_meters">Square meters</option><option value="square_feet">Square feet</option><option value="other">Other</option></select></label><label>GeoJSON geometry<textarea value={zone.geometry} onChange={(event) => setZone({ ...zone, geometry: event.target.value })} maxLength={200000} placeholder={zone.type === 'access_path' ? '{"type":"LineString","coordinates":[[124.2,8.2],[124.201,8.201]]}' : '{"type":"Polygon","coordinates":[[[124.2,8.2],[124.201,8.2],[124.201,8.201],[124.2,8.2]]]}' } rows={3}/></label><small className="field-hint">Use verified longitude, latitude pairs from the approved site plan. {zone.type === 'access_path' ? 'Access paths require LineString geometry.' : 'Visitor areas require closed Polygon geometry.'}</small><label>Plan reference<input value={zone.plan} onChange={(event) => setZone({ ...zone, plan: event.target.value })} placeholder="Verified drawing, survey, or map reference" maxLength={500}/></label><button className="btn btn-outline" disabled={saving || loading}>Save zone</button></form>
-      {props.canSetApprovedLimit && <form onSubmit={(event) => void saveLimit(event)}><h4>Approved visitor limit</h4><p className="field-hint">Use only after the responsible authority has approved an operational limit. Warning threshold is optional; leave blank to disable the approaching-limit warning.</p><label>Approved limit<input type="number" min="1" value={limit.value} onChange={(event) => setLimit({ ...limit, value: event.target.value })} required/></label><label>Approaching-limit warning (%)<input type="number" min="1" max="99" step="1" value={limit.threshold} onChange={(event) => setLimit({ ...limit, threshold: event.target.value })} placeholder="Optional, 1–99"/></label><label>Effective from<input type="date" value={limit.date} onChange={(event) => setLimit({ ...limit, date: event.target.value })} required/></label><label>Supporting assessment<select value={limit.assessmentId} onChange={(event) => setLimit({ ...limit, assessmentId: event.target.value })}><option value="">Policy or other approval</option>{assessments.map((row) => <option key={row.id} value={row.id}>{row.assessment_date} · {row.methodology}</option>)}</select></label><label>Approval reference<input value={limit.reference} onChange={(event) => setLimit({ ...limit, reference: event.target.value })} maxLength={500}/></label><button className="btn btn-primary" disabled={saving || loading}>Record approved limit</button></form>}
+      {props.canSetApprovedLimit && <form onSubmit={(event) => void saveLimit(event)}><h4>Approved visitor limit</h4><p className="field-hint">Use only after the responsible authority has approved an operational limit. Set crowd warnings above.</p><label>Approved limit<input type="number" min="1" value={limit.value} onChange={(event) => setLimit({ ...limit, value: event.target.value })} required/></label><label>Effective from<input type="date" value={limit.date} onChange={(event) => setLimit({ ...limit, date: event.target.value })} required/></label><label>Supporting assessment<select value={limit.assessmentId} onChange={(event) => setLimit({ ...limit, assessmentId: event.target.value })}><option value="">Policy or other approval</option>{assessments.map((row) => <option key={row.id} value={row.id}>{row.assessment_date} · {row.methodology}</option>)}</select></label><label>Approval reference<input value={limit.reference} onChange={(event) => setLimit({ ...limit, reference: event.target.value })} maxLength={500}/></label><button className="btn btn-primary" disabled={saving || loading}>Record approved limit</button></form>}
     </div>
     <div className="capacity-records">{loading && <div className="empty-inline">Loading capacity records…</div>}{!loading && !assessments.length && !zones.length && !limits.length && <div className="empty-inline">No physical-capacity or approved-limit records yet.</div>}
       {!!assessments.length && <article><h4>Assessments</h4>{assessments.map((row) => <div key={row.id}><span><b>{row.methodology}</b><small>{row.assessment_date} · {row.estimated_capacity ?? 'No'} estimated visitors · {row.status}</small></span>{row.status === 'draft' || row.status === 'needs_review' ? <button className="link-btn" onClick={() => void markReviewed(row.id)}>Mark reviewed</button> : null}</div>)}</article>}
       {!!zones.length && <article><h4>Zones</h4>{zones.map((row) => <div key={row.id}><span><b>{row.name}</b><small>{row.zone_type.replace('_', ' ')} · {row.measured_area == null ? 'Area not measured' : `${row.measured_area} ${row.area_unit.replace('_', ' ')}`} · {row.estimated_capacity == null ? 'No estimate' : `${row.estimated_capacity} estimated visitors`}</small></span><small>{row.plan_reference || 'No plan reference'}</small></div>)}</article>}
-      {!!limits.length && <article><h4>Approved limits</h4>{limits.map((row) => <div key={row.id}><span><b>{row.visitor_limit} visitors</b><small>Effective {row.effective_from}{row.effective_to ? ` to ${row.effective_to}` : ''} · {row.approaching_threshold_percent == null ? 'No warning threshold' : `Warn at ${row.approaching_threshold_percent}%`}</small></span><span className="status-tag">{row.status}</span></div>)}</article>}</div>
+      {!!limits.length && <article><h4>Approved limits</h4>{limits.map((row) => <div key={row.id}><span><b>{row.visitor_limit} visitors</b><small>Effective {row.effective_from}{row.effective_to ? ` to ${row.effective_to}` : ''}</small></span><span className="status-tag">{row.status}</span></div>)}</article>}</div>
   </section>;
 }
 

@@ -12,6 +12,16 @@
 .destination-map .leaflet-control-scale-line { border-color: #334b54; color: #24343b; background: #fffffff0; }
 .destination-map-marker { display: grid; place-items: center; border: 0; background: transparent; }
 .destination-map-marker span { width: 16px; height: 16px; border: 3px solid #fff; border-radius: 50%; background: #087f8c; box-shadow: 0 1px 7px #132c3c8a, 0 0 0 7px #078c8c35; }
+.site-heat { --heat: 20, 165, 87; border-radius: 50%; pointer-events: none; }
+.site-heat span { display: block; width: 100%; height: 100%; border: 1px solid rgba(var(--heat), .3); border-radius: 50%; background: radial-gradient(circle, rgba(var(--heat), var(--heat-opacity)) 0, rgba(var(--heat), calc(var(--heat-opacity) * .8)) 22%, rgba(var(--heat), calc(var(--heat-opacity) * .44)) 50%, rgba(var(--heat), 0) 80%); }
+.site-heat-near { --heat: 231, 176, 0; }
+.site-heat-almost { --heat: 239, 111, 28; }
+.site-heat-critical { --heat: 215, 42, 55; }
+.map-legend-level { border-radius: 50% !important; background: #14a557; }
+.map-legend-near { background: #e7b000; }
+.map-legend-almost { background: #ef6f1c; }
+.map-legend-critical { background: #d72a37; }
+.map-legend-unknown,.map-legend-unconfigured { background: #a0acb3; }
 .destination-map-legend { display: flex; flex-wrap: wrap; gap: .7rem 1rem; padding: .7rem .15rem .15rem; color: #4e646e; font-size: .74rem; }
 .destination-map-legend span { display: inline-flex; align-items: center; gap: .38rem; }
 .destination-map-legend i { display: inline-block; width: 12px; height: 12px; flex: 0 0 auto; border-radius: 3px; }

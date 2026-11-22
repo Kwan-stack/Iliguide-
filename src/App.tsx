@@ -1,28 +1,32 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowRight, BadgeCheck, Banknote, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Compass, CreditCard, Filter, Heart, MapPin, Menu, Search, ShieldCheck, Ticket as TicketIcon, UserRound, X } from 'lucide-react';
+import { ArrowRight, BadgeCheck, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Compass, Filter, Heart, MapPin, Menu, Search, ShieldCheck, Ticket as TicketIcon, UserRound, X } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { supabase, supabaseConfigured } from './lib/supabase';
 import { calculateBookingTotal, createHold, db, invokeFunction, loadAssignments, loadProfile, loadSites, loadSlots, loadTravelerProfiles, money, timeLabel, type Booking, type CreatedHold, type Profile, type Site, type Slot, type StaffAssignment, type Ticket as IssuedTicket, type TravelerProfile } from './lib/iliguide';
 import { type Party } from './lib/pendingReservation';
-import { completedVisitorCount, emptyVisitorInformation, resizeVisitorInformation, visitorInformationComplete, visitorInformationPayload, type VisitorInformation } from './lib/visitorInformation';
+import { emptyVisitorInformation, resizeVisitorInformation, visitorInformationComplete, visitorInformationPayload, type VisitorInformation } from './lib/visitorInformation';
 import { bookingContactError } from './lib/bookingValidation';
 import { useSilentLoad } from './lib/useSilentLoad';
-import { VisitorInformationForm } from './components/VisitorInformationForm';
 import { AuthDialog, type AuthMode } from './components/AuthDialog';
 import { StaffWorkspaceShell } from './components/StaffWorkspaceShell';
-import DestinationLocator from './components/DestinationLocator';
-import OccupancyPanel from './components/OccupancyPanel';
 import './components/DestinationMap.css';
 import { gatekeeperPath, isGatekeeperPath, parseGatekeeperRoute, type GatekeeperPage } from './lib/gatekeeperRoutes';
 import { staffPageForRole, type AppPage } from './lib/actorRoutes';
-import { authSuccessPath, canShowVisitorAuthModal, destinationSlugFromPath, isAuthPath, isKnownAppPath, isWorkspacePath, pageFromPath, passwordRecoveryPath, staffLoginUrl, staffReturnPath, visitorAuthDismissPath, visitorLoginUrl, visitorReturnPath, visitorRoutePaths, workspaceRoutePaths, STAFF_LOGIN_PATH, VISITOR_LOGIN_PATH } from './lib/appRoutes';
+import { authSuccessPath, canShowVisitorAuthModal, destinationSlugFromPath, isAuthPath, isKnownAppPath, isWorkspacePath, pageFromPath, passwordRecoveryPath, staffLoginUrl, staffPortalPath, staffReturnPath, visitorAuthDismissPath, visitorLoginUrl, visitorReturnPath, visitorRoutePaths, STAFF_LOGIN_PATH, VISITOR_LOGIN_PATH } from './lib/appRoutes';
 const VisitorPages = lazy(() => import('./components/VisitorPages').then((module) => ({ default: module.VisitorPages })));
 const StaffPages = lazy(() => import('./components/StaffPages').then((module) => ({ default: module.StaffPages })));
+const DestinationLocator = lazy(() => import('./components/DestinationLocator'));
+const OccupancyPanel = lazy(() => import('./components/OccupancyPanel'));
 const DestinationMap = lazy(() => import('./components/DestinationMap'));
+const VisitorBookingFlow = lazy(() => import('./components/VisitorBookingFlow').then((module) => ({ default: module.VisitorBookingFlow })));
+const VisitorManualPaymentPage = lazy(() => import('./components/VisitorPaymentPages').then((module) => ({ default: module.VisitorManualPaymentPage })));
+const BookingConfirmationPage = lazy(() => import('./components/VisitorPaymentPages').then((module) => ({ default: module.BookingConfirmationPage })));
+const DestinationReviews = lazy(() => import('./components/ReviewPages').then((module) => ({ default: module.DestinationReviews })));
+import type { ManualPaymentSettings } from './components/VisitorBookingFlow';
 
 type Page = AppPage;
-type StaffPage = Extract<Page, GatekeeperPage | 'Activity' | 'Slots and closures' | 'Staff and accounts' | 'Sites and staff'>;
+type StaffPage = Extract<Page, GatekeeperPage | 'Activity' | 'Slots and closures' | 'Schedule & Operations' | 'Staff and accounts' | 'Sites and staff' | 'Payment verification' | 'Payment settings' | 'Feedback & Reviews'>;
 const todayPh = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const timePh = () => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
 const destinationPhotos: Record<string, { src: string; author: string; source: string; license: string; licenseUrl: string }> = {
@@ -50,7 +54,7 @@ const readSavedSiteIds = (userId: string | null): string[] => {
       typeof id === 'string' && /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(id))) ] : [];
   } catch { return []; }
 };
-const isStaffPage = (page: Page): page is StaffPage => ['Overview', 'Reservations', 'Visitor Management', 'Scan and exit', 'Walk-in registration', 'Visitor Logbook', 'Capacity map', 'Duty details', 'Reports', 'Activity', 'Slots and closures', 'Staff and accounts', 'Sites and staff', 'Duty roster', 'Change password'].includes(page);
+const isStaffPage = (page: Page): page is StaffPage => ['Overview', 'Reservations', 'Visitor Management', 'Scan and exit', 'Walk-in registration', 'Visitor Logbook', 'Capacity map', 'Duty details', 'Reports', 'Activity', 'Slots and closures', 'Schedule & Operations', 'Staff and accounts', 'Sites and staff', 'Duty roster', 'Payment verification', 'Payment settings', 'Feedback & Reviews', 'Change password'].includes(page);
 
 export default function App() {
   const location = useLocation();
@@ -68,8 +72,12 @@ export default function App() {
   const [siteId, setSiteId] = useState('');
   const [date, setDate] = useState(todayPh());
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [selectedSlotId, setSelectedSlotId] = useState('');
+  const [bookingStep, setBookingStep] = useState(0);
+  const [paymentSettings, setPaymentSettings] = useState<ManualPaymentSettings | null>(null);
   const [party, setParty] = useState<Party>({ adults: 1, children: 0, pwd: 0 });
   const [paymentMethod, setPaymentMethod] = useState<'online' | 'onsite'>('online');
+  const [paymentApplication, setPaymentApplication] = useState<'gcash' | 'maya'>('gcash');
   const [visitorInformation, setVisitorInformation] = useState<VisitorInformation[]>(() => emptyVisitorInformation(1));
   const [visitor, setVisitor] = useState({ name: '', email: '', phone: '' });
   const [selectedTravelerId, setSelectedTravelerId] = useState('');
@@ -113,7 +121,7 @@ export default function App() {
   useEffect(() => () => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
   }, []);
-  const go = useCallback((next: Page) => {
+  const go = useCallback((next: Page, scheduleTab?: 'duty' | 'hours' | 'capacity') => {
     const allowed = staffPageForRole(role, next);
     if (allowed === 'Account' && !user) {
       setPage('Visitor login');
@@ -125,10 +133,14 @@ export default function App() {
     if (role === 'gatekeeper') {
       if (assignedGatekeeperSite) navigate(gatekeeperPath(assignedGatekeeperSite.slug, allowed as GatekeeperPage));
     } else if (role === 'site_admin' || role === 'tourism_office') {
-      navigate(workspaceRoutePaths[allowed] ?? '/workspace');
+      const route = staffPortalPath(role, allowed);
+      navigate(route + (allowed === 'Schedule & Operations' && role === 'tourism_office' && scheduleTab ? `?tab=${scheduleTab}` : ''));
     } else if (allowed === 'Destination') {
       const slug = activeSite?.slug;
       navigate(slug ? `/destinations/${encodeURIComponent(slug)}` : '/');
+    } else if (allowed === 'Booking') {
+      const slug = activeSite?.slug;
+      navigate(slug ? `/destinations/${encodeURIComponent(slug)}/book` : '/destinations');
     } else navigate(visitorRoutePaths[allowed] ?? '/');
     setMobileNav(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -139,7 +151,7 @@ export default function App() {
   }, [party.adults, party.children]);
 
   useEffect(() => {
-    if (previousSlotScope.current !== slotScope) setSlots([]);
+    if (previousSlotScope.current !== slotScope) { setSlots([]); setSelectedSlotId(''); }
     previousSlotScope.current = slotScope;
   }, [slotScope]);
 
@@ -290,6 +302,11 @@ export default function App() {
           return;
         }
         const routePage = pageFromPath(path);
+        if (['Booking', 'Payment', 'Booking confirmation'].includes(routePage)) {
+          setPage('Visitor login'); setAuthMode((current) => current ?? 'login');
+          navigate(visitorLoginUrl(path), { replace: true });
+          return;
+        }
         if (path === VISITOR_LOGIN_PATH) {
           const nextPath = visitorAuthDismissPath(new URLSearchParams(location.search).get('next'));
           setPage(pageFromPath(nextPath));
@@ -301,7 +318,7 @@ export default function App() {
         }
         setPage(routePage);
         if (routePage === 'Staff login') setAuthMode((current) => current ?? 'login');
-        if (routePage === 'Destination') {
+        if (routePage === 'Destination' || routePage === 'Booking') {
           const slug = destinationSlugFromPath(path);
           const destination = sites.find((site) => site.slug === slug);
           if (destination) setSiteId(destination.id);
@@ -334,7 +351,7 @@ export default function App() {
       }
       const routePage = pageFromPath(path);
       setPage(routePage === 'Landing' ? 'Discover' : routePage);
-      if (routePage === 'Destination') {
+      if (routePage === 'Destination' || routePage === 'Booking') {
         const slug = destinationSlugFromPath(path);
         const destination = sites.find((site) => site.slug === slug);
         if (destination) setSiteId(destination.id);
@@ -365,16 +382,19 @@ export default function App() {
       return;
     }
 
-    const requestedPath = isAuthPath(path) ? staffReturnPath(new URLSearchParams(location.search).get('next')) || '/workspace' : path;
+    const requestedPath = isAuthPath(path) ? staffReturnPath(new URLSearchParams(location.search).get('next')) || staffPortalPath(role, 'Overview') : path;
     if (!isWorkspacePath(requestedPath)) {
       setPage('Overview');
-      navigate('/workspace', { replace: true });
+      navigate(staffPortalPath(role, 'Overview'), { replace: true });
       return;
     }
     const requestedPage = pageFromPath(requestedPath);
     const nextPage = staffPageForRole(role, requestedPage);
     setPage(nextPage);
-    const nextPath = workspaceRoutePaths[nextPage] ?? '/workspace';
+    const legacyTab = role === 'tourism_office' && requestedPage === 'Slots and closures' ? 'hours'
+      : role === 'tourism_office' && requestedPage === 'Duty roster' ? 'duty' : '';
+    const canonicalPath = staffPortalPath(role, nextPage);
+    const nextPath = path === canonicalPath ? path : canonicalPath + (legacyTab ? `?tab=${legacyTab}` : '');
     if (nextPath !== path) navigate(nextPath, { replace: true });
   }, [accountReady, assignedGatekeeperSite, gatekeeperAssignments.length, location.pathname, location.search, navigate, notify, passwordRecovery, profile, role, sites, sitesLoaded, staffPasswordReset, user]);
 
@@ -439,17 +459,19 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!activeSite || page !== 'Destination') {
+    if (!activeSite || (page !== 'Destination' && page !== 'Booking')) {
       if (!activeSite) { setSlots([]); finishSlotsLoading(); }
       return;
     }
     if (!supabaseConfigured) { setSlots([]); finishSlotsLoading(); return; }
     let active = true;
-    void loadSlots(activeSite.id, date, date)
+    const refresh = () => void loadSlots(activeSite.id, date, date)
       .then((rows) => { if (active) setSlots(rows); })
       .catch((error) => { if (active) setDataError(error instanceof Error ? error.message : 'Could not load available times.'); })
       .finally(() => { if (active) finishSlotsLoading(); });
-    return () => { active = false; };
+    refresh();
+    const timer = window.setInterval(refresh, 15000);
+    return () => { active = false; window.clearInterval(timer); };
   }, [activeSite?.id, date, finishSlotsLoading, page]);
 
   const permittedSites = useMemo(() => role === 'visitor' || role === 'tourism_office'
@@ -465,15 +487,28 @@ export default function App() {
   const today = todayPh();
   const availableSlots = (slotsLoading ? [] : slots).filter((slot) => slot.status === 'open' && slot.remaining_capacity >= party.adults + party.children
     && (slot.slot_date > today || (slot.slot_date === today && slot.ends_at.slice(0, 5) > timePh())));
-  const selectedSlot = availableSlots[0]?.slot_id ?? '';
-  const bookingTotal = activeSite
-    ? calculateBookingTotal(activeSite.adult_fee, activeSite.child_fee, activeSite.pwd_discount_percent, party.adults, party.children, party.pwd)
-    : 0;
+  const selectedSlot = availableSlots.find((slot) => slot.slot_id === selectedSlotId)?.slot_id ?? [...availableSlots].sort((a, b) => b.remaining_capacity - a.remaining_capacity)[0]?.slot_id ?? '';
+  const bookingTotal = activeSite ? calculateBookingTotal(activeSite.adult_fee, activeSite.child_fee, activeSite.pwd_discount_percent, party.adults, party.children, party.pwd) : 0;
 
-  const openSite = (site: Site) => {
+  useEffect(() => {
+    if (page !== 'Booking' || !user || !supabaseConfigured || !activeSite) return;
+    let active = true;
+    setPaymentSettings(null);
+    void Promise.all([
+      db().from('tourism_payment_settings').select('demo_mode,payment_window_minutes').eq('id', true).maybeSingle(),
+      db().from('site_demo_payment_settings').select('gcash_enabled,gcash_account_name,gcash_account_identifier,maya_enabled,maya_account_name,maya_account_identifier,onsite_instructions').eq('site_id', activeSite.id).maybeSingle(),
+    ]).then(([globalResult, siteResult]) => {
+      if (!active) return;
+      if (globalResult.error || siteResult.error) notify(globalResult.error?.message ?? siteResult.error?.message ?? 'Could not load payment settings.');
+      else setPaymentSettings(globalResult.data && siteResult.data ? { ...globalResult.data, ...siteResult.data } as ManualPaymentSettings : null);
+    });
+    return () => { active = false; };
+  }, [activeSite?.id, notify, page, user?.id]);
+
+  const openSite = (site: Site, preservePlan = false) => {
     setSiteId(site.id);
-    setParty({ adults: 1, children: 0, pwd: 0 });
-    setVisitorInformation(emptyVisitorInformation(1));
+    setSelectedSlotId(''); setBookingStep(0);
+    if (!preservePlan) { setParty({ adults: 1, children: 0, pwd: 0 }); setVisitorInformation(emptyVisitorInformation(1)); }
     setPage('Destination');
     navigate(`/destinations/${encodeURIComponent(site.slug)}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -518,14 +553,16 @@ export default function App() {
         if (error) throw error;
         confirmed = true;
       } else {
-        const { checkout_url } = await invokeFunction<{ checkout_url: string }>('paymongo-checkout', {
-          booking_reference: hold.booking_reference, guest_access_token: token || null,
+        const { error: paymentError } = await db().rpc('begin_manual_payment', {
+          p_booking_id: hold.booking_id, p_payment_application: paymentApplication,
         });
-        window.location.assign(checkout_url);
+        if (paymentError) throw paymentError;
+        setPage('Payment');
+        navigate(`/payment/${encodeURIComponent(hold.booking_reference)}`);
         return;
       }
       setVisitorInformation(emptyVisitorInformation(party.adults + party.children));
-      if (visitor.email.trim()) void invokeFunction('send-booking-email', {
+      if (visitor.email.trim() && hold.total_amount <= 0) void invokeFunction('send-booking-email', {
         booking_reference: hold.booking_reference, event: 'confirmed',
       }).catch(() => notify('Reservation confirmed, but the confirmation email could not be sent.'));
       const { data, error: lookupError } = await db().rpc('lookup_booking', {
@@ -536,8 +573,9 @@ export default function App() {
       const booking = ((data ?? []) as Booking[])[0];
       if (!booking) throw new Error('Reservation confirmed, but booking details could not be loaded.');
       setActiveBooking(booking);
-      go('Bookings');
-      notify(hold.total_amount <= 0 ? 'Free reservation confirmed.' : 'Reservation confirmed. Pay at the destination when you arrive.');
+      setPage('Booking confirmation');
+      navigate(`/booking-confirmation/${encodeURIComponent(hold.booking_reference)}`);
+      notify(hold.total_amount <= 0 ? 'Free reservation confirmed.' : 'Booking registered. Pay at the destination.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not create the booking hold.';
       if (confirmed) { setActiveBooking(null); go('Bookings'); }
@@ -607,7 +645,7 @@ export default function App() {
   if (user && staffRole && !staffPasswordReset) {
     const staffPage = isStaffPage(page) ? page : 'Overview';
     const staffHomePath = staffRole === 'gatekeeper' && assignedGatekeeperSite
-      ? gatekeeperPath(assignedGatekeeperSite.slug, 'Overview') : '/workspace';
+      ? gatekeeperPath(assignedGatekeeperSite.slug, 'Overview') : staffPortalPath(staffRole, 'Overview');
     return <StaffWorkspaceShell role={staffRole} homePath={staffHomePath} dataError={dataError}
       onRetry={() => { setDataError(''); void reloadSites(role, assignments); }} toast={toast}
       onSignOut={() => { void signOut(); }}>
@@ -668,7 +706,7 @@ export default function App() {
         sites={destinationSites} allCount={permittedSites.length} categories={categories} category={category}
         setCategory={setCategory} destinationQuery={destinationQuery} setDestinationQuery={setDestinationQuery} openSite={openSite} savedSiteIds={savedSiteIds} onToggleSavedSite={toggleSavedSite}
       />}
-      {page === 'Destination map' && role !== 'gatekeeper' && <DestinationLocator sites={sites} openSite={openSite}/>}
+      {page === 'Destination map' && role !== 'gatekeeper' && <DestinationLocator sites={sites} openSite={openSite} bookSite={(site) => openSite(site, true)} visitDate={date} setVisitDate={setDate} visitorCount={party.adults + party.children}/>}
       {page === 'Destination' && !activeSite && <section className="content-page section-wrap"><div className="empty-card" role="status"><Compass size={28}/><h3>{sitesLoaded ? 'Destination unavailable' : 'Loading destination details'}</h3><p>{sitesLoaded ? 'This destination is not currently available.' : 'Fetching the current published destination details.'}</p><button className="btn btn-outline" onClick={() => go('Discover')}>Browse destinations</button></div></section>}
       {page === 'Destination' && activeSite && <section className="details-page section-wrap">
         <button className="back-link" onClick={() => go('Discover')}>← All destinations</button>
@@ -692,53 +730,35 @@ export default function App() {
               : <p>Operating hours have not been published.</p>}
               {activeSite.closures.filter((closure) => date >= closure.starts_on && date <= closure.ends_on).map((closure) => <p className="closure-notice" key={`${closure.starts_on}-${closure.reason}`}>{closure.reason} · {closure.starts_on}{closure.ends_on !== closure.starts_on ? ` to ${closure.ends_on}` : ''}</p>)}</div>
           </div>
-        </div><aside className="booking-card">
-          <span className="eyebrow"><span className="eyebrow-line"/> RESERVATION</span><h3>Plan your visit</h3>
-          <OccupancyPanel site={activeSite} sites={sites} onOpen={openSite}/>
-          {!user ? <div className="booking-gate"><p>Sign in or create a visitor account before entering reservation details.</p><button className="btn btn-primary btn-wide" onClick={() => navigate(visitorLoginUrl(location.pathname))}>Book now <ArrowRight size={16}/></button></div>
-          : !accountReady ? <div className="booking-gate" role="status"><p>Checking your visitor account…</p></div>
-          : profile?.account_status !== 'active' || profile.role !== 'visitor' ? <div className="booking-gate" role="status"><p>Reservations are available to active visitor accounts. Staff accounts use their office workspace.</p></div>
-          : !activeSite.fee_information_confirmed ? <div className="booking-gate" role="status"><p>Reservations are unavailable until destination management confirms current admission fees.</p></div>
-          : <>
-          <p className="price-intro">Starting at <b>{money(activeSite.adult_fee)}</b> / adult</p>
-          <label className="field-label">Visit date<input type="date" min={todayPh()} value={date} onChange={(event) => setDate(event.target.value)}/></label>
-          <div className="slot-heading"><span>Daily booking limit</span><small>{activeSite.daily_capacity == null ? 'No daily limit published' : `${activeSite.daily_capacity} visitors total`}</small></div>
-          {slotsLoading ? <div className="empty-inline" role="status">Checking booking capacity…</div> : !availableSlots.length && <div className="empty-inline">No booking capacity is available for this date.</div>}
-          <div className="party-count"><span><b>Visitors</b><small>Adults + children</small></span><span>
-            <button type="button" className="mini-counter" aria-label="Fewer adults" disabled={party.adults <= 1} onClick={() => setParty((current) => { const adults = Math.max(1, current.adults - 1); return { ...current, adults, pwd: Math.min(current.pwd, adults + current.children) }; })}>−</button>
-            <b>{party.adults}</b><button type="button" className="mini-counter" aria-label="More adults" disabled={party.adults + party.children >= activeSite.max_per_booking} onClick={() => setParty((current) => ({ ...current, adults: Math.min(activeSite.max_per_booking - current.children, current.adults + 1) }))}>+</button>
-            <span className="counter-divider"/>
-            <button type="button" className="mini-counter" aria-label="Fewer children" disabled={party.children <= 0} onClick={() => setParty((current) => { const children = Math.max(0, current.children - 1); return { ...current, children, pwd: Math.min(current.pwd, current.adults + children) }; })}>−</button>
-            <b>{party.children}</b><button type="button" className="mini-counter" aria-label="More children" disabled={party.adults + party.children >= activeSite.max_per_booking} onClick={() => setParty((current) => ({ ...current, children: Math.min(activeSite.max_per_booking - current.adults, current.children + 1) }))}>+</button>
-          </span></div>
-          <VisitorInformationForm siteSlug={activeSite.slug} adults={party.adults} children={party.children} visitors={visitorInformation}
-            onChange={(index, field, value) => setVisitorInformation((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item))}/>
-          {activeSite.pwd_discount_percent > 0 && <label className="field-label">PWD visitors<input type="number" min="0" max={party.adults + party.children} value={party.pwd} onChange={(event) => { const parsed = Number.parseInt(event.target.value, 10); setParty((current) => ({ ...current, pwd: Math.max(0, Math.min(current.adults + current.children, Number.isNaN(parsed) ? 0 : parsed)) })); }}/><small>{activeSite.pwd_discount_percent}% discount per PWD visitor. Eligibility must be verified at the gate.</small></label>}
-          {travelers.length > 0 && <label className="field-label">Use a saved traveler<select value={selectedTravelerId} onChange={(event) => {
-            const id = event.target.value; setSelectedTravelerId(id);
-            const traveler = travelers.find((item) => item.id === id);
-            if (traveler) setVisitor({ name: traveler.full_name, email: traveler.email ?? '', phone: traveler.phone ?? '' });
-          }}><option value="">Enter contact details manually</option>{travelers.map((traveler) => <option key={traveler.id} value={traveler.id}>{traveler.full_name}</option>)}</select></label>}
-          <div className="reservation-contact-heading"><h4>Booking contact</h4><p>Primary reservation contact; entered separately from visitor records.</p></div>
-          <div className="price-fields"><label>Your name<input value={visitor.name} onChange={(event) => { setSelectedTravelerId(''); setVisitor({ ...visitor, name: event.target.value }); }} maxLength={120}/></label>
-            <label>Email<input type="email" value={visitor.email} onChange={(event) => { setSelectedTravelerId(''); setVisitor({ ...visitor, email: event.target.value }); }} maxLength={254}/></label>
-            <label>Phone<input type="tel" value={visitor.phone} onChange={(event) => { setSelectedTravelerId(''); setVisitor({ ...visitor, phone: event.target.value }); }} maxLength={40}/></label></div>
-          {bookingTotal > 0 && <div className="visitor-payment-choice"><div className="reservation-contact-heading"><h4>Choose Payment Method</h4><p>Choose how you want to pay for {activeSite.name}.</p></div>
-            <div className="visitor-payment-options"><button type="button" className={'visitor-payment-option' + (paymentMethod === 'online' ? ' selected' : '')} aria-pressed={paymentMethod === 'online'} onClick={() => setPaymentMethod('online')}><CreditCard size={22}/><b>Pay Online</b><span>Secure PayMongo checkout with card, GCash, or QR Ph where enabled. Confirmation follows provider verification.</span></button>
-              <button type="button" className={'visitor-payment-option' + (paymentMethod === 'onsite' ? ' selected' : '')} aria-pressed={paymentMethod === 'onsite'} onClick={() => setPaymentMethod('onsite')}><Banknote size={22}/><b>Pay Onsite</b><span>Reserve now and pay at the destination under its payment policy.</span></button></div>
-          </div>}
-          <div className="visitor-booking-summary"><b>Booking summary</b><span>{activeSite.name} · {date}</span><span>{party.adults + party.children} visitors</span><span>Admission · {money(activeSite.adult_fee)} / adult · {money(activeSite.child_fee)} / child</span><strong>Total amount · {money(bookingTotal)}</strong>{bookingTotal > 0 && <small>Payment method · {paymentMethod === 'online' ? 'Pay Online' : 'Pay Onsite'}</small>}</div>
-          <button className="btn btn-primary btn-wide" disabled={busy || slotsLoading || !selectedSlot || completedVisitorCount(visitorInformation, activeSite.slug) !== visitorInformation.length} onClick={() => void reserve()}>{busy ? 'Please wait…' : bookingTotal <= 0 ? 'Confirm free reservation' : paymentMethod === 'online' ? 'Continue to secure payment' : 'Confirm and pay onsite'} <ArrowRight size={16}/></button>
-          <p className="secure-note"><ShieldCheck size={14}/>{bookingTotal <= 0 ? 'No payment is due for this reservation.' : paymentMethod === 'online' ? 'Payment is confirmed only after PayMongo verifies it.' : 'Your reservation is confirmed now. Payment remains due at the destination.'}</p>
-          </>}
+        </div><aside className="booking-card"><span className="eyebrow"><span className="eyebrow-line"/> VISIT INFORMATION</span><h3>Plan your visit</h3>
+          <OccupancyPanel site={activeSite} sites={sites} onOpen={openSite} onBook={(site) => openSite(site, true)} visitDate={date} setVisitDate={setDate} visitorCount={party.adults + party.children}/><p className="price-intro">Starting at <b>{money(activeSite.adult_fee)}</b> / adult</p>
+          <div className="destination-booking-facts"><span>Children · {money(activeSite.child_fee)}</span><span>Maximum · {activeSite.max_per_booking} visitors per booking</span><span>Daily limit · {activeSite.daily_capacity == null ? 'Not published' : `${activeSite.daily_capacity} visitors`}</span></div>
+          {!activeSite.fee_information_confirmed && <p className="empty-inline">Reservations unavailable until fees are confirmed.</p>}
+          {!user && <p>Sign in with an active visitor account to book.</p>}
+          {user && profile?.role !== 'visitor' && <p>Staff accounts reserve through their office workspace.</p>}
+          {user && profile?.role === 'visitor' && profile.account_status !== 'active' && <p>Only active visitor accounts can book.</p>}
+          {activeSite.fee_information_confirmed && (!user || profile?.role === 'visitor' && profile.account_status === 'active') && <button className="btn btn-primary btn-wide" onClick={() => { if (user) go('Booking'); else navigate(visitorLoginUrl(`/destinations/${activeSite.slug}/book`)); }}>Book Now <ArrowRight size={16}/></button>}
         </aside></div>
+        {supabaseConfigured && <DestinationReviews siteId={activeSite.id} isVisitor={profile?.role === 'visitor' && profile.account_status === 'active'} notify={notify}/>}
       </section>}
+      {page === 'Booking' && !activeSite && <section className="content-page section-wrap"><div className="empty-card" role="status"><h3>{sitesLoaded ? 'Destination unavailable' : 'Loading destination details'}</h3><p>Booking requires an active published destination.</p></div></section>}
+      {page === 'Booking' && activeSite && role === 'visitor' && profile?.account_status === 'active' && activeSite.fee_information_confirmed && <Suspense fallback={<section className="section-wrap loading-screen">Loading booking steps…</section>}><VisitorBookingFlow
+        site={activeSite} step={bookingStep} setStep={setBookingStep} date={date} setDate={setDate} slots={availableSlots} slotsLoading={slotsLoading} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlotId}
+        party={party} setParty={setParty} visitors={visitorInformation} setVisitors={setVisitorInformation} contact={visitor} setContact={setVisitor}
+        travelers={travelers} selectedTravelerId={selectedTravelerId} setSelectedTravelerId={setSelectedTravelerId} paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod}
+        paymentApplication={paymentApplication} setPaymentApplication={setPaymentApplication} paymentSettings={paymentSettings} amount={bookingTotal} busy={busy}
+        onSubmit={() => void reserve()} onBackToDestination={() => go('Destination')} notify={notify} today={todayPh()}/></Suspense>}
+      {page === 'Booking' && activeSite && (!user || profile?.account_status !== 'active' || profile.role !== 'visitor') && <section className="content-page section-wrap"><div className="empty-card"><h3>Visitor account required</h3><p>Sign in to reserve this destination.</p><button className="btn btn-primary" onClick={() => navigate(visitorLoginUrl(`/destinations/${activeSite.slug}/book`))}>Sign in <ArrowRight size={15}/></button></div></section>}
+      {page === 'Payment' && <Suspense fallback={<section className="section-wrap loading-screen">Loading payment…</section>}><VisitorManualPaymentPage reference={decodeURIComponent(location.pathname.split('/').pop() ?? '')} notify={notify} onBack={() => go('Bookings')} onConfirmed={() => { const reference = decodeURIComponent(location.pathname.split('/').pop() ?? ''); navigate(`/booking-confirmation/${encodeURIComponent(reference)}`); setPage('Booking confirmation'); }}/></Suspense>}
+      {page === 'Booking confirmation' && <Suspense fallback={<section className="section-wrap loading-screen">Loading confirmation…</section>}><BookingConfirmationPage reference={decodeURIComponent(location.pathname.split('/').pop() ?? '')} onBookings={() => go('Bookings')}/></Suspense>}
       {page === 'How it works' && <HowPage/>}
       {(page === 'Bookings' || page === 'Tickets' || page === 'Account') && <VisitorPages key={user?.id ?? 'visitor'}
         page={page} user={user} profile={profile} booking={activeBooking} ticket={activeTicket} guestAccessToken={activeGuestCode}
         onTicket={(booking, code) => void makeTicket(booking, code)} notify={notify} reloadUser={() => { if (user) void applyUser(user); }}
         go={go} onSignOut={signOut} configured={supabaseConfigured} sites={sites} savedSiteIds={savedSiteIds} travelers={travelers}
         onToggleSavedSite={toggleSavedSite} onOpenSite={openSite} onLogin={() => navigate(visitorLoginUrl(location.pathname))}
+        onPayment={(reference) => { setPage('Payment'); navigate(`/payment/${encodeURIComponent(reference)}`); }}
+        onConfirmation={(reference) => { setPage('Booking confirmation'); navigate(`/booking-confirmation/${encodeURIComponent(reference)}`); }}
         onPasswordReset={() => setAuthMode('forgot')}
       />}
       {page === 'Discover' && role === 'visitor' && <VisitorShortcuts go={go} signedIn={Boolean(user)}/>}
@@ -789,7 +809,7 @@ function HomePage({ sites, destinationOptions, allCount, categories, category, s
   const filteredSites = sites.filter((site) => (site.name + ' ' + site.address + ' ' + site.category).toLowerCase().includes(destinationQuery.trim().toLowerCase()));
   return <>
     <section className="hero"><HeroSlideshow/><div className="hero-copy"><span className="eyebrow"><span className="eyebrow-line"/> YOUR NEXT GREAT ESCAPE</span>
-      <h1>Majestic City<br/><em>of waterfalls.</em></h1>
+      <h1>City of Majestic<br/><em>Waterfalls.</em></h1>
       <p>Chase waterfalls, cool off in crystal springs, and find the quieter side of Iligan. Explore destinations and plan a visit.</p>
       <div className="search-panel"><label className="search-field"><MapPin size={17}/><span><small>DESTINATION</small><select aria-label="Destination" value={search} onChange={(event) => setSearch(event.target.value)}><option value="" disabled hidden>Where do you want to go?</option>{destinationOptions.map((site) => <option key={site.id} value={site.name}>{site.name}</option>)}</select></span><ChevronDown size={15}/></label>
         <label className="search-field date-field"><CalendarDays size={17}/><span><small>WHEN</small><input type="date" min={todayPh()} value={visitDate} onChange={(event) => setVisitDate(event.target.value)}/></span></label>
