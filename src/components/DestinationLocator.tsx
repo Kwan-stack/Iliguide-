@@ -35,10 +35,11 @@ function statusFor(site: Site, mode: Mode, live: LiveOccupancy | null, planned: 
   if (site.status !== 'published') return unavailable('Inactive');
 
   if (mode === 'live') {
-    if (operatingStatus(site) === 'Closed now') return unavailable('Closed now');
     if (!live || !Number.isFinite(live.current_visitor_count)) return unknown;
     const capacity = capacityStatus(live);
-    if (capacity.limit == null || !Number.isFinite(capacity.limit) || capacity.limit <= 0) return unknown;
+    if (capacity.limit == null || !Number.isFinite(capacity.limit) || capacity.limit <= 0) {
+      return { ...unknown, label: 'Capacity Not Configured', count: live.current_visitor_count };
+    }
     const percent = live.current_visitor_count * 100 / capacity.limit;
     const level = classify(percent, live);
     return { level, label: levelName(level), percent, limit: capacity.limit, count: live.current_visitor_count,
@@ -152,16 +153,23 @@ export default function DestinationLocator({ sites, audience = 'visitor', openSi
         icon: L.divIcon({ className: `site-heat site-heat-${status.level}`, html: '<span></span>', iconSize: [112, 112], iconAnchor: [56, 56] }), interactive: false,
       }).addTo(layers);
       const percentText = status.percent == null ? '—' : formatCapacityPercent(status.percent);
+      const live = feed.rows[site.id];
+      const markerText = mode === 'live' ? status.count?.toLocaleString() ?? '—' : percentText;
       const marker = L.marker(position, {
-        icon: L.divIcon({ className: `capacity-pin capacity-pin-${status.level}${site.id === selected?.id ? ' capacity-pin-selected' : ''}`, html: `<span>${percentText}</span>`, iconSize: [56, 38], iconAnchor: [28, 19] }),
-        title: `${site.name}: ${status.label}${status.percent == null ? '' : `, ${percentText}`}`, alt: `${site.name} destination, ${status.label}`, keyboard: true,
+        icon: L.divIcon({ className: `capacity-pin capacity-pin-${status.level}${site.id === selected?.id ? ' capacity-pin-selected' : ''}`, html: `<span>${markerText}</span>`, iconSize: [56, 38], iconAnchor: [28, 19] }),
+        title: mode === 'live'
+          ? `${site.name}: ${markerText} visitors inside, ${live?.arrivals_today ?? '—'} check-ins today, ${live?.departures_today ?? '—'} check-outs today${status.percent == null ? '' : `, ${percentText} capacity used`}`
+          : `${site.name}: ${status.label}${status.percent == null ? '' : `, ${percentText}`}`,
+        alt: mode === 'live'
+          ? `${site.name}: ${markerText} visitors inside, ${live?.arrivals_today ?? '—'} check-ins today, ${live?.departures_today ?? '—'} check-outs today`
+          : `${site.name} destination, ${status.label}`, keyboard: true,
       }).addTo(layers);
       marker.bindTooltip(site.name, { direction: 'top', offset: [0, -17] });
       const popup = document.createElement('div');
       const name = document.createElement('strong'); name.textContent = site.name;
       const count = document.createElement('p');
       count.textContent = mode === 'live'
-        ? `${status.count?.toLocaleString() ?? '—'} visitors inside${status.limit == null ? ' · capacity unknown' : ` / ${status.limit.toLocaleString()} ${status.basis === 'estimate' ? 'estimated ' : ''}spaces`}`
+        ? `${status.count?.toLocaleString() ?? '—'} inside · ${live?.arrivals_today ?? '—'} check-ins today · ${live?.departures_today ?? '—'} check-outs today${status.limit == null ? ' · capacity unknown' : ` / ${status.limit.toLocaleString()} ${status.basis === 'estimate' ? 'estimated ' : ''}spaces`}`
         : `${status.count?.toLocaleString() ?? '—'} projected visitors${status.spaces == null ? '' : ` · ${status.spaces.toLocaleString()} spaces for ${groupSize}`}`;
       const level = document.createElement('p'); level.textContent = `${status.label}${status.percent == null ? '' : ` · ${formatCapacityPercent(status.percent)}`} · ${mode === 'live' ? operatingStatus(site) : visitDate}`;
       popup.append(name, count, level);
@@ -172,7 +180,7 @@ export default function DestinationLocator({ sites, audience = 'visitor', openSi
       }
       marker.bindPopup(popup).on('click', () => { setSelectedId(site.id); setMobileView('details'); });
     });
-  }, [visibleSites, statusById, heatMode, mode, selected?.id, groupSize, visitDate, audience]);
+  }, [visibleSites, statusById, feed.rows, heatMode, mode, selected?.id, groupSize, visitDate, audience]);
 
   useEffect(() => {
     if (selected) mapRef.current?.panTo([selected.latitude!, selected.longitude!], { animate: true });
@@ -222,16 +230,16 @@ export default function DestinationLocator({ sites, audience = 'visitor', openSi
         <div className="locator-toolbar"><div role="group" aria-label="Map style"><button aria-pressed={baseMap === 'street'} onClick={() => setBaseMap('street')}><MapIcon size={15}/> Street</button><button aria-pressed={baseMap === 'satellite'} onClick={() => setBaseMap('satellite')}><Layers size={15}/> Satellite</button></div><div role="group" aria-label="Capacity overlay"><button aria-pressed={heatMode} onClick={() => setHeatMode(true)}>Heat zones</button><button aria-pressed={!heatMode} onClick={() => setHeatMode(false)}>Markers only</button><button onClick={() => void feed.refresh()} aria-label="Refresh capacity map"><RefreshCw size={15}/></button></div></div>
         <div className={`locator-sync locator-sync-${feed.realtimeState}`} role="status"><span className="locator-sync-dot"/>{realtimeLabel}{feed.updatedAt && <span>Last successful sync {new Intl.DateTimeFormat('en-PH', { timeStyle: 'short', timeZone: 'Asia/Manila' }).format(new Date(feed.updatedAt))}</span>}</div>
         <div className="locator-map" ref={mapNode} role="application" aria-label={`Interactive destination ${mode === 'live' ? 'live occupancy' : 'planned visit availability'} map`}/>
-        <div className="locator-legend" aria-label="Capacity status legend"><b>{mode === 'live' ? 'Physical occupancy' : 'Booking availability'}</b>{[['available', 'Available'], ['moderate', 'Moderate'], ['critical', 'Critical'], ['full', 'Full'], ['unavailable', 'Unavailable'], ['unknown', 'Unknown']].map(([level, label]) => <span key={level}><i className={`map-legend-level map-legend-${level}`}/>{label}</span>)}</div>
-        <p className="locator-note">{mode === 'live' ? 'Heat zones show destination-wide recorded check-ins minus check-outs. They do not show individual visitor positions.' : `Availability uses open booking slots and the selected group size for ${visitDate}. A destination without verified capacity remains unknown.`} {feed.state === 'stale' || planned.state === 'stale' ? 'Live update delayed; showing the last successful data.' : feed.state === 'unavailable' || (mode === 'planned' && planned.state === 'unavailable') ? 'Capacity data unavailable.' : ''}{formattedUpdate !== 'Unavailable' ? ` Updated ${formattedUpdate}.` : ''}</p>
+        <div className="locator-legend" aria-label="Capacity status legend"><b>{mode === 'live' ? 'Visitors inside · marker shows count' : 'Booking availability'}</b>{[['available', 'Available'], ['moderate', 'Moderate'], ['critical', 'Critical'], ['full', 'Full'], ['unavailable', 'Unavailable'], ['unknown', 'Unknown']].map(([level, label]) => <span key={level}><i className={`map-legend-level map-legend-${level}`}/>{label}</span>)}</div>
+        <p className="locator-note">{mode === 'live' ? 'Live count uses recorded check-ins minus check-outs. Check-ins and check-outs today update each destination as attendance is recorded; future reservations are excluded.' : `Availability uses open booking slots and the selected group size for ${visitDate}. A destination without verified capacity remains unknown.`} {feed.state === 'stale' || planned.state === 'stale' ? 'Live update delayed; showing the last successful data.' : feed.state === 'unavailable' || (mode === 'planned' && planned.state === 'unavailable') ? 'Capacity data unavailable.' : ''}{formattedUpdate !== 'Unavailable' ? ` Updated ${formattedUpdate}.` : ''}</p>
         {sites.some((site) => site.status === 'published' && !located(site)) && <p className="locator-note">Some destinations have no recorded coordinates and are omitted from the map.</p>}
       </div><div className={`locator-details${mobileView === 'map' ? ' locator-mobile-hidden' : ''}`}>
-        {visibleSites.length === 0 ? <div className="empty-inline">No destinations match these filters.</div> : <div className="locator-list" aria-label="Mapped destinations">{visibleSites.map((site) => { const status = statusById[site.id]; return <button key={site.id} className={site.id === selected?.id ? 'selected' : ''} onClick={() => { setSelectedId(site.id); mapRef.current?.panTo([site.latitude!, site.longitude!]); }}><span className={`map-legend-level map-legend-${status.level}`}/><span><b>{site.name}</b><small>{status.label}{status.percent != null ? ` · ${formatCapacityPercent(status.percent)}` : ''}</small></span></button>; })}</div>}
+        {visibleSites.length === 0 ? <div className="empty-inline">No destinations match these filters.</div> : <div className="locator-list" aria-label="Mapped destinations">{visibleSites.map((site) => { const status = statusById[site.id]; const live = feed.rows[site.id]; return <button key={site.id} className={site.id === selected?.id ? 'selected' : ''} onClick={() => { setSelectedId(site.id); mapRef.current?.panTo([site.latitude!, site.longitude!]); }}><span className={`map-legend-level map-legend-${status.level}`}/><span><b>{site.name}</b><small>{mode === 'live' ? `${status.count?.toLocaleString() ?? '—'} inside · ${live?.arrivals_today.toLocaleString() ?? '—'} check-ins · ${live?.departures_today.toLocaleString() ?? '—'} check-outs today` : `${status.label}${status.percent != null ? ` · ${formatCapacityPercent(status.percent)}` : ''}`}</small></span></button>; })}</div>}
         {selected && selectedStatus && <article className="locator-selected">
           {selected.images[0] && <img src={selected.images.find((image) => image.image_role === 'cover')?.public_url ?? selected.images[0].public_url} alt={selected.images.find((image) => image.image_role === 'cover')?.alt_text || selected.name}/>}
           <div className="locator-selected-heading"><div><small>{selected.category} · {selected.address || 'Iligan City'}</small><h2>{selected.name}</h2></div><span className={`locator-status locator-status-${selectedStatus.level}`}>{selectedStatus.label}</span></div>
           <div className="locator-selected-facts">
-            {mode === 'live' ? <><div><small>Visitors currently inside</small><b>{selectedStatus.count?.toLocaleString() ?? '—'}</b></div><div><small>Remaining physical capacity</small><b>{selectedStatus.spaces?.toLocaleString() ?? 'Unknown'}</b></div></>
+            {mode === 'live' ? <><div><small>Visitors currently inside</small><b>{selectedStatus.count?.toLocaleString() ?? '—'}</b></div><div><small>Check-ins today</small><b>{selectedOccupancy?.arrivals_today.toLocaleString() ?? '—'}</b></div><div><small>Check-outs today</small><b>{selectedOccupancy?.departures_today.toLocaleString() ?? '—'}</b></div><div><small>Remaining physical capacity</small><b>{selectedStatus.spaces?.toLocaleString() ?? 'Unknown'}</b></div></>
               : <><div><small>{recommendationTime ? 'Expected in selected slot' : 'Expected on selected date'}</small><b>{selectedStatus.count?.toLocaleString() ?? '—'}</b></div><div><small>{recommendationTime ? 'Spaces in this slot' : 'Spaces for your group'}</small><b>{selectedStatus.spaces?.toLocaleString() ?? 'Unknown'}</b></div><div><small>Reserved visitors</small><b>{selectedPlanned?.reserved_visitor_count.toLocaleString() ?? '—'}</b></div></>}
             <div><small>{mode === 'live' ? 'Maximum capacity' : recommendationTime ? 'Selected slot capacity' : 'Daily capacity limit'}</small><b>{selectedStatus.limit?.toLocaleString() ?? 'Not configured'}{selectedStatus.basis === 'estimate' ? ' · estimate' : ''}</b></div>
           </div>
