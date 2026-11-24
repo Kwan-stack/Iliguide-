@@ -790,6 +790,13 @@ function ScannerPage(props: Props) {
         confirmed = (Array.isArray(data) ? data[0] : data) as ScanResult;
       }
       await showResult(confirmed);
+      if (confirmed.result === 'entry_recorded') {
+        props.notify('Check-in recorded successfully.');
+        props.refresh();
+      } else if (confirmed.result === 'exit_recorded') {
+        props.notify('Check-out recorded successfully.');
+        props.refresh();
+      }
     } catch (error) { setScanError(error instanceof Error ? error.message : 'Could not record attendance.'); }
     finally { setScanBusy(false); }
   };
@@ -849,7 +856,7 @@ function ScannerPage(props: Props) {
               value={attendanceCount} onChange={(event) => setAttendanceCount(event.target.value)} required/>
             <small>Count-only booking. Maximum {attendanceMax}; all visitors enter or exit together.</small>
           </label>}
-          <button className="btn btn-primary" type="submit" disabled={scanBusy || participantsLoading || participantsFailed || (participants.length > 0 && selectedVisitorIds.length === 0)}>{scanBusy ? 'Saving…' : attendanceAction === 'entry' ? 'Confirm ticket & check-in' : 'Confirm ticket & check-out'} <Check size={15}/></button>
+          <button className="btn btn-primary" type="submit" disabled={scanBusy || participantsLoading || participantsFailed || (participants.length > 0 && selectedVisitorIds.length === 0)}>{scanBusy ? 'Saving…' : attendanceAction === 'entry' ? 'Check In' : 'Confirm ticket & check-out'} <Check size={15}/></button>
         </form>}
         <button type="button" className="btn btn-outline" onClick={() => { setResult(null); setScanError(''); setTicketToken(''); setManualReference(''); setPendingEventKey(''); }}>Scan another ticket</button></div>}
     </article></div>}
