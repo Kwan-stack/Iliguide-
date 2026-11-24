@@ -1,4 +1,4 @@
-import { createContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { ArrowRight, Bell, Check, LogOut, Menu, ShieldCheck, X } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { gatekeeperPath } from '../lib/gatekeeperRoutes';
@@ -22,6 +22,7 @@ type Props = {
 type Notice = { id: string; title: string; message: string; notification_type: string; created_at: string; read_at: string | null };
 const gatekeeperNoticeTypes = ['reservation_received', 'payment_verification'];
 export const OfficeMobileNavigation = createContext<{ open: boolean; setOpen: (open: boolean) => void }>({ open: false, setOpen: () => {} });
+export const OfficeNotificationCounts = createContext<{ paymentVerificationUnread: number }>({ paymentVerificationUnread: 0 });
 
 const roleLabel: Record<StaffRole, string> = {
   tourism_office: 'Tourism Office', site_admin: 'Site administrator', gatekeeper: 'Gatekeeper',
@@ -29,14 +30,15 @@ const roleLabel: Record<StaffRole, string> = {
 
 export function StaffWorkspaceShell({ role, homePath, userId, siteSlug, toast, dataError, onRetry, onSignOut, children }: Props) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  return <OfficeMobileNavigation.Provider value={{ open: mobileNavOpen, setOpen: setMobileNavOpen }}><div className={`office-app-shell office-app-${role}`}>
+  const [paymentVerificationUnread, setPaymentVerificationUnread] = useState(0);
+  return <OfficeMobileNavigation.Provider value={{ open: mobileNavOpen, setOpen: setMobileNavOpen }}><OfficeNotificationCounts.Provider value={{ paymentVerificationUnread }}><div className={`office-app-shell office-app-${role}`}>
     <header className="office-app-topbar">
       <button type="button" className="office-app-menu" aria-label={mobileNavOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen((open) => !open)}>{mobileNavOpen ? <X size={19}/> : <Menu size={19}/>}</button>
       <Link className="office-app-brand" to={homePath} aria-label="Iliguide staff workspace">
         <span className="office-app-brand-lockup"><img src="/iliguide-staff-logo.png" alt="Iliguide"/><small>OFFICE WORKSPACE</small></span>
       </Link>
       <div className="office-app-actions">
-        {role === 'gatekeeper' && siteSlug && <GatekeeperNotifications userId={userId} siteSlug={siteSlug}/>}
+        {role === 'gatekeeper' && siteSlug && <GatekeeperNotifications userId={userId} siteSlug={siteSlug} setPaymentVerificationUnread={setPaymentVerificationUnread}/>}
         <span className="office-app-role"><ShieldCheck size={15}/>{roleLabel[role]}</span>
         <button className="office-app-signout" onClick={onSignOut}><LogOut size={15}/> Log out</button>
       </div>
@@ -44,10 +46,10 @@ export function StaffWorkspaceShell({ role, homePath, userId, siteSlug, toast, d
     {dataError && <div className="office-app-error" role="status"><ShieldCheck size={16}/><span>{dataError}</span><button onClick={onRetry}>Retry</button></div>}
     <main className="office-app-main">{children}</main>
     {toast && <div className="toast" role="status"><Check size={16}/>{toast}</div>}
-  </div></OfficeMobileNavigation.Provider>;
+  </div></OfficeNotificationCounts.Provider></OfficeMobileNavigation.Provider>;
 }
 
-function GatekeeperNotifications({ userId, siteSlug }: { userId: string; siteSlug: string }) {
+function GatekeeperNotifications({ userId, siteSlug, setPaymentVerificationUnread }: { userId: string; siteSlug: string; setPaymentVerificationUnread: Dispatch<SetStateAction<number>> }) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
@@ -66,20 +68,23 @@ function GatekeeperNotifications({ userId, siteSlug }: { userId: string; siteSlu
         if (!gatekeeperNoticeTypes.includes(notice.notification_type)) return;
         setNotices((current) => [notice, ...current.filter((item) => item.id !== notice.id)].slice(0, 10));
         setUnread((current) => current + 1);
+        if (notice.notification_type === 'payment_verification') setPaymentVerificationUnread((current) => current + 1);
       }).subscribe();
     void Promise.all([
       client.from('notifications').select('id,title,message,notification_type,created_at,read_at').eq('user_id', userId).in('notification_type', gatekeeperNoticeTypes).order('created_at', { ascending: false }).limit(10),
       client.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', userId).in('notification_type', gatekeeperNoticeTypes).is('read_at', null),
-    ]).then(([list, count]) => {
+      client.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('notification_type', 'payment_verification').is('read_at', null),
+    ]).then(([list, count, paymentCount]) => {
       if (!active) return;
-      if (list.error || count.error) { setError('Notifications could not load.'); return; }
+      if (list.error || count.error || paymentCount.error) { setError('Notifications could not load.'); return; }
       setError('');
       const rows = (list.data ?? []) as Notice[];
       setNotices((current) => [...rows, ...current.filter((item) => !rows.some((row) => row.id === item.id))].slice(0, 10));
       setUnread((current) => Math.max(current, count.count ?? 0));
+      setPaymentVerificationUnread((current) => Math.max(current, paymentCount.count ?? 0));
     });
     return () => { active = false; void client.removeChannel(channel); };
-  }, [userId]);
+  }, [userId, setPaymentVerificationUnread]);
 
   useEffect(() => {
     if (!open) return;
@@ -95,6 +100,7 @@ function GatekeeperNotifications({ userId, siteSlug }: { userId: string; siteSlu
       const readAt = new Date().toISOString();
       setNotices((current) => current.map((item) => item.id === notice.id ? { ...item, read_at: readAt } : item));
       setUnread((current) => Math.max(0, current - 1));
+      if (notice.notification_type === 'payment_verification') setPaymentVerificationUnread((current) => Math.max(0, current - 1));
       void supabase.from('notifications').update({ read_at: readAt }).eq('id', notice.id).eq('user_id', userId)
         .then(({ error: updateError }) => { if (updateError) setError('Could not mark notification as read.'); });
     }

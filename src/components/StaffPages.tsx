@@ -10,7 +10,7 @@ import { paymentStatusLabel } from '../lib/paymentStatus';
 import { useSilentLoad } from '../lib/useSilentLoad';
 import { VisitorInformationForm } from './VisitorInformationForm';
 import { ChangePasswordForm } from './ChangePasswordForm';
-import { OfficeMobileNavigation } from './StaffWorkspaceShell';
+import { OfficeMobileNavigation, OfficeNotificationCounts } from './StaffWorkspaceShell';
 import { TimePicker } from './TimePicker';
 import DestinationMap from './DestinationMap';
 import DestinationLocator from './DestinationLocator';
@@ -82,6 +82,7 @@ export function StaffPages(props: Props) {
 
 function StaffConsole(props: Props & { children: ReactNode }) {
   const mobileNavigation = useContext(OfficeMobileNavigation);
+  const { paymentVerificationUnread } = useContext(OfficeNotificationCounts);
   const items: Array<[string, Page, LucideIcon]> = props.role === 'gatekeeper'
     ? [['Dashboard', 'Overview', LayoutDashboard], ['Reservations', 'Reservations', CalendarDays], ['Visitors', 'Visitor Management', Users], ['Check-in', 'Scan and exit', ScanLine], ['Walk-ins', 'Walk-in registration', TicketIcon], ['Payment verification', 'Payment verification', BadgeCheck], ['Daily logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Today’s duty', 'Duty details', CalendarClock]]
     : props.role === 'tourism_office' || props.role === 'site_admin'
@@ -90,12 +91,14 @@ function StaffConsole(props: Props & { children: ReactNode }) {
   items.push(['Account & security', 'Change password', KeyRound]);
   const roleName = props.role === 'tourism_office' ? 'Tourism Office' : props.role === 'site_admin' ? 'Site administrator' : 'Site gatekeeper';
   const userName = String(props.user?.user_metadata?.full_name ?? props.user?.email ?? 'Staff account');
+  const paymentBadge = paymentVerificationUnread > 0 ? <span className="staff-nav-count" aria-hidden="true">{paymentVerificationUnread > 99 ? '99+' : paymentVerificationUnread}</span> : null;
+  const paymentLabel = paymentVerificationUnread === 1 ? '1 new payment waiting for verification' : `${paymentVerificationUnread} new payments waiting for verification`;
   return <div className={'staff-console staff-console-' + props.role}>
     <aside className="staff-sidebar"><div className="staff-sidebar-label"><span className="eyebrow"><span className="eyebrow-line"/> {roleName.toUpperCase()}</span><p>Operations workspace</p></div>
-      <nav className="staff-sidebar-nav" aria-label={`${roleName} navigation`}>{items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} onClick={() => props.go(target)}><Icon size={17}/><span>{label}</span></button>)}</nav>
+      <nav className="staff-sidebar-nav" aria-label={`${roleName} navigation`}>{items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} aria-label={target === 'Payment verification' && paymentVerificationUnread > 0 ? `${label}, ${paymentLabel}` : undefined} onClick={() => props.go(target)}><Icon size={17}/><span>{label}</span>{target === 'Payment verification' && paymentBadge}</button>)}</nav>
       <div className="staff-sidebar-account"><span className="staff-account-icon"><UserRound size={17}/></span><span><b>{userName}</b><small>{props.user?.email ?? roleName}</small></span></div>
     </aside>
-    <div className="staff-console-main"><nav className={mobileNavigation.open ? 'staff-mobile-nav open' : 'staff-mobile-nav'} aria-label={`${roleName} navigation`}>{items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} onClick={() => { mobileNavigation.setOpen(false); props.go(target); }}><Icon size={15}/>{label}</button>)}</nav>{props.children}</div>
+    <div className="staff-console-main"><nav className={mobileNavigation.open ? 'staff-mobile-nav open' : 'staff-mobile-nav'} aria-label={`${roleName} navigation`}>{items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} aria-label={target === 'Payment verification' && paymentVerificationUnread > 0 ? `${label}, ${paymentLabel}` : undefined} onClick={() => { mobileNavigation.setOpen(false); props.go(target); }}><Icon size={15}/>{label}{target === 'Payment verification' && paymentBadge}</button>)}</nav>{props.children}</div>
   </div>;
 }
 
