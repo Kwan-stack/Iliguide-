@@ -1,25 +1,31 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, ArrowRight, CalendarDays, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, CalendarDays, RefreshCw } from 'lucide-react';
 import { capacityStatus, isScheduledOpen, operatingStatus, scheduledCapacityStatus } from '../lib/capacity';
-import { loadSiteCapacityForDate, type Site } from '../lib/iliguide';
+import { loadSiteCapacityForDate, loadSlots, type Site } from '../lib/iliguide';
 import { useCapacityForDate } from '../lib/useCapacityForDate';
 import { useCapacityRecommendations } from '../lib/useCapacityRecommendations';
 import { useLiveCapacity } from '../lib/useLiveCapacity';
 import './OccupancyPanel.css';
 
-type Props = { site: Site; sites: Site[]; onOpen: (site: Site) => void; onBook: (site: Site) => void; onBookingAvailabilityChange?: (siteId: string, date: string, allowed: boolean, reason: string) => void; visitDate: string; setVisitDate: (date: string) => void; visitorCount: number };
+type Props = { site: Site; sites: Site[]; onOpen: (site: Site) => void; onBook: (site: Site) => void; onBookingAvailabilityChange?: (siteId: string, date: string, allowed: boolean, reason: string) => void; visitDate: string; setVisitDate: (date: string) => void; visitorCount: number; capacityView?: 'live' | 'planned'; recommendationsOnly?: boolean; recommendationTime?: string; recommendationsRequested?: boolean; liveFeed?: ReturnType<typeof useLiveCapacity>; allowVisitorActions?: boolean };
 const stamp = (value: string) => new Intl.DateTimeFormat('en-PH', {
   dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila',
 }).format(new Date(value));
 
-export default function OccupancyPanel({ site, sites, onOpen, onBook, onBookingAvailabilityChange, visitDate, setVisitDate, visitorCount }: Props) {
-  const feed = useLiveCapacity(sites.filter((item) => item.status === 'published').map((item) => item.id));
+export default function OccupancyPanel({ site, sites, onOpen, onBook, onBookingAvailabilityChange, visitDate, setVisitDate, visitorCount, capacityView, recommendationsOnly = false, recommendationTime, recommendationsRequested = false, liveFeed, allowVisitorActions = true }: Props) {
+  const localFeed = useLiveCapacity(liveFeed ? [] : sites.filter((item) => item.status === 'published').map((item) => item.id));
+  const feed = liveFeed ?? localFeed;
   const occupancy = feed.rows[site.id] ?? null;
   const dateCapacity = useCapacityForDate(site.id, visitDate, feed.updatedAt, feed.state);
   const snapshot = ['ready', 'stale'].includes(dateCapacity.state) ? dateCapacity.data : null;
   const liveStatus = capacityStatus(['ready', 'stale'].includes(feed.state) ? occupancy : null);
   const crowd = snapshot ? scheduledCapacityStatus(snapshot) : liveStatus;
-  const { recommendations, loading } = useCapacityRecommendations(site, sites, dateCapacity.state === 'ready' ? snapshot : null, visitDate, visitorCount, feed.updatedAt);
+  const percent = snapshot ? crowd.percent : null;
+  const bookingFull = dateCapacity.state === 'ready' && snapshot != null && (snapshot.max_slot_remaining < visitorCount || snapshot.remaining_bookable_capacity < visitorCount);
+  const liveCritical = liveStatus.percent != null && liveStatus.percent >= (occupancy?.almost_threshold_percent ?? 85);
+  const plannedCritical = percent != null && percent >= (snapshot?.almost_threshold_percent ?? 85);
+  const recommendationTrigger = recommendationsRequested || (capacityView === 'live' ? liveCritical : capacityView === 'planned' ? plannedCritical || bookingFull : false);
+  const { recommendations, loading } = useCapacityRecommendations(site, sites, dateCapacity.state === 'ready' ? snapshot : null, visitDate, visitorCount, feed.updatedAt, recommendationTrigger, recommendationTime);
   const [showDetails, setShowDetails] = useState(false);
   const [activeRecommendationId, setActiveRecommendationId] = useState('');
   const [bookingSiteId, setBookingSiteId] = useState('');
@@ -37,9 +43,7 @@ export default function OccupancyPanel({ site, sites, onOpen, onBook, onBookingA
   const limit = crowd.limit;
   const count = snapshot?.current_visitor_count ?? occupancy?.current_visitor_count;
   const projected = snapshot?.projected_visitor_count;
-  const percent = snapshot ? crowd.percent : null;
   const remaining = snapshot && limit != null && projected != null ? Math.max(0, limit - projected) : null;
-  const bookingFull = dateCapacity.state === 'ready' && snapshot != null && (snapshot.max_slot_remaining < visitorCount || snapshot.remaining_bookable_capacity < visitorCount);
   const statusLabel = dateCapacity.state === 'loading' ? 'Checking selected-date capacity…'
     : dateCapacity.state === 'unavailable' ? 'Selected-date capacity unavailable'
       : dateCapacity.state === 'stale' ? 'Capacity update delayed' : percent != null && percent >= 100 ? 'Full'
@@ -48,7 +52,8 @@ export default function OccupancyPanel({ site, sites, onOpen, onBook, onBookingA
   const bookingAllowed = dateCapacity.state === 'ready' && snapshot != null && !isFull && !bookingFull;
   const bookingUnavailableReason = dateCapacity.state !== 'ready' ? 'Checking availability…' : isFull ? 'Fully booked for this date' : bookingFull ? 'No slot fits your group' : '';
   const panelLevel = dateCapacity.state === 'unavailable' ? 'unknown' : isFull ? 'full' : crowd.level;
-  const showAlternatives = dateCapacity.state === 'ready' && snapshot != null && (crowd.level === 'critical' || isFull || bookingFull);
+  const showAlternatives = dateCapacity.state === 'ready' && snapshot != null && (recommendationsRequested || (capacityView === 'live'
+    ? liveCritical : capacityView === 'planned' ? plannedCritical || bookingFull : crowd.level === 'critical' || isFull || bookingFull));
   const changeRecommendation = (offset: number) => {
     if (!recommendations.length) return;
     const next = (activeIndex + offset + recommendations.length) % recommendations.length;
@@ -70,12 +75,16 @@ export default function OccupancyPanel({ site, sites, onOpen, onBook, onBookingA
     try {
       const canAcceptBooking = alternative.status === 'published' && alternative.fee_information_confirmed
         && visitorCount <= alternative.max_per_booking && isScheduledOpen(alternative, visitDate);
-      const capacity = canAcceptBooking ? await loadSiteCapacityForDate(alternative.id, visitDate) : null;
+      const [capacity, matchingSlots] = canAcceptBooking ? await Promise.all([
+        loadSiteCapacityForDate(alternative.id, visitDate), recommendationTime ? loadSlots(alternative.id, visitDate, visitDate) : Promise.resolve([]),
+      ]) : [null, []];
       const status = scheduledCapacityStatus(capacity);
+      const [start, end] = recommendationTime?.split('|') ?? [];
+      const selectedSlotAvailable = !recommendationTime || matchingSlots.some((slot) => slot.starts_at.slice(0, 5) === start && (!end || slot.ends_at.slice(0, 5) === end) && slot.remaining_capacity >= visitorCount);
       const eligible = capacity?.visit_date === visitDate
         && capacity.max_slot_remaining >= visitorCount
         && capacity.remaining_bookable_capacity >= visitorCount
-        && status.percent != null && status.percent < 100 && status.level !== 'critical';
+        && status.percent != null && status.percent < (capacity.almost_threshold_percent ?? 85) && selectedSlotAvailable;
       if (!eligible) {
         setBookingError(`${alternative.name} no longer has enough available capacity for your group. Choose another destination or date.`);
         void feed.refresh();
@@ -99,7 +108,7 @@ export default function OccupancyPanel({ site, sites, onOpen, onBook, onBookingA
     unknown: 'Capacity data is unavailable. Try refreshing.',
   };
   useEffect(() => { onBookingAvailabilityChange?.(site.id, visitDate, bookingAllowed, bookingUnavailableReason); }, [bookingAllowed, bookingUnavailableReason, onBookingAvailabilityChange, site.id, visitDate]);
-  return <div className="occupancy-wrap">
+  return <div className={`occupancy-wrap${recommendationsOnly ? ' occupancy-recommendations-only' : ''}`}>
     <section className={`occupancy-panel occupancy-${panelLevel}`} aria-label="Live destination capacity">
       <div className="occupancy-heading"><small>LIVE DESTINATION CAPACITY</small><button type="button" onClick={() => void feed.refresh()} aria-label="Refresh capacity"><RefreshCw size={15}/></button></div>
       <div className="occupancy-status"><span className="occupancy-dot"/><b>{statusLabel}</b></div>
@@ -137,31 +146,34 @@ export default function OccupancyPanel({ site, sites, onOpen, onBook, onBookingA
           onKeyDown={(event) => { if (event.key === 'ArrowLeft') { event.preventDefault(); changeRecommendation(-1); } else if (event.key === 'ArrowRight') { event.preventDefault(); changeRecommendation(1); } }}
           onScroll={(event) => syncCarouselIndex(event.currentTarget)}>
           <div className="occupancy-carousel-track">
-            {recommendations.map(({ site: item, capacity }, index) => {
+            {recommendations.map(({ site: item, capacity, availableSpaces, utilizationPercent }, index) => {
               const status = scheduledCapacityStatus(capacity);
+              const level = utilizationPercent >= 85 ? 'Critical' : utilizationPercent >= 70 ? 'Moderate' : 'Available';
               const cover = item.images.find((image) => image.image_role === 'cover') ?? item.images[0];
               return <article className="occupancy-alternative" key={item.id} role="group" aria-roledescription="slide" aria-hidden={index !== activeIndex} aria-label={`${item.name}, ${index + 1} of ${recommendations.length}`}>
                 {cover ? <img src={cover.public_url} alt={cover.alt_text || item.name} draggable={false}/> : <div className="occupancy-alternative-image-placeholder" aria-hidden="true"><CalendarDays size={28}/></div>}
                 <div className="occupancy-alternative-details">
-                  <div className="occupancy-alternative-title"><b>{item.name}</b><span className="occupancy-alternative-status">{status.label}</span></div>
+                  <div className="occupancy-alternative-title"><b>{item.name}</b><span className="occupancy-alternative-status">{level}{status.basis === 'estimate' ? ' · Provisional estimate' : ''}</span></div>
                   <small className="occupancy-alternative-location">{item.address || 'Iligan City'}</small>
-                  <div className="occupancy-alternative-progress-heading"><span>{Math.round(status.percent ?? 0)}% capacity utilization</span><b>{capacity.remaining_bookable_capacity.toLocaleString()} spaces left</b></div>
-                  <div className="occupancy-alternative-progress" role="progressbar" aria-label={`${item.name} capacity utilization`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(status.percent ?? 0))}><i style={{ width: `${Math.min(100, status.percent ?? 0)}%` }}/></div>
+                  <div className="occupancy-alternative-progress-heading"><span>{Math.round(utilizationPercent)}% capacity utilization</span><b>{availableSpaces.toLocaleString()} spaces left</b></div>
+                  <div className="occupancy-alternative-progress" role="progressbar" aria-label={`${item.name} capacity utilization`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(utilizationPercent))}><i style={{ width: `${Math.min(100, utilizationPercent)}%` }}/></div>
                 </div>
-                <div className="occupancy-alternative-actions">
+                {allowVisitorActions && <div className="occupancy-alternative-actions">
                   <button type="button" tabIndex={index === activeIndex ? 0 : -1} onClick={() => onOpen(item)}>View Destination</button>
                   <button type="button" tabIndex={index === activeIndex ? 0 : -1} disabled={bookingSiteId !== ''} onClick={() => void bookAlternative(item)}>{bookingSiteId === item.id ? 'Checking…' : <>Book This Instead <ArrowRight size={14}/></>}</button>
-                </div>
+                </div>}
               </article>;
             })}
           </div>
         </div>
         {bookingError && <p className="occupancy-alternative-error" role="alert">{bookingError}</p>}
         {recommendations.length > 1 && <div className="occupancy-carousel-controls" role="group" aria-label="Destination carousel controls">
+          <button type="button" aria-label="Previous recommended destination" onClick={() => changeRecommendation(-1)}><ArrowLeft size={15}/></button>
           <div className="occupancy-carousel-pagination">{recommendations.map(({ site: item }, index) => <button key={item.id} type="button" aria-label={`Show ${item.name}`} aria-current={index === activeIndex ? 'true' : undefined} onClick={() => setRecommendation(item.id)}/>)}</div>
           <span className="occupancy-carousel-counter" aria-live="polite">{activeIndex + 1} of {recommendations.length}</span>
+          <button type="button" aria-label="Next recommended destination" onClick={() => changeRecommendation(1)}><ArrowRight size={15}/></button>
         </div>}
-      </> : loading ? <div className="occupancy-carousel-loading" role="status">Checking destinations with availability for {visitDate}…</div> : <p>No alternative has verified capacity for this date and group. Try another date.</p>}
+      </> : loading ? <div className="occupancy-carousel-loading" role="status">Checking destinations with availability for {visitDate}…</div> : <p>No alternative destinations are currently available for your selected schedule. Please consider choosing another date or time.</p>}
     </section>}
   </div>;
 }

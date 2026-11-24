@@ -13,6 +13,7 @@ import { ChangePasswordForm } from './ChangePasswordForm';
 import { OfficeMobileNavigation } from './StaffWorkspaceShell';
 import { TimePicker } from './TimePicker';
 import DestinationMap from './DestinationMap';
+import DestinationLocator from './DestinationLocator';
 import type { GatekeeperPage } from '../lib/gatekeeperRoutes';
 import './DutyRoster.css';
 import './CancellationReview.css';
@@ -1931,6 +1932,14 @@ function SiteManagementPanel({ site, notify, refresh }: { site: Site; notify: Pr
 }
 
 function CapacityMapPage(props: Props) {
+  if (props.role !== 'gatekeeper') return <div className="staff-capacity-map-page">
+    <DestinationLocator sites={props.sites} audience="staff"/>
+    <details className="capacity-evidence-disclosure"><summary>Site capacity evidence and zone settings</summary><CapacityEvidencePage {...props}/></details>
+  </div>;
+  return <CapacityEvidencePage {...props}/>;
+}
+
+function CapacityEvidencePage(props: Props) {
   const gatekeeper = props.role === 'gatekeeper';
   const site = props.sites.find((item) => item.id === props.siteId);
   const capacityFeed = useLiveCapacity(site ? [site.id] : []);

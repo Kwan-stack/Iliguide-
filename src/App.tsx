@@ -93,6 +93,7 @@ export default function App() {
   const [bookingAvailability, setBookingAvailability] = useState({ siteId: '', date: '', allowed: false, reason: 'Checking availability…' });
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedSlotId, setSelectedSlotId] = useState('');
+  const [preferredSlotStart, setPreferredSlotStart] = useState<string | null>(null);
   const [bookingStep, setBookingStep] = useState(0);
   const [paymentSettings, setPaymentSettings] = useState<ManualPaymentSettings | null>(null);
   const [party, setParty] = useState<Party>({ adults: 1, children: 0, pwd: 0 });
@@ -555,7 +556,8 @@ export default function App() {
   const today = todayPh();
   const availableSlots = (slotsLoading ? [] : slots).filter((slot) => slot.status === 'open' && slot.remaining_capacity >= party.adults + party.children
     && (slot.slot_date > today || (slot.slot_date === today && slot.ends_at.slice(0, 5) > timePh())));
-  const selectedSlot = availableSlots.find((slot) => slot.slot_id === selectedSlotId)?.slot_id ?? [...availableSlots].sort((a, b) => b.remaining_capacity - a.remaining_capacity)[0]?.slot_id ?? '';
+  const preferredSlot = preferredSlotStart ? availableSlots.find((slot) => slot.starts_at.slice(0, 5) === preferredSlotStart) : null;
+  const selectedSlot = availableSlots.find((slot) => slot.slot_id === selectedSlotId)?.slot_id ?? preferredSlot?.slot_id ?? [...availableSlots].sort((a, b) => b.remaining_capacity - a.remaining_capacity)[0]?.slot_id ?? '';
   const bookingTotal = activeSite ? calculateBookingTotal(activeSite.adult_fee, activeSite.child_fee, activeSite.pwd_discount_percent, party.adults, party.children, party.pwd) : 0;
 
   useEffect(() => {
@@ -579,9 +581,10 @@ export default function App() {
     return () => { active = false; };
   }, [activeSite?.id, notify, page, user?.id]);
 
-  const openSite = (site: Site, preservePlan = false) => {
+  const openSite = (site: Site, preservePlan = false, preferredStart?: string) => {
     setSiteId(site.id);
     setSelectedSlotId(''); setBookingStep(0);
+    setPreferredSlotStart(preferredStart ?? null);
     if (!preservePlan) { setParty({ adults: 1, children: 0, pwd: 0 }); setVisitorInformation(emptyVisitorInformation(1)); }
     setPage('Destination');
     navigate(`/destinations/${encodeURIComponent(site.slug)}`);
@@ -827,7 +830,7 @@ export default function App() {
         sites={destinationSites} allCount={permittedSites.length} categories={categories} category={category}
         setCategory={setCategory} destinationQuery={destinationQuery} setDestinationQuery={setDestinationQuery} openSite={openSite} savedSiteIds={savedSiteIds} onToggleSavedSite={toggleSavedSite}
       />}
-      {page === 'Destination map' && role !== 'gatekeeper' && <DestinationLocator sites={sites} openSite={openSite} bookSite={(site) => openSite(site, true)} visitDate={date} setVisitDate={setDate} visitorCount={party.adults + party.children}/>}
+      {page === 'Destination map' && role !== 'gatekeeper' && <DestinationLocator sites={sites} openSite={openSite} bookSite={(site, preferredStart) => openSite(site, true, preferredStart)} visitDate={date} setVisitDate={setDate} visitorCount={party.adults + party.children} setVisitorCount={(count) => setParty((current) => { const children = Math.min(current.children, count - 1); return { ...current, adults: count - children, children, pwd: Math.min(current.pwd, count) }; })}/>}
       {page === 'Destination' && !activeSite && <section className="content-page section-wrap"><div className="empty-card" role="status"><Compass size={28}/><h3>{sitesLoaded ? 'Destination unavailable' : 'Loading destination details'}</h3><p>{sitesLoaded ? 'This destination is not currently available.' : 'Fetching the current published destination details.'}</p><button className="btn btn-outline" onClick={() => go('Discover')}>Browse destinations</button></div></section>}
       {page === 'Destination' && activeSite && <section className="details-page section-wrap">
         <button className="back-link" onClick={() => go('Discover')}>← All destinations</button>

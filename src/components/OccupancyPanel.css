@@ -65,6 +65,9 @@
 .occupancy-alternative-error { padding: .5rem; border-radius: 7px; color: #8c332e !important; background: #fff0ef; }
 .occupancy-carousel-loading { display: grid; min-height: 180px; place-items: center; padding: .8rem; border: 1px solid #dce9eb; border-radius: 10px; color: #58717c; background: #fff; font-size: .72rem; text-align: center; }
 .occupancy-carousel-controls { display: flex; align-items: center; gap: .45rem; min-width: 0; }
+.occupancy-carousel-controls > button { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; padding: 0; border: 1px solid #bfd7da; border-radius: 8px; color: #087f87; background: #fff; cursor: pointer; }
+.occupancy-carousel-controls > button:hover { background: #e8f7f5; }
+.occupancy-carousel-controls > button:disabled { cursor: not-allowed; opacity: .5; }
 .occupancy-carousel-pagination { display: flex; flex: 1; align-items: center; justify-content: center; gap: .35rem; }
 .occupancy-carousel-pagination button { width: 7px; height: 7px; padding: 0; border: 0; border-radius: 99px; background: #c4d7db; cursor: pointer; }
 .occupancy-carousel-pagination button[aria-current="true"] { width: 18px; background: #008b91; }
