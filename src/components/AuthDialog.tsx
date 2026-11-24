@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { completePasswordReset } from '../lib/changePassword';
+import { passwordRecoveryPath, STAFF_LOGIN_PATH, VISITOR_LOGIN_PATH } from '../lib/appRoutes';
 import './AuthPages.css';
 
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset' | null;
@@ -16,9 +17,14 @@ type Props = {
   redirectTo: string;
   audience?: 'visitor' | 'staff';
   presentation?: 'dialog' | 'page';
+  recoveryTokenHash?: string | null;
+  recoverySessionUserId?: string | null;
+  initialRecoveryError?: string;
+  onRecoverySession?: (userId: string) => void;
+  onResetComplete?: () => Promise<void>;
 };
 
-export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initialVisitor, redirectTo, audience = 'visitor', presentation = 'dialog' }: Props) {
+export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initialVisitor, redirectTo, audience = 'visitor', presentation = 'dialog', recoveryTokenHash = null, recoverySessionUserId = null, initialRecoveryError = '', onRecoverySession, onResetComplete }: Props) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -32,23 +38,30 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
   const [showPassword, setShowPassword] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+  const [recoveryLinkInvalid, setRecoveryLinkInvalid] = useState(Boolean(initialRecoveryError));
+  const [resetComplete, setResetComplete] = useState(false);
 
   useEffect(() => {
-    setError('');
+    setError(mode === 'reset' ? initialRecoveryError : '');
     setNotice('');
     setPassword('');
     setConfirmPassword('');
     setNewPassword('');
     setShowPassword(false);
-    setEmail((current) => current || initialVisitor.email);
+    setRecoveryLinkInvalid(mode === 'reset' && Boolean(initialRecoveryError));
+    setResetComplete(false);
     if (mode !== 'signup') setAwaitingConfirmation(false);
+  }, [initialRecoveryError, mode]);
+
+  useEffect(() => {
+    setEmail((current) => current || initialVisitor.email);
     if (mode === 'signup') {
       const [given = '', ...family] = initialVisitor.name.trim().split(/\s+/);
       setFirstName((current) => current || given);
       setLastName((current) => current || family.join(' '));
       setPhone((current) => current || initialVisitor.phone);
     }
-  }, [initialVisitor, mode]);
+  }, [initialVisitor.email, initialVisitor.name, initialVisitor.phone, mode]);
 
   useEffect(() => {
     if (audience === 'staff' && mode === 'signup') onMode('login');
@@ -73,7 +86,8 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
     login: 'Good to see you.',
     signup: 'Make it yours.',
     forgot: 'Reset your password.',
-    reset: audience === 'staff' ? 'Set your staff password.' : 'Choose a new password.',
+    reset: resetComplete ? 'Password updated successfully!' : recoveryLinkInvalid ? 'Password reset link expired.'
+      : audience === 'staff' ? 'Set your staff password.' : 'Reset your password.',
   }[mode];
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -151,10 +165,7 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
         if (data.session) onSuccess();
         else { setAwaitingConfirmation(true); setNotice('If this address is new, check your inbox for a confirmation link. If no email arrives, try logging in or resetting your password.'); }
       } else if (mode === 'forgot') {
-        const resetRedirect = audience === 'staff'
-          ? new URL('/staff/login', window.location.origin)
-          : new URL(redirectTo);
-        resetRedirect.searchParams.set('mode', 'reset');
+        const resetRedirect = new URL(passwordRecoveryPath(audience === 'staff' ? 'gatekeeper' : 'visitor'), window.location.origin);
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
           redirectTo: resetRedirect.toString(),
         });
@@ -162,14 +173,23 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
         setNotice('If an account uses that email, Supabase will send a password reset link.');
       } else {
         const callbackParams = new URLSearchParams(window.location.search);
-        await completePasswordReset(supabase.auth, callbackParams.get('code'), newPassword, callbackParams.get('token_hash'));
-        const callbackUrl = new URL(window.location.href);
-        for (const key of ['code', 'token_hash', 'type', 'mode']) callbackUrl.searchParams.delete(key);
-        window.history.replaceState(window.history.state, '', callbackUrl.toString());
+        const hashParams = new URLSearchParams(window.location.hash.slice(1));
+        await completePasswordReset(supabase.auth, callbackParams.get('code'), newPassword,
+          recoveryTokenHash || callbackParams.get('token_hash'), recoverySessionUserId, onRecoverySession);
+        if (!onRecoverySession) {
+          const callbackUrl = new URL(window.location.href);
+          for (const key of ['code', 'token_hash', 'type', 'mode']) callbackUrl.searchParams.delete(key);
+          for (const key of ['access_token', 'refresh_token', 'expires_in', 'expires_at', 'type', 'error', 'error_code', 'error_description']) hashParams.delete(key);
+          callbackUrl.hash = hashParams.toString() ? `#${hashParams}` : '';
+          window.history.replaceState(window.history.state, '', callbackUrl.toString());
+        }
         setNewPassword('');
         setConfirmPassword('');
         setPassword('');
-        onSuccess();
+        setError('');
+        setRecoveryLinkInvalid(false);
+        setResetComplete(true);
+        if (audience === 'visitor' && onResetComplete) await onResetComplete();
       }
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'Authentication failed. Try again.';
@@ -177,7 +197,13 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
         setPassword('');
         setShowPassword(false);
         setError('Email or password does not match. Use “Forgot password?” to set a new password.');
-      } else setError(message);
+      } else if (mode === 'reset' && /invalid|expired|verify|session is missing|pkce|otp/i.test(message)) {
+        setRecoveryLinkInvalid(true);
+        setError('This password reset link is invalid or has expired. Please request a new link to continue.');
+      } else if (mode === 'reset') setError(/password/i.test(message)
+        ? 'Password does not meet the account security requirements. Choose a stronger password and try again.'
+        : 'Could not update your password. Check your connection and try again.');
+      else setError(message);
     } finally {
       setBusy(false);
     }
@@ -187,16 +213,20 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
       {presentation === 'dialog' && <button type="button" className="modal-close" onClick={onClose} aria-label="Close"><X size={18}/></button>}
       <span className="eyebrow"><span className="eyebrow-line"/> ILIGUIDE {audience === 'staff' ? 'STAFF ACCESS' : 'VISITOR ACCOUNT'}</span>
       <h2 id="auth-title">{title}</h2>
-      <p>{mode === 'signup' && awaitingConfirmation
+      <p role={mode === 'reset' && resetComplete ? 'status' : undefined}>{mode === 'signup' && awaitingConfirmation
         ? `Check ${email} for a confirmation link. Open it, then return to this tab.`
+        : mode === 'reset' && resetComplete
+        ? audience === 'staff' ? 'Your password is set. Continue to your staff workspace.' : 'Your password has been changed. Sign in with your new password.'
+        : mode === 'reset' && recoveryLinkInvalid
+        ? 'This password reset link is invalid or has expired. Please request a new link to continue.'
         : mode === 'signup'
         ? 'Create a visitor account. Staff roles are granted by the Tourism Office.'
         : mode === 'login' ? audience === 'staff'
           ? 'Sign in with the account issued for your Tourism Office, site administrator, or gatekeeper role.'
           : 'Sign in to manage your visitor account, bookings, and tickets.'
         : mode === 'forgot' ? 'We will send a reset link to your email address.'
-        : audience === 'staff' ? 'Choose a password to finish setting up your staff access.' : 'Set a new password for your account.'}</p>
-      <form onSubmit={submit}>
+        : audience === 'staff' ? 'Choose a password to finish setting up your staff access.' : 'Enter a new password to secure your Illiguide account.'}</p>
+      {!resetComplete && !recoveryLinkInvalid && <form onSubmit={submit}>
         {mode === 'signup' && !awaitingConfirmation && <>
           <div className="auth-name-grid"><label><span>First name <span className="required-mark" aria-hidden="true">*</span></span><input required pattern=".*\S.*" autoComplete="given-name" value={firstName} onChange={(event) => setFirstName(event.target.value)} maxLength={60}/></label>
             <label><span>Last name <span className="required-mark" aria-hidden="true">*</span></span><input required pattern=".*\S.*" autoComplete="family-name" value={lastName} onChange={(event) => setLastName(event.target.value)} maxLength={60}/></label></div>
@@ -212,6 +242,7 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
         </>}
         {mode === 'reset' && <>
           <label><span>New password <span className="required-mark" aria-hidden="true">*</span></span><span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="At least 8 characters"/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
+          <small className="auth-password-requirement">Use at least 8 characters.</small>
           <label><span>Confirm new password <span className="required-mark" aria-hidden="true">*</span></span><span className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)}/><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
         </>}
         {error && <p className="form-error" role="alert">{error}</p>}
@@ -222,7 +253,13 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
             : mode === 'forgot' ? 'Send reset link' : 'Update password'}
           {!busy && <ArrowRight size={16}/>}
         </button>
-      </form>
+      </form>}
+      {resetComplete && <button className="btn btn-primary btn-wide auth-reset-action" type="button" onClick={() => {
+        if (onResetComplete) void onResetComplete(); else onSuccess();
+      }}>Continue {audience === 'staff' ? 'to your workspace' : 'to sign in'} <ArrowRight size={16}/></button>}
+      {mode === 'reset' && recoveryLinkInvalid && <button className="btn btn-primary btn-wide auth-reset-action" type="button" onClick={() => {
+        setRecoveryLinkInvalid(false); setError(''); onMode('forgot');
+      }}>Request new reset link <ArrowRight size={16}/></button>}
       <div className="auth-switch">
         {mode === 'login' && <>
           <button type="button" onClick={() => onMode('forgot')}>Forgot password?</button>
@@ -232,12 +269,11 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
           ? <><button type="button" onClick={() => { setAwaitingConfirmation(false); setNotice(''); setError(''); }}>Change details</button><span>Already have an account? <button type="button" onClick={() => onMode('login')}>Log in</button></span></>
           : <span>Already have an account? <button type="button" onClick={() => onMode('login')}>Log in</button></span>)}
         {mode === 'forgot' && <span>Remember your password? <button type="button" onClick={() => onMode('login')}>Log in</button></span>}
-        {mode === 'reset' && <span><button type="button" onClick={() => onMode('login')}>Return to log in</button></span>}
       </div>
     </section>;
 
   if (presentation === 'page') return <section className={`auth-page auth-page-${audience}`}>
-    <div className="auth-page-brand"><Link className="brand" to="/"><span className="brand-mark"><img src="/iliguide-logo.svg" alt=""/></span><span>Iliguide</span></Link>
+    <div className="auth-page-brand"><Link className="brand" to={audience === 'staff' ? STAFF_LOGIN_PATH : VISITOR_LOGIN_PATH}><span className="brand-mark"><img src="/iliguide-logo.svg" alt=""/></span><span>Iliguide</span></Link>
       <p>{audience === 'staff' ? 'STAFF ACCESS' : 'VISITOR ACCOUNT'}</p></div>
     {card}
     <p className="auth-page-note">{audience === 'staff' ? 'Access follows your active role and destination assignment.' : 'Your visitor account keeps reservations and tickets together.'}</p>

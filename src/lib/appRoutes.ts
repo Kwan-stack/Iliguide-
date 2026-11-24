@@ -8,6 +8,21 @@ export function passwordRecoveryPath(role: AccountRole): string {
   return role === 'visitor' ? `${VISITOR_LOGIN_PATH}?mode=reset` : `${STAFF_LOGIN_PATH}?mode=reset`;
 }
 
+export function isPasswordRecoveryRequest(search: string, hash: string): boolean {
+  const query = new URLSearchParams(search);
+  const fragment = new URLSearchParams(hash.replace(/^#/, ''));
+  return query.get('mode') === 'reset' || query.get('type') === 'recovery' || Boolean(query.get('token_hash'))
+    || fragment.get('type') === 'recovery';
+}
+
+export function passwordRecoveryTarget(role: AccountRole, search: string, hash: string): string {
+  const query = new URLSearchParams(search);
+  for (const key of ['error', 'error_code', 'error_description']) query.delete(key);
+  query.set('mode', 'reset');
+  const path = role === 'visitor' ? VISITOR_LOGIN_PATH : STAFF_LOGIN_PATH;
+  return `${path}?${query.toString()}${hash}`;
+}
+
 export const workspaceRoutePaths: Partial<Record<AppPage, string>> = {
   Overview: '/workspace', Reservations: '/workspace/reservations',
   'Visitor Management': '/workspace/visitors', 'Visitor Logbook': '/workspace/visitor-logbook',
@@ -17,7 +32,7 @@ export const workspaceRoutePaths: Partial<Record<AppPage, string>> = {
   'Slots and closures': '/workspace/schedule', 'Schedule & Operations': '/workspace/schedule-operations', 'Staff and accounts': '/workspace/team',
   'Sites and staff': '/workspace/sites', 'Duty roster': '/workspace/duty-roster',
   'Payment verification': '/workspace/payment-verification', 'Payment settings': '/workspace/payment-settings',
-  'Feedback & Reviews': '/workspace/feedback',
+  'Feedback & Reviews': '/workspace/feedback', 'Destination updates': '/workspace/updates',
   'Change password': '/workspace/account/password',
 };
 
@@ -41,6 +56,7 @@ export function pageFromPath(pathname: string): AppPage {
   const gatekeeper = parseGatekeeperRoute(pathname);
   if (gatekeeper) return gatekeeper.page;
   const path = pathname.replace(/\/+$/, '') || '/';
+  if (isAnnouncementPath(path)) return 'Discover';
   if (/^\/destinations\/[^/]+\/book$/.test(path)) return 'Booking';
   if (/^\/payment\/[^/]+$/.test(path)) return 'Payment';
   if (/^\/booking-confirmation\/[^/]+$/.test(path)) return 'Booking confirmation';
@@ -58,6 +74,16 @@ export function pageFromPath(pathname: string): AppPage {
 
 export function destinationSlugFromPath(pathname: string): string {
   const match = pathname.match(/^\/destinations\/([^/]+)(?:\/book)?\/?$/);
+  if (!match) return '';
+  try { return decodeURIComponent(match[1]); } catch { return ''; }
+}
+
+export function isAnnouncementPath(pathname: string): boolean {
+  return /^\/announcements(?:\/[^/]+)?\/?$/.test(pathname);
+}
+
+export function announcementIdFromPath(pathname: string): string {
+  const match = pathname.match(/^\/announcements\/([^/]+)\/?$/);
   if (!match) return '';
   try { return decodeURIComponent(match[1]); } catch { return ''; }
 }
@@ -80,6 +106,7 @@ export function isKnownAppPath(pathname: string): boolean {
   return path === '/'
     || isAuthPath(path)
     || path === '/destinations'
+    || isAnnouncementPath(path)
     || Boolean(destinationSlugFromPath(path))
     || /^\/(?:payment|booking-confirmation)\/[^/]+$/.test(path)
     || isWorkspacePath(path)
@@ -99,6 +126,7 @@ function safeInternalPath(candidate: string | null | undefined): string {
 export function visitorReturnPath(candidate: string | null | undefined): string {
   const path = safeInternalPath(candidate);
   if (path === '/' || path === '/discover' || path === '/destinations' || ['/map', '/how-it-works', '/bookings', '/tickets', '/account'].includes(path)
+    || isAnnouncementPath(path)
     || /^\/destinations\/[^/]+\/book$/.test(path) || /^\/(?:payment|booking-confirmation)\/[^/]+$/.test(path)) return path;
   return destinationSlugFromPath(path) ? path : '/';
 }

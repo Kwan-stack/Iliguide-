@@ -22,15 +22,34 @@ Deno.serve(async (req) => {
 
     const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
     const hashHex = Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
-    const { data, error } = await user.rpc('scan_ticket', {
-      p_booking_id: match[1].toLowerCase(),
-      p_token_hash: '\\x' + hashHex,
-      p_site_id: siteId,
-      p_device: { user_agent: (req.headers.get('user-agent') ?? '').slice(0, 240) },
-    });
+    const device = { user_agent: (req.headers.get('user-agent') ?? '').slice(0, 240) };
+    let data: unknown;
+    let error: { message: string } | null;
+    if (body.action !== undefined) {
+      if (!['entry', 'exit'].includes(body.action) || !Number.isSafeInteger(body.visitor_count) || body.visitor_count < 1
+          || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(body.idempotency_key ?? ''))
+          || !Array.isArray(body.visitor_ids ?? []) || (body.visitor_ids ?? []).some((id: unknown) => typeof id !== 'string'
+            || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))) {
+        return json({ error: 'Invalid attendance confirmation' }, 400);
+      }
+      const result = await user.rpc('confirm_ticket_attendance', {
+        p_booking_id: match[1].toLowerCase(), p_token_hash: '\\x' + hashHex,
+        p_site_id: siteId, p_action: body.action, p_visitor_count: body.visitor_count,
+        p_idempotency_key: body.idempotency_key, p_device: device, p_visitor_ids: body.visitor_ids ?? [],
+      });
+      data = result.data;
+      error = result.error;
+    } else {
+      const result = await user.rpc('scan_ticket', {
+        p_booking_id: match[1].toLowerCase(), p_token_hash: '\\x' + hashHex,
+        p_site_id: siteId, p_device: device,
+      });
+      data = result.data;
+      error = result.error;
+    }
     if (error) {
       console.error('scan authorization error', error.message);
-      return json({ error: 'This gatekeeper cannot scan tickets for that site' }, 403);
+      return json({ error: body.action === undefined ? 'This gatekeeper cannot scan tickets for that site' : error.message }, body.action === undefined ? 403 : 400);
     }
     return json({ result: Array.isArray(data) ? data[0] : data });
   } catch (error) {

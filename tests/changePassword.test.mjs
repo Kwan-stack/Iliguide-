@@ -10,14 +10,16 @@ const compiled = ts.transpileModule(source, {
 const { changePassword, completePasswordReset } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const user = { id: 'current-user', email: 'user@example.com' };
 
-test('exchanges the callback code before updating when no session exists yet', async () => {
+test('exchanges a PKCE callback code before updating', async () => {
   let updatedPassword;
+  let recoveryUser;
   const auth = {
     getSession: async () => ({ data: { session: null }, error: null }),
-    exchangeCodeForSession: async (code) => ({ data: { session: { access_token: 'valid' }, code }, error: null }),
+    exchangeCodeForSession: async (code) => ({ data: { session: { access_token: 'valid', user }, code }, error: null }),
     updateUser: async ({ password }) => { updatedPassword = password; return { error: null }; },
   };
-  await completePasswordReset(auth, 'callback-code', 'newpassword');
+  await completePasswordReset(auth, 'callback-code', 'newpassword', null, null, (userId) => { recoveryUser = userId; });
+  assert.equal(recoveryUser, user.id);
   assert.equal(updatedPassword, 'newpassword');
 });
 
@@ -26,13 +28,24 @@ test('verifies a recovery token hash before updating when no session exists yet'
   let updatedPassword;
   const auth = {
     getSession: async () => { throw new Error('must verify token hash first'); },
-    verifyOtp: async (params) => { verified = params; return { data: { session: { access_token: 'valid' } }, error: null }; },
+    verifyOtp: async (params) => { verified = params; return { data: { session: { access_token: 'valid', user } }, error: null }; },
     exchangeCodeForSession: async () => { throw new Error('should not exchange'); },
     updateUser: async ({ password }) => { updatedPassword = password; return { error: null }; },
   };
   await completePasswordReset(auth, null, 'newpassword', 'recovery-token-hash');
   assert.deepEqual(verified, { token_hash: 'recovery-token-hash', type: 'recovery' });
   assert.equal(updatedPassword, 'newpassword');
+});
+
+test('validates a fresh token hash even when a prior recovery session marker exists', async () => {
+  let verified = false;
+  const auth = {
+    getSession: async () => { throw new Error('must validate the new link'); },
+    verifyOtp: async () => { verified = true; return { data: { session: { access_token: 'valid', user } }, error: null }; },
+    updateUser: async () => ({ error: null }),
+  };
+  await completePasswordReset(auth, null, 'newpassword', 'fresh-token', user.id);
+  assert.equal(verified, true);
 });
 
 test('rejects an invalid recovery token hash without updating', async () => {
@@ -43,19 +56,38 @@ test('rejects an invalid recovery token hash without updating', async () => {
     exchangeCodeForSession: async () => { throw new Error('should not exchange'); },
     updateUser: async () => { updates++; return { error: null }; },
   };
-  await assert.rejects(completePasswordReset(auth, null, 'newpassword', 'expired-token-hash'), /invalid or expired/);
+  await assert.rejects(completePasswordReset(auth, null, 'newpassword', 'expired-token-hash'), /invalid or has expired/);
   assert.equal(updates, 0);
 });
 
-test('does not update when reset callback has no session or code', async () => {
+test('rejects a normal signed-in session without recovery proof', async () => {
   let updates = 0;
   const auth = {
-    getSession: async () => ({ data: { session: null }, error: null }),
-    exchangeCodeForSession: async () => { throw new Error('should not exchange'); },
+    getSession: async () => ({ data: { session: { access_token: 'ordinary-session', user } }, error: null }),
     updateUser: async () => { updates++; return { error: null }; },
   };
-  await assert.rejects(completePasswordReset(auth, null, 'newpassword'), /session is missing/);
+  await assert.rejects(completePasswordReset(auth, null, 'newpassword'), /invalid or has expired/);
   assert.equal(updates, 0);
+});
+
+test('requires the marked recovery session to belong to the same user', async () => {
+  let updates = 0;
+  const auth = {
+    getSession: async () => ({ data: { session: { access_token: 'session', user } }, error: null }),
+    updateUser: async () => { updates++; return { error: null }; },
+  };
+  await assert.rejects(completePasswordReset(auth, null, 'newpassword', null, 'different-user'), /Could not verify this password reset link/);
+  assert.equal(updates, 0);
+});
+
+test('uses a previously validated recovery session after refresh', async () => {
+  let updatedPassword;
+  const auth = {
+    getSession: async () => ({ data: { session: { access_token: 'recovery-session', user } }, error: null }),
+    updateUser: async ({ password }) => { updatedPassword = password; return { error: null }; },
+  };
+  await completePasswordReset(auth, null, 'newpassword', null, user.id);
+  assert.equal(updatedPassword, 'newpassword');
 });
 
 test('rejects a short reset password before consuming the recovery token', async () => {
@@ -78,7 +110,7 @@ test('shows a friendly reset-link error when PKCE verification fails', async () 
   };
   await assert.rejects(
     completePasswordReset(auth, 'callback-code', 'newpassword'),
-    { message: 'Could not verify this password reset link. Open the latest link in the same browser or request a new one.' },
+    { message: 'Could not verify this password reset link. Request a new link to continue.' },
   );
   assert.equal(updates, 0);
 });

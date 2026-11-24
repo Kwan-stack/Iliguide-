@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, Banknote, CalendarDays, CreditCard, UserRound } 
 import { QRCodeSVG } from 'qrcode.react';
 import type { Party } from '../lib/pendingReservation';
 import { bookingContactError } from '../lib/bookingValidation';
-import { completedVisitorCount, visitorInformationComplete, type VisitorInformation } from '../lib/visitorInformation';
+import { completedVisitorCount, pwdVisitorInformationComplete, visitorInformationComplete, type VisitorInformation } from '../lib/visitorInformation';
 import { loadLiveOccupancy, money, type LiveOccupancy, type Site, type Slot, type TravelerProfile } from '../lib/iliguide';
 import { VisitorInformationForm } from './VisitorInformationForm';
 import './VisitorBooking.css';
@@ -27,7 +27,19 @@ export function VisitorBookingFlow(props: {
   onBackToDestination: () => void; notify: (message: string) => void; today: string;
 }) {
   const site = props.site;
+  const pwdEnabled = site.pwd_discount_percent > 0 && (site.adult_fee > 0 || site.child_fee > 0);
   const totalVisitors = props.party.adults + props.party.children;
+  const pwdCount = pwdEnabled ? props.party.pwd : 0;
+  const selectedVisitorTypes = [
+    props.party.adults > 0 ? `${props.party.adults} adult${props.party.adults === 1 ? '' : 's'}` : '',
+    props.party.children > 0 ? `${props.party.children} child${props.party.children === 1 ? '' : 'ren'}` : '',
+    pwdCount > 0 ? `${pwdCount} PWD` : '',
+  ].filter(Boolean).join(' · ');
+  const selectedFees = [
+    props.party.adults > 0 ? `Adult ${money(site.adult_fee)} × ${props.party.adults}` : '',
+    props.party.children > 0 ? `Child ${money(site.child_fee)} × ${props.party.children}` : '',
+    pwdCount > 0 ? `PWD discount ${site.pwd_discount_percent}% × ${pwdCount}` : '',
+  ].filter(Boolean).join(' · ');
   const selected = props.slots.find((slot) => slot.slot_id === props.selectedSlot);
   const [occupancy, setOccupancy] = useState<LiveOccupancy | null>(null);
   useEffect(() => {
@@ -50,12 +62,13 @@ export function VisitorBookingFlow(props: {
     if (props.step === 0 && (props.slotsLoading || !selected)) { props.notify('No booking capacity is available for this date.'); return; }
     if (props.step === 1) {
       if (!visitorInformationComplete(props.visitors, site.slug)) { props.notify('Complete the required details for every visitor.'); return; }
+      if (!pwdVisitorInformationComplete(props.visitors, pwdEnabled ? props.party.pwd : 0, pwdEnabled)) { props.notify('Match the PWD count and complete disability category and ID photo for each visitor claiming the discount.'); return; }
       const error = bookingContactError(props.contact.name, props.contact.email, props.contact.phone);
       if (error) { props.notify(error); return; }
     }
     props.setStep(Math.min(props.step + 1, 3));
   };
-  const summary = <aside className="visitor-flow-summary"><b>Booking summary</b><span>{site.name}</span><span>{props.date}</span><span>{totalVisitors} visitors · {props.party.adults} adults · {props.party.children} children</span><span>Adult {money(site.adult_fee)} · Child {money(site.child_fee)}</span><strong>Total · {money(props.amount)}</strong></aside>;
+  const summary = <aside className="visitor-flow-summary"><b>Booking summary</b><span>{site.name}</span><span>{props.date}</span><span>{totalVisitors} visitor{totalVisitors === 1 ? '' : 's'}{selectedVisitorTypes ? ` · ${selectedVisitorTypes}` : ''}</span>{selectedFees && <span>{selectedFees}</span>}<strong>Total · {money(props.amount)}</strong></aside>;
   return <section className="visitor-flow section-wrap">
     <div className="visitor-flow-heading"><button className="back-link" onClick={props.onBackToDestination}><ArrowLeft size={15}/> {site.name}</button><span className="eyebrow"><span className="eyebrow-line"/> BOOK A VISIT</span><h1>Plan your <em>visit.</em></h1><p>Choose a date, add visitor details, review, then select a demo payment method.</p></div>
     <nav className="visitor-flow-progress" aria-label="Booking progress">{['Destination details', 'Visit details', 'Visitor information', 'Review booking', 'Payment method'].map((name, index) => <div key={name} className={index === props.step + 1 ? 'active' : index < props.step + 1 ? 'complete' : ''} aria-current={index === props.step + 1 ? 'step' : undefined}><b>{index < props.step ? '✓' : index + 1}</b><span>{name}</span></div>)}</nav>
@@ -65,9 +78,13 @@ export function VisitorBookingFlow(props: {
         {!props.slotsLoading && !props.slots.length && <p className="empty-inline">No available times for this date.</p>}
         <div className="visitor-flow-counters"><span>Adults</span><button aria-label="Fewer adults" onClick={() => props.setParty((current) => ({ ...current, adults: Math.max(1, current.adults - 1), pwd: Math.min(current.pwd, current.adults - 1 + current.children) }))}>−</button><b>{props.party.adults}</b><button aria-label="More adults" onClick={() => props.setParty((current) => ({ ...current, adults: Math.min(site.max_per_booking - current.children, current.adults + 1) }))}>+</button>
           <span>Children</span><button aria-label="Fewer children" onClick={() => props.setParty((current) => ({ ...current, children: Math.max(0, current.children - 1), pwd: Math.min(current.pwd, current.adults + current.children - 1) }))}>−</button><b>{props.party.children}</b><button aria-label="More children" onClick={() => props.setParty((current) => ({ ...current, children: Math.min(site.max_per_booking - current.adults, current.children + 1) }))}>+</button></div>
-        {site.pwd_discount_percent > 0 && <label>PWD visitors<input type="number" min="0" max={totalVisitors} value={props.party.pwd} onChange={(event) => props.setParty((current) => ({ ...current, pwd: Math.max(0, Math.min(totalVisitors, Number(event.target.value))) }))}/><small>{site.pwd_discount_percent}% discount per PWD visitor. Eligibility checked at the gate.</small></label>}
+        {pwdEnabled && <label>PWD visitors<input type="number" min="0" max={totalVisitors} value={props.party.pwd} onChange={(event) => props.setParty((current) => ({ ...current, pwd: Math.max(0, Math.min(totalVisitors, Number(event.target.value))) }))}/><small>{site.pwd_discount_percent}% discount per PWD visitor. ID photos are reviewed by authorized destination staff.</small></label>}
       </section>}
-      {props.step === 1 && <section className="visitor-flow-card"><h2><UserRound size={20}/> Visitor information</h2><VisitorInformationForm siteSlug={site.slug} adults={props.party.adults} children={props.party.children} visitors={props.visitors} onChange={updateVisitor}/>
+      {props.step === 1 && <section className="visitor-flow-card"><h2><UserRound size={20}/> Visitor information</h2><VisitorInformationForm siteSlug={site.slug} adults={props.party.adults} children={props.party.children} visitors={props.visitors} pwdEnabled={pwdEnabled} pwdCount={pwdEnabled ? props.party.pwd : 0} onChange={updateVisitor}
+        onPwdChange={(index, isPwd) => { props.setVisitors((current) => current.map((person, personIndex) => personIndex === index ? { ...person, isPwd, disabilityCategory: isPwd ? person.disabilityCategory : '', pwdIdPhoto: isPwd ? person.pwdIdPhoto : null, pwdIdPreview: isPwd ? person.pwdIdPreview : '' } : person)); props.setParty((current) => ({ ...current, pwd: Math.max(0, current.pwd + (isPwd ? 1 : -1)) })); }}
+        onCategoryChange={(index, disabilityCategory) => props.setVisitors((current) => current.map((person, personIndex) => personIndex === index ? { ...person, disabilityCategory } : person))}
+        onPhotoChange={(index, pwdIdPhoto, pwdIdPreview) => props.setVisitors((current) => current.map((person, personIndex) => personIndex === index ? { ...person, pwdIdPhoto, pwdIdPreview } : person))}
+        onPhotoRemove={(index) => props.setVisitors((current) => current.map((person, personIndex) => personIndex === index ? { ...person, pwdIdPhoto: null, pwdIdPreview: '' } : person))}/>
         <div className="visitor-contact-card"><h3>Booking contact</h3><p>Main contact for reservation updates.</p>{props.travelers.length > 0 && <label>Saved traveler<select value={props.selectedTravelerId} onChange={(event) => { const id = event.target.value; props.setSelectedTravelerId(id); const person = props.travelers.find((traveler) => traveler.id === id); if (person) props.setContact({ name: person.full_name, email: person.email ?? '', phone: person.phone ?? '' }); }}><option value="">Enter details manually</option>{props.travelers.map((person) => <option key={person.id} value={person.id}>{person.full_name}</option>)}</select></label>}
           <label>Full name<input value={props.contact.name} maxLength={120} onChange={(event) => { props.setSelectedTravelerId(''); props.setContact({ ...props.contact, name: event.target.value }); }}/></label><label>Email<input type="email" value={props.contact.email} maxLength={254} onChange={(event) => { props.setSelectedTravelerId(''); props.setContact({ ...props.contact, email: event.target.value }); }}/></label><label>Phone<input type="tel" value={props.contact.phone} maxLength={40} onChange={(event) => { props.setSelectedTravelerId(''); props.setContact({ ...props.contact, phone: event.target.value }); }}/></label>
         </div><p className="field-hint">{completedVisitorCount(props.visitors, site.slug)}/{totalVisitors} visitor records complete.</p>
@@ -80,7 +97,7 @@ export function VisitorBookingFlow(props: {
         {props.paymentMethod === 'onsite' && <p className="visitor-onsite-instructions">{props.paymentSettings?.onsite_instructions || 'Pay at the destination entrance or ticket booth.'}</p>}
         {props.paymentMethod === 'online' && props.amount > 0 && props.paymentSettings && <p className="visitor-onsite-instructions">Complete the demo payment flow within {props.paymentSettings.payment_window_minutes} minutes. The Gatekeeper reviews proof before confirmation.</p>}
       </section>}
-      <div className="visitor-flow-actions"><button className="btn btn-outline" onClick={() => props.step === 0 ? props.onBackToDestination() : props.setStep(props.step - 1)}><ArrowLeft size={15}/> Back</button>{props.step < 3 ? <button className="btn btn-primary" onClick={next}>Continue <ArrowRight size={15}/></button> : <button className="btn btn-primary" disabled={props.busy || props.slotsLoading || !selected || (props.paymentMethod === 'online' && props.amount > 0 && !apps.some((app) => app.id === props.paymentApplication))} onClick={props.onSubmit}>{props.busy ? 'Registering…' : props.paymentMethod === 'online' && props.amount > 0 ? 'Continue to Demo Payment' : 'Register reservation'} <ArrowRight size={15}/></button>}</div>
+      <div className="visitor-flow-actions">{props.busy && props.party.pwd > 0 && <span className="visitor-pwd-progress" role="status"><progress aria-label="Uploading PWD ID photos"/> Securing PWD ID photos…</span>}<button className="btn btn-outline" onClick={() => props.step === 0 ? props.onBackToDestination() : props.setStep(props.step - 1)}><ArrowLeft size={15}/> Back</button>{props.step < 3 ? <button className="btn btn-primary" onClick={next}>Continue <ArrowRight size={15}/></button> : <button className="btn btn-primary" disabled={props.busy || props.slotsLoading || !selected || (props.paymentMethod === 'online' && props.amount > 0 && !apps.some((app) => app.id === props.paymentApplication))} onClick={props.onSubmit}>{props.busy ? 'Registering…' : props.paymentMethod === 'online' && props.amount > 0 ? 'Continue to Demo Payment' : 'Register reservation'} <ArrowRight size={15}/></button>}</div>
     </div>{summary}</div>
   </section>;
 }

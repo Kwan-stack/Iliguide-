@@ -2,18 +2,19 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, BadgeCheck, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Compass, Filter, Heart, MapPin, Menu, Search, ShieldCheck, Ticket as TicketIcon, UserRound, X } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
-import { supabase, supabaseConfigured } from './lib/supabase';
+import { clearPasswordRecoveryUser, getPasswordRecoveryUserId, rememberPasswordRecoveryUser, supabase, supabaseConfigured } from './lib/supabase';
 import { calculateBookingTotal, createHold, db, invokeFunction, loadAssignments, loadProfile, loadSites, loadSlots, loadTravelerProfiles, money, timeLabel, type Booking, type CreatedHold, type Profile, type Site, type Slot, type StaffAssignment, type Ticket as IssuedTicket, type TravelerProfile } from './lib/iliguide';
 import { type Party } from './lib/pendingReservation';
-import { emptyVisitorInformation, resizeVisitorInformation, visitorInformationComplete, visitorInformationPayload, type VisitorInformation } from './lib/visitorInformation';
+import { emptyVisitorInformation, pwdVisitorInformationComplete, resizeVisitorInformation, visitorInformationComplete, visitorInformationPayload, type VisitorInformation } from './lib/visitorInformation';
 import { bookingContactError } from './lib/bookingValidation';
 import { useSilentLoad } from './lib/useSilentLoad';
 import { AuthDialog, type AuthMode } from './components/AuthDialog';
+import { VisitorNotificationButton } from './components/VisitorNotificationButton';
 import { StaffWorkspaceShell } from './components/StaffWorkspaceShell';
 import './components/DestinationMap.css';
 import { gatekeeperPath, isGatekeeperPath, parseGatekeeperRoute, type GatekeeperPage } from './lib/gatekeeperRoutes';
 import { staffPageForRole, type AppPage } from './lib/actorRoutes';
-import { authSuccessPath, canShowVisitorAuthModal, destinationSlugFromPath, isAuthPath, isKnownAppPath, isWorkspacePath, pageFromPath, passwordRecoveryPath, staffLoginUrl, staffPortalPath, staffReturnPath, visitorAuthDismissPath, visitorLoginUrl, visitorReturnPath, visitorRoutePaths, STAFF_LOGIN_PATH, VISITOR_LOGIN_PATH } from './lib/appRoutes';
+import { announcementIdFromPath, authSuccessPath, canShowVisitorAuthModal, destinationSlugFromPath, isAnnouncementPath, isAuthPath, isKnownAppPath, isPasswordRecoveryRequest, isWorkspacePath, pageFromPath, passwordRecoveryTarget, staffLoginUrl, staffPortalPath, staffReturnPath, visitorAuthDismissPath, visitorLoginUrl, visitorReturnPath, visitorRoutePaths, STAFF_LOGIN_PATH, VISITOR_LOGIN_PATH } from './lib/appRoutes';
 const VisitorPages = lazy(() => import('./components/VisitorPages').then((module) => ({ default: module.VisitorPages })));
 const StaffPages = lazy(() => import('./components/StaffPages').then((module) => ({ default: module.StaffPages })));
 const DestinationLocator = lazy(() => import('./components/DestinationLocator'));
@@ -23,10 +24,12 @@ const VisitorBookingFlow = lazy(() => import('./components/VisitorBookingFlow').
 const VisitorManualPaymentPage = lazy(() => import('./components/VisitorPaymentPages').then((module) => ({ default: module.VisitorManualPaymentPage })));
 const BookingConfirmationPage = lazy(() => import('./components/VisitorPaymentPages').then((module) => ({ default: module.BookingConfirmationPage })));
 const DestinationReviews = lazy(() => import('./components/ReviewPages').then((module) => ({ default: module.DestinationReviews })));
+const VisitorPlanningHub = lazy(() => import('./components/VisitorPlanningHub').then((module) => ({ default: module.VisitorPlanningHub })));
+const VisitorAnnouncementPages = lazy(() => import('./components/VisitorAnnouncementPages'));
 import type { ManualPaymentSettings } from './components/VisitorBookingFlow';
 
 type Page = AppPage;
-type StaffPage = Extract<Page, GatekeeperPage | 'Activity' | 'Slots and closures' | 'Schedule & Operations' | 'Staff and accounts' | 'Sites and staff' | 'Payment verification' | 'Payment settings' | 'Feedback & Reviews'>;
+type StaffPage = Extract<Page, GatekeeperPage | 'Activity' | 'Slots and closures' | 'Schedule & Operations' | 'Staff and accounts' | 'Sites and staff' | 'Payment verification' | 'Payment settings' | 'Feedback & Reviews' | 'Destination updates'>;
 const todayPh = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const timePh = () => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
 const destinationPhotos: Record<string, { src: string; author: string; source: string; license: string; licenseUrl: string }> = {
@@ -38,8 +41,24 @@ const destinationPhotos: Record<string, { src: string; author: string; source: s
   'maria-christina-falls': { src: '/falls/maria-cristina-falls.jpg', author: 'Rolly Magpayo', source: 'https://commons.wikimedia.org/wiki/File:Maria_Cristina_Falls_Agus_River.jpg', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/' },
 };
 const destinationPhoto = (slug: string) => destinationPhotos[slug];
-const isPasswordRecoveryUrl = () => new URLSearchParams(window.location.search).get('type') === 'recovery'
-  || new URLSearchParams(window.location.hash.slice(1)).get('type') === 'recovery';
+const isPasswordRecoveryUrl = () => isPasswordRecoveryRequest(window.location.search, window.location.hash)
+  || Boolean(getPasswordRecoveryUserId());
+const cleanRecoveryCallbackUrl = () => {
+  const url = new URL(window.location.href);
+  const hash = new URLSearchParams(url.hash.slice(1));
+  let changed = false;
+  for (const key of ['code', 'token_hash', 'type', 'error', 'error_code', 'error_description']) {
+    if (url.searchParams.has(key)) { url.searchParams.delete(key); changed = true; }
+    if (hash.has(key)) { hash.delete(key); changed = true; }
+  }
+  for (const key of ['access_token', 'refresh_token', 'expires_in', 'expires_at', 'token_type']) {
+    if (hash.has(key)) { hash.delete(key); changed = true; }
+  }
+  if (changed) {
+    url.hash = hash.toString() ? `#${hash}` : '';
+    window.history.replaceState(window.history.state, '', url.toString());
+  }
+};
 const heroSlides = [
   { src: '/carousel/carousel1.webp', name: 'Tinago Falls', alt: 'Tinago Falls flowing through a forested gorge' },
   { src: '/carousel/carousel2.webp', name: 'Timoga Cold Spring', alt: 'Clear spring water at Timoga Cold Spring' },
@@ -54,7 +73,7 @@ const readSavedSiteIds = (userId: string | null): string[] => {
       typeof id === 'string' && /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(id))) ] : [];
   } catch { return []; }
 };
-const isStaffPage = (page: Page): page is StaffPage => ['Overview', 'Reservations', 'Visitor Management', 'Scan and exit', 'Walk-in registration', 'Visitor Logbook', 'Capacity map', 'Duty details', 'Reports', 'Activity', 'Slots and closures', 'Schedule & Operations', 'Staff and accounts', 'Sites and staff', 'Duty roster', 'Payment verification', 'Payment settings', 'Feedback & Reviews', 'Change password'].includes(page);
+const isStaffPage = (page: Page): page is StaffPage => ['Overview', 'Reservations', 'Visitor Management', 'Scan and exit', 'Walk-in registration', 'Visitor Logbook', 'Capacity map', 'Duty details', 'Reports', 'Activity', 'Slots and closures', 'Schedule & Operations', 'Staff and accounts', 'Sites and staff', 'Duty roster', 'Payment verification', 'Payment settings', 'Feedback & Reviews', 'Destination updates', 'Change password'].includes(page);
 
 export default function App() {
   const location = useLocation();
@@ -71,6 +90,7 @@ export default function App() {
   const [page, setPage] = useState<Page>(() => pageFromPath(location.pathname));
   const [siteId, setSiteId] = useState('');
   const [date, setDate] = useState(todayPh());
+  const [bookingAvailability, setBookingAvailability] = useState({ siteId: '', date: '', allowed: false, reason: 'Checking availability…' });
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedSlotId, setSelectedSlotId] = useState('');
   const [bookingStep, setBookingStep] = useState(0);
@@ -84,8 +104,15 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [destinationQuery, setDestinationQuery] = useState('');
   const [category, setCategory] = useState('All');
-  const [authMode, setAuthMode] = useState<AuthMode>(() => new URLSearchParams(window.location.search).get('mode') === 'reset' || isPasswordRecoveryUrl() ? 'reset' : null);
+  const [authMode, setAuthMode] = useState<AuthMode>(() => isPasswordRecoveryUrl() ? 'reset' : null);
   const [passwordRecovery, setPasswordRecovery] = useState(isPasswordRecoveryUrl);
+  const [passwordRecoveryError, setPasswordRecoveryError] = useState(() => {
+    const query = new URLSearchParams(window.location.search);
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    return isPasswordRecoveryRequest(window.location.search, window.location.hash)
+      && (query.has('error') || query.has('error_code') || query.has('error_description') || hash.has('error') || hash.has('error_code') || hash.has('error_description'))
+      ? 'This password reset link is invalid or has expired. Please request a new link to continue.' : '';
+  });
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState('');
   const [dataError, setDataError] = useState('');
@@ -103,6 +130,10 @@ export default function App() {
   const staffRole = user && profile?.account_status === 'active' && profile.role !== 'visitor' ? profile.role : null;
   const role: Profile['role'] = profile?.account_status === 'active' ? profile.role : 'visitor';
   const activeSite = sites.find((site) => site.id === siteId) ?? null;
+  const updateBookingAvailability = useCallback((nextSiteId: string, nextDate: string, allowed: boolean, reason: string) => {
+    setBookingAvailability((current) => current.siteId === nextSiteId && current.date === nextDate && current.allowed === allowed && current.reason === reason
+      ? current : { siteId: nextSiteId, date: nextDate, allowed, reason });
+  }, []);
   const slotScope = `${activeSite?.id ?? 'no-site'}:${date}`;
   const previousSlotScope = useRef(slotScope);
   const [slotsLoading, finishSlotsLoading] = useSilentLoad(slotScope);
@@ -118,6 +149,30 @@ export default function App() {
       setToast('');
     }, 4000);
   }, []);
+  const markRecoverySession = useCallback((userId: string) => {
+    rememberPasswordRecoveryUser(userId);
+    setPasswordRecovery(true);
+    setPasswordRecoveryError('');
+    setAuthMode('reset');
+    cleanRecoveryCallbackUrl();
+    navigate(`${window.location.pathname}${window.location.search}${window.location.hash}`, { replace: true });
+  }, [navigate]);
+  const finishVisitorPasswordReset = async () => {
+    if (!supabase) return;
+    notify('Password updated. Sign in with your new password.');
+    try {
+      const { error } = await supabase.auth.signOut({ scope: 'local' });
+      if (error) { notify('Password updated. Sign out, then sign in with your new password.'); return; }
+    } catch {
+      notify('Password updated. Sign out, then sign in with your new password.');
+      return;
+    }
+    clearPasswordRecoveryUser();
+    setPasswordRecovery(false);
+    setPasswordRecoveryError('');
+    setAuthMode('login');
+    navigate(VISITOR_LOGIN_PATH, { replace: true });
+  };
   useEffect(() => () => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
   }, []);
@@ -159,10 +214,16 @@ export default function App() {
     if (!supabaseConfigured) { setSites([]); setSitesLoaded(true); return; }
     try {
       const rows = await loadSites(nextRole !== 'visitor');
-      setSites(rows);
+      let scopedRows = rows;
+      if (nextRole === 'tourism_office') {
+        const { data: organization, error } = await db().from('management_organizations').select('id').eq('authority', 'tourism_office').maybeSingle();
+        if (error) throw error;
+        scopedRows = rows.filter((site) => site.management_organization_id === organization?.id);
+      }
+      setSites(scopedRows);
       setSitesLoaded(true);
       setDataError('');
-      const permitted = nextRole === 'visitor' ? rows : rows.filter((site) =>
+      const permitted = nextRole === 'visitor' ? scopedRows : scopedRows.filter((site) =>
         nextRole === 'tourism_office' || nextAssignments.some((assignment) => assignment.site_id === site.id),
       );
       setSiteId((current) => permitted.some((site) => site.id === current) ? current : permitted[0]?.id ?? '');
@@ -225,6 +286,7 @@ export default function App() {
       void applyUser(data.session?.user ?? null);
       const url = new URL(window.location.href);
       const hash = new URLSearchParams(url.hash.slice(1));
+      const recoveryCallback = isPasswordRecoveryRequest(url.search, url.hash);
       const callbackError = url.searchParams.get('error_description') || url.searchParams.get('error')
         || hash.get('error_description') || hash.get('error');
       let changed = false;
@@ -236,7 +298,11 @@ export default function App() {
         url.hash = hash.toString() ? '#' + hash.toString() : '';
         window.history.replaceState(window.history.state, '', url.toString());
       }
-      if (callbackError) { setAuthMode('login'); notify(callbackError); }
+      if (callbackError && recoveryCallback) {
+        setPasswordRecovery(true);
+        setPasswordRecoveryError('This password reset link is invalid or has expired. Please request a new link to continue.');
+        setAuthMode('reset');
+      } else if (callbackError) { setAuthMode('login'); notify('This authentication link is invalid or has expired.'); }
     }).catch(() => {
       if (active) {
         setAccountReady(true);
@@ -248,9 +314,11 @@ export default function App() {
       if (active && ['SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED', 'PASSWORD_RECOVERY'].includes(event)) {
         authUserId.current = session?.user.id ?? null;
         setAccountReady(false);
-        if (event === 'SIGNED_IN') setAuthMode(null);
-        if (event === 'PASSWORD_RECOVERY') { setPasswordRecovery(true); setAuthMode('reset'); }
-        if (event === 'SIGNED_OUT') setPasswordRecovery(false);
+        if (event === 'SIGNED_IN' && !getPasswordRecoveryUserId() && !isPasswordRecoveryRequest(window.location.search, window.location.hash)) setAuthMode(null);
+        if (event === 'PASSWORD_RECOVERY' && session?.user.id) {
+          markRecoverySession(session.user.id);
+        }
+        if (event === 'SIGNED_OUT') { clearPasswordRecoveryUser(); setPasswordRecovery(false); }
         window.setTimeout(() => { if (active) void applyUser(session?.user ?? null); }, 0);
       }
     });
@@ -260,7 +328,7 @@ export default function App() {
         const nextUser = data.session?.user ?? null;
         if (!active || error || (nextUser?.id ?? null) === authUserId.current) return;
         authUserId.current = nextUser?.id ?? null;
-        if (nextUser) setAuthMode(null);
+        if (nextUser && !getPasswordRecoveryUserId() && !isPasswordRecoveryRequest(window.location.search, window.location.hash)) setAuthMode(null);
         void applyUser(nextUser);
       }).catch(() => {});
     };
@@ -272,18 +340,18 @@ export default function App() {
       window.removeEventListener('focus', syncSession);
       document.removeEventListener('visibilitychange', syncSession);
     };
-  }, [applyUser, notify]);
+  }, [applyUser, markRecoverySession, notify]);
 
   useEffect(() => { void reloadSites(role, assignments); }, [role, assignments, reloadSites]);
 
   useEffect(() => {
     if (!accountReady) return;
-    if (passwordRecovery && user) {
-      const recoveryRole = profile?.role ?? 'visitor';
-      const resetPath = passwordRecoveryPath(recoveryRole);
-      setAuthMode('reset');
+    if (passwordRecovery) {
+      const recoveryRole = profile?.role ?? (location.pathname === STAFF_LOGIN_PATH ? 'gatekeeper' : 'visitor');
+      const resetPath = passwordRecoveryTarget(recoveryRole, location.search, location.hash);
+      if (authMode !== 'forgot') setAuthMode('reset');
       setPage(recoveryRole === 'visitor' ? 'Visitor login' : 'Staff login');
-      if (`${location.pathname}${location.search}` !== resetPath) navigate(resetPath, { replace: true });
+      if (`${location.pathname}${location.search}${location.hash}` !== resetPath) navigate(resetPath, { replace: true });
       return;
     }
     if (staffPasswordReset) { setPage('Staff login'); return; }
@@ -396,7 +464,7 @@ export default function App() {
     const canonicalPath = staffPortalPath(role, nextPage);
     const nextPath = path === canonicalPath ? path : canonicalPath + (legacyTab ? `?tab=${legacyTab}` : '');
     if (nextPath !== path) navigate(nextPath, { replace: true });
-  }, [accountReady, assignedGatekeeperSite, gatekeeperAssignments.length, location.pathname, location.search, navigate, notify, passwordRecovery, profile, role, sites, sitesLoaded, staffPasswordReset, user]);
+  }, [accountReady, assignedGatekeeperSite, authMode, gatekeeperAssignments.length, location.hash, location.pathname, location.search, navigate, notify, passwordRecovery, profile, role, sites, sitesLoaded, staffPasswordReset, user]);
 
   useEffect(() => {
     const slug = destinationSlugFromPath(location.pathname);
@@ -500,7 +568,13 @@ export default function App() {
     ]).then(([globalResult, siteResult]) => {
       if (!active) return;
       if (globalResult.error || siteResult.error) notify(globalResult.error?.message ?? siteResult.error?.message ?? 'Could not load payment settings.');
-      else setPaymentSettings(globalResult.data && siteResult.data ? { ...globalResult.data, ...siteResult.data } as ManualPaymentSettings : null);
+      else if (globalResult.data && siteResult.data) {
+        const demoAccountName = `${activeSite.name} Demo Account`;
+        const next = { ...globalResult.data, ...siteResult.data } as ManualPaymentSettings;
+        if (next.gcash_account_name === 'Illiguide Demo Tourism Office') next.gcash_account_name = demoAccountName;
+        if (next.maya_account_name === 'Illiguide Demo Tourism Office') next.maya_account_name = demoAccountName;
+        setPaymentSettings(next);
+      } else setPaymentSettings(null);
     });
     return () => { active = false; };
   }, [activeSite?.id, notify, page, user?.id]);
@@ -521,7 +595,10 @@ export default function App() {
     if (!activeSite || !selectedSlot) { notify('No booking capacity is available for this date.'); return; }
     if (!activeSite.fee_information_confirmed) { notify('Reservations are unavailable until this destination confirms its current fees.'); return; }
     if (!visitorInformationComplete(visitorInformation, activeSite.slug)) { notify('Complete visitor information for everyone in the reservation.'); return; }
-    if (party.adults < 1 || party.adults + party.children > activeSite.max_per_booking || party.pwd > party.adults + party.children) {
+    const pwdEnabled = activeSite.pwd_discount_percent > 0 && (activeSite.adult_fee > 0 || activeSite.child_fee > 0);
+    const pwdCount = pwdEnabled ? party.pwd : 0;
+    if (!pwdVisitorInformationComplete(visitorInformation, pwdCount, pwdEnabled)) { notify('Match PWD claims to the selected count. Add a category and valid ID photo for each claim, or remove that visitor’s discount claim.'); return; }
+    if (party.adults < 1 || party.adults + party.children > activeSite.max_per_booking || pwdCount > party.adults + party.children) {
       notify('Check the visitor count for this destination.'); return;
     }
     if (!accountReady) { notify('Checking your account details. Try again in a moment.'); return; }
@@ -530,18 +607,35 @@ export default function App() {
     setBusy(true);
     let createdHold: CreatedHold | null = null;
     let confirmed = false;
+    const uploadedPwdPaths: string[] = [];
     try {
       const hold: CreatedHold = await createHold({
         slotId: selectedSlot,
         name: visitor.name.trim(),
         adults: party.adults,
         children: party.children,
-        pwdCount: party.pwd,
+        pwdCount,
         email: visitor.email.trim(),
         phone: visitor.phone.trim(),
         visitors: visitorInformationPayload(visitorInformation, activeSite.slug),
       });
       createdHold = hold;
+      if (pwdCount > 0) {
+        const pwdRecords: Array<{ sequence_number: number; disability_category: string; image_path: string }> = [];
+        for (const [index, person] of visitorInformation.entries()) {
+          if (!person.isPwd || !person.pwdIdPhoto) continue;
+          setVisitorInformation((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, pwdIdUploading: true } : row));
+          const extension = person.pwdIdPhoto.type === 'image/jpeg' ? 'jpg' : person.pwdIdPhoto.type === 'image/png' ? 'png' : 'webp';
+          const path = `${user.id}/${hold.booking_id}/${index + 1}.${extension}`;
+          uploadedPwdPaths.push(path);
+          const { error: uploadError } = await db().storage.from('pwd-id-documents').upload(path, person.pwdIdPhoto, { contentType: person.pwdIdPhoto.type, upsert: false });
+          if (uploadError) throw uploadError;
+          setVisitorInformation((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, pwdIdUploading: false } : row));
+          pwdRecords.push({ sequence_number: index + 1, disability_category: person.disabilityCategory, image_path: path });
+        }
+        const { error: submitError } = await db().rpc('submit_pwd_verifications', { p_booking_id: hold.booking_id, p_records: pwdRecords });
+        if (submitError) throw submitError;
+      }
       const token = hold.guest_access_token ?? '';
       setActiveGuestCode(token);
       if (hold.total_amount <= 0) {
@@ -577,6 +671,11 @@ export default function App() {
       navigate(`/booking-confirmation/${encodeURIComponent(hold.booking_reference)}`);
       notify(hold.total_amount <= 0 ? 'Free reservation confirmed.' : 'Booking registered. Pay at the destination.');
     } catch (error) {
+      setVisitorInformation((current) => current.map((row) => ({ ...row, pwdIdUploading: false })));
+      if (createdHold && !confirmed) {
+        try { if (uploadedPwdPaths.length) await db().storage.from('pwd-id-documents').remove(uploadedPwdPaths); } catch { /* Best effort rollback; private retention policy cleans up failed uploads. */ }
+        try { await db().rpc('cancel_pwd_booking_hold', { p_booking_id: createdHold.booking_id }); } catch { /* The hold still expires automatically. */ }
+      }
       const message = error instanceof Error ? error.message : 'Could not create the booking hold.';
       if (confirmed) { setActiveBooking(null); go('Bookings'); }
       notify(message + (createdHold && !confirmed ? ' The reservation hold expires in ten minutes.' : ''));
@@ -615,11 +714,11 @@ export default function App() {
     : [];
   const staffLoginRoute = location.pathname === STAFF_LOGIN_PATH;
   const visitorLoginRoute = location.pathname === VISITOR_LOGIN_PATH;
-  const authPage = staffLoginRoute;
+  const visitorRecoveryPage = passwordRecovery && !staffLoginRoute && !staffRole;
+  const authPage = staffLoginRoute || passwordRecovery;
   const authNext = new URLSearchParams(location.search).get('next');
   const authReturnTo = `${window.location.origin}${location.pathname}${location.search}`;
-  const visitorAuthModalOpen = canShowVisitorAuthModal(location.pathname) && !staffRole
-    && (!passwordRecovery || profile?.role === 'visitor')
+  const visitorAuthModalOpen = canShowVisitorAuthModal(location.pathname) && !staffRole && !passwordRecovery
     && (authMode !== null || (!user && visitorLoginRoute));
 
   if (!accountReady && !user && (isWorkspacePath(location.pathname) || isGatekeeperPath(location.pathname))) {
@@ -629,12 +728,12 @@ export default function App() {
     </div>;
   }
 
-  if (user && !accountReady) return <div className="office-app-loading" role="status" aria-live="polite">
+  if (user && !accountReady && !passwordRecovery) return <div className="office-app-loading" role="status" aria-live="polite">
     <span className="office-app-spinner" aria-hidden="true"/><b>Opening your Iliguide workspace</b>
     <p>Checking your account role and access before loading its pages.</p>
   </div>;
 
-  if (user && accountReady && !profile) return <div className="office-app-account-error" role="alert">
+  if (user && accountReady && !profile && !passwordRecovery) return <div className="office-app-account-error" role="alert">
     <span className="office-app-mark"><img src="/iliguide-logo.svg" alt=""/></span>
     <h1>Account access could not be loaded</h1>
     <p>Your session is active, but Iliguide could not confirm the account role. Retry the profile lookup or sign out before continuing.</p>
@@ -642,11 +741,11 @@ export default function App() {
       <button className="btn btn-primary" onClick={() => void signOut()}>Sign out</button></div>
   </div>;
 
-  if (user && staffRole && !staffPasswordReset) {
+  if (user && staffRole && !staffPasswordReset && !passwordRecovery) {
     const staffPage = isStaffPage(page) ? page : 'Overview';
     const staffHomePath = staffRole === 'gatekeeper' && assignedGatekeeperSite
       ? gatekeeperPath(assignedGatekeeperSite.slug, 'Overview') : staffPortalPath(staffRole, 'Overview');
-    return <StaffWorkspaceShell role={staffRole} homePath={staffHomePath} dataError={dataError}
+    return <StaffWorkspaceShell role={staffRole} homePath={staffHomePath} userId={user.id} siteSlug={staffRole === 'gatekeeper' ? assignedGatekeeperSite?.slug : undefined} dataError={dataError}
       onRetry={() => { setDataError(''); void reloadSites(role, assignments); }} toast={toast}
       onSignOut={() => { void signOut(); }}>
       <Suspense fallback={<section className="section-wrap loading-screen">Loading workspace…</section>}>
@@ -658,19 +757,19 @@ export default function App() {
   }
 
   return <div className={page === 'Landing' ? 'app-shell landing-shell' : authPage ? 'app-shell auth-shell' : 'app-shell'}>
-    <header className={page === 'Landing' ? 'topbar landing-topbar' : authPage ? 'topbar auth-topbar' : 'topbar'}>
-      <Link className="brand" to={authPage ? STAFF_LOGIN_PATH : '/'} onClick={authPage ? undefined : (event) => { event.preventDefault(); go('Discover'); }}>
+    <header className={`${page === 'Landing' ? 'topbar landing-topbar' : authPage ? 'topbar auth-topbar' : 'topbar'}${!authPage && role === 'visitor' ? ' visitor-topbar' : ''}`}>
+      {!authPage && role === 'visitor' && <button type="button" className="mobile-menu icon-btn" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle navigation">{mobileNav ? <X/> : <Menu/>}</button>}
+      <Link className="brand" to={passwordRecovery ? staffRole ? STAFF_LOGIN_PATH : VISITOR_LOGIN_PATH : authPage ? STAFF_LOGIN_PATH : '/'} onClick={authPage ? undefined : (event) => { event.preventDefault(); go('Discover'); }}>
         <span className="brand-mark"><img src="/iliguide-logo.svg" alt=""/></span><span>Iliguide</span>
       </Link>
-      {!authPage && role === 'visitor' && <button className="mobile-menu icon-btn" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle navigation">{mobileNav ? <X/> : <Menu/>}</button>}
       {!authPage && role === 'visitor' && <nav className={mobileNav ? 'main-nav open' : 'main-nav'}>{nav.map(([label, target]) =>
         <button key={label} aria-current={page === target ? 'page' : undefined} onClick={() => { go(target as Page); setMobileNav(false); }}>{label}</button>)}</nav>
       }
       <div className="header-actions">{authPage
-        ? <Link className="link-btn" to="/">Explore Iligan</Link>
+        ? passwordRecovery ? null : <Link className="link-btn" to="/">Explore Iligan</Link>
         : role === 'visitor'
         ? user
-          ? <><button className={page === 'Account' ? 'profile-nav-btn active' : 'profile-nav-btn'} aria-label="Open profile" title="Profile" aria-current={page === 'Account' ? 'page' : undefined} onClick={() => go('Account')}><span className="profile-nav-icon"><UserRound size={18}/></span><span className="profile-nav-label">My account</span></button><button className="link-btn" onClick={() => void signOut()}>Log out</button></>
+          ? <><VisitorNotificationButton key={user.id} userId={user.id} configured={supabaseConfigured} notify={notify} onOpenBookings={() => go('Bookings')}/><button className={page === 'Account' ? 'profile-nav-btn active' : 'profile-nav-btn'} aria-label="Open profile" title="Profile" aria-current={page === 'Account' ? 'page' : undefined} onClick={() => go('Account')}><span className="profile-nav-icon"><UserRound size={18}/></span></button><button className="link-btn" onClick={() => void signOut()}>Log out</button></>
           : <><button className="link-btn" onClick={() => setAuthMode('signup')}>Sign up</button><Link className="btn btn-primary btn-sm header-auth-login" to={visitorLoginUrl(page === 'Discover' ? '/discover' : location.pathname)}>Log in</Link></>
         : <><span className="role-pill"><span className="status-dot"/>{role.replace('_', ' ')}</span><button className="link-btn" onClick={signOut}>Log out</button></>}
       </div>
@@ -679,7 +778,14 @@ export default function App() {
     {!supabaseConfigured && <div className="connection-banner"><ShieldCheck size={16}/><span>Add Supabase URL and publishable key to connect live data.</span></div>}
 
     <main>{authPage
-      ? user && !staffPasswordReset
+      ? visitorRecoveryPage
+        ? <AuthDialog mode={authMode ?? 'reset'} audience="visitor" presentation="page"
+            onClose={() => {}}
+            onMode={setAuthMode} initialVisitor={visitor} redirectTo={authReturnTo}
+            recoveryTokenHash={new URLSearchParams(location.search).get('token_hash')}
+            recoverySessionUserId={getPasswordRecoveryUserId()} initialRecoveryError={passwordRecoveryError}
+            onRecoverySession={markRecoverySession} onResetComplete={finishVisitorPasswordReset}/>
+      : user && !staffPasswordReset && !passwordRecovery
         ? <section className="auth-page auth-page-staff"><section className="auth-page-card" aria-labelledby="staff-access-title">
             <span className="eyebrow"><span className="eyebrow-line"/> ILIGUIDE STAFF ACCESS</span>
             <h2 id="staff-access-title">This account has no office access.</h2>
@@ -688,19 +794,34 @@ export default function App() {
           </section></section>
         : <AuthDialog mode={authMode ?? (staffPasswordReset ? 'reset' : 'login')} audience="staff" presentation="page"
             onClose={() => {
+              clearPasswordRecoveryUser();
               setPasswordRecovery(false);
+              setPasswordRecoveryError('');
               setAuthMode(null);
               navigate(staffRole === 'gatekeeper' && assignedGatekeeperSite
                 ? gatekeeperPath(assignedGatekeeperSite.slug, 'Overview')
                 : authSuccessPath('staff', authNext), { replace: true });
             }}
-            onMode={setAuthMode} initialVisitor={visitor} redirectTo={authReturnTo}/>
+            onMode={setAuthMode} initialVisitor={visitor} redirectTo={authReturnTo}
+            recoveryTokenHash={new URLSearchParams(location.search).get('token_hash')}
+            recoverySessionUserId={getPasswordRecoveryUserId()} initialRecoveryError={passwordRecoveryError}
+            onRecoverySession={markRecoverySession}/>
+      : isAnnouncementPath(location.pathname) ? <Suspense fallback={<section className="section-wrap loading-screen">Loading destination updates…</section>}><VisitorAnnouncementPages announcementId={announcementIdFromPath(location.pathname)} sites={sites} sitesLoaded={sitesLoaded}/></Suspense>
       : <Suspense fallback={<section className="section-wrap loading-screen">Loading workspace…</section>}>
       {page === 'Landing' && <LandingPage onExplore={() => go('Discover')}/>}
       {page === 'Discover' && role !== 'gatekeeper' && <HomePage
         sites={visibleSites} destinationOptions={permittedSites} allCount={sites.length} categories={categories} category={category}
         setCategory={setCategory} destinationQuery={destinationQuery} setDestinationQuery={setDestinationQuery} search={search} setSearch={setSearch} visitDate={date} setVisitDate={setDate} openSite={openSite}
-        signedIn={Boolean(user)} onHow={() => go('How it works')} savedSiteIds={savedSiteIds} onToggleSavedSite={toggleSavedSite}
+        user={user} visitorActive={profile?.role === 'visitor' && profile.account_status === 'active'} configured={supabaseConfigured} ticketBusy={busy}
+        onGo={go} onLogin={(returnTo) => navigate(visitorLoginUrl(returnTo))}
+        onRateReview={() => {
+          if (profile?.role !== 'visitor' || profile.account_status !== 'active') {
+            setPage('Visitor login'); navigate(visitorLoginUrl('/bookings?view=reviews'));
+          } else { setPage('Bookings'); navigate('/bookings?view=reviews'); }
+          setMobileNav(false); window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onTicket={(booking) => void makeTicket(booking, '')}
+        savedSiteIds={savedSiteIds} onToggleSavedSite={toggleSavedSite}
       />}
       {page === 'Destinations' && role !== 'gatekeeper' && <DestinationsPage
         sites={destinationSites} allCount={permittedSites.length} categories={categories} category={category}
@@ -731,13 +852,12 @@ export default function App() {
               {activeSite.closures.filter((closure) => date >= closure.starts_on && date <= closure.ends_on).map((closure) => <p className="closure-notice" key={`${closure.starts_on}-${closure.reason}`}>{closure.reason} · {closure.starts_on}{closure.ends_on !== closure.starts_on ? ` to ${closure.ends_on}` : ''}</p>)}</div>
           </div>
         </div><aside className="booking-card"><span className="eyebrow"><span className="eyebrow-line"/> VISIT INFORMATION</span><h3>Plan your visit</h3>
-          <OccupancyPanel site={activeSite} sites={sites} onOpen={openSite} onBook={(site) => openSite(site, true)} visitDate={date} setVisitDate={setDate} visitorCount={party.adults + party.children}/><p className="price-intro">Starting at <b>{money(activeSite.adult_fee)}</b> / adult</p>
-          <div className="destination-booking-facts"><span>Children · {money(activeSite.child_fee)}</span><span>Maximum · {activeSite.max_per_booking} visitors per booking</span><span>Daily limit · {activeSite.daily_capacity == null ? 'Not published' : `${activeSite.daily_capacity} visitors`}</span></div>
+          <OccupancyPanel site={activeSite} sites={sites} onOpen={openSite} onBook={(site) => openSite(site, true)} onBookingAvailabilityChange={updateBookingAvailability} visitDate={date} setVisitDate={setDate} visitorCount={party.adults + party.children}/><p className="price-intro">Starting at <b>{money(activeSite.adult_fee)}</b> / adult</p>
           {!activeSite.fee_information_confirmed && <p className="empty-inline">Reservations unavailable until fees are confirmed.</p>}
           {!user && <p>Sign in with an active visitor account to book.</p>}
           {user && profile?.role !== 'visitor' && <p>Staff accounts reserve through their office workspace.</p>}
           {user && profile?.role === 'visitor' && profile.account_status !== 'active' && <p>Only active visitor accounts can book.</p>}
-          {activeSite.fee_information_confirmed && (!user || profile?.role === 'visitor' && profile.account_status === 'active') && <button className="btn btn-primary btn-wide" onClick={() => { if (user) go('Booking'); else navigate(visitorLoginUrl(`/destinations/${activeSite.slug}/book`)); }}>Book Now <ArrowRight size={16}/></button>}
+          {activeSite.fee_information_confirmed && (!user || profile?.role === 'visitor' && profile.account_status === 'active') && <button className={'btn btn-primary btn-wide' + (!bookingAvailability.allowed || bookingAvailability.siteId !== activeSite.id || bookingAvailability.date !== date ? ' occupancy-booking-disabled' : '')} disabled={!bookingAvailability.allowed || bookingAvailability.siteId !== activeSite.id || bookingAvailability.date !== date} title={!bookingAvailability.allowed ? bookingAvailability.reason : undefined} onClick={() => { if (user) go('Booking'); else navigate(visitorLoginUrl(`/destinations/${activeSite.slug}/book`)); }}>{bookingAvailability.allowed ? 'Book Now' : bookingAvailability.reason || 'Checking availability…'} {bookingAvailability.allowed && <ArrowRight size={16}/>}</button>}
         </aside></div>
         {supabaseConfigured && <DestinationReviews siteId={activeSite.id} isVisitor={profile?.role === 'visitor' && profile.account_status === 'active'} notify={notify}/>}
       </section>}
@@ -753,7 +873,7 @@ export default function App() {
       {page === 'Booking confirmation' && <Suspense fallback={<section className="section-wrap loading-screen">Loading confirmation…</section>}><BookingConfirmationPage reference={decodeURIComponent(location.pathname.split('/').pop() ?? '')} onBookings={() => go('Bookings')}/></Suspense>}
       {page === 'How it works' && <HowPage/>}
       {(page === 'Bookings' || page === 'Tickets' || page === 'Account') && <VisitorPages key={user?.id ?? 'visitor'}
-        page={page} user={user} profile={profile} booking={activeBooking} ticket={activeTicket} guestAccessToken={activeGuestCode}
+        page={page} reviewOnly={page === 'Bookings' && new URLSearchParams(location.search).get('view') === 'reviews'} user={user} profile={profile} booking={activeBooking} ticket={activeTicket} guestAccessToken={activeGuestCode}
         onTicket={(booking, code) => void makeTicket(booking, code)} notify={notify} reloadUser={() => { if (user) void applyUser(user); }}
         go={go} onSignOut={signOut} configured={supabaseConfigured} sites={sites} savedSiteIds={savedSiteIds} travelers={travelers}
         onToggleSavedSite={toggleSavedSite} onOpenSite={openSite} onLogin={() => navigate(visitorLoginUrl(location.pathname))}
@@ -761,7 +881,6 @@ export default function App() {
         onConfirmation={(reference) => { setPage('Booking confirmation'); navigate(`/booking-confirmation/${encodeURIComponent(reference)}`); }}
         onPasswordReset={() => setAuthMode('forgot')}
       />}
-      {page === 'Discover' && role === 'visitor' && <VisitorShortcuts go={go} signedIn={Boolean(user)}/>}
     </Suspense>}</main>
     {page !== 'Landing' && !authPage && role === 'visitor' && <MobileTabs page={page} go={go}/>}
     {page !== 'Landing' && !authPage && role === 'visitor' && <footer className="footer"><div className="section-wrap footer-inner"><><div className="footer-brand"><span>Iliguide</span></div>
@@ -799,32 +918,34 @@ function LandingPage({ onExplore }: { onExplore: () => void }) {
   </section>;
 }
 
-function HomePage({ sites, destinationOptions, allCount, categories, category, setCategory, destinationQuery, setDestinationQuery, search, setSearch, visitDate, setVisitDate, openSite, signedIn, onHow, savedSiteIds, onToggleSavedSite }: {
+function HomePage({ sites, destinationOptions, allCount, categories, category, setCategory, destinationQuery, setDestinationQuery, search, setSearch, visitDate, setVisitDate, openSite, user, visitorActive, configured, ticketBusy, onGo, onLogin, onRateReview, onTicket, savedSiteIds, onToggleSavedSite }: {
   sites: Site[]; destinationOptions: Site[]; allCount: number; categories: string[]; category: string;
   destinationQuery: string; setDestinationQuery: (value: string) => void;
   setCategory: (value: string) => void; search: string; setSearch: (value: string) => void;
   visitDate: string; setVisitDate: (value: string) => void;
-  openSite: (site: Site) => void; signedIn: boolean; onHow: () => void; savedSiteIds: string[]; onToggleSavedSite: (siteId: string) => void;
+  openSite: (site: Site) => void; user: User | null; visitorActive: boolean; configured: boolean; ticketBusy: boolean;
+  onGo: (page: Page) => void; onLogin: (returnTo: string) => void; onRateReview: () => void; onTicket: (booking: Booking) => void;
+  savedSiteIds: string[]; onToggleSavedSite: (siteId: string) => void;
 }) {
   const filteredSites = sites.filter((site) => (site.name + ' ' + site.address + ' ' + site.category).toLowerCase().includes(destinationQuery.trim().toLowerCase()));
   return <>
     <section className="hero"><HeroSlideshow/><div className="hero-copy"><span className="eyebrow"><span className="eyebrow-line"/> YOUR NEXT GREAT ESCAPE</span>
       <h1>City of Majestic<br/><em>Waterfalls.</em></h1>
       <p>Chase waterfalls, cool off in crystal springs, and find the quieter side of Iligan. Explore destinations and plan a visit.</p>
-      <div className="search-panel"><label className="search-field"><MapPin size={17}/><span><small>DESTINATION</small><select aria-label="Destination" value={search} onChange={(event) => setSearch(event.target.value)}><option value="" disabled hidden>Where do you want to go?</option>{destinationOptions.map((site) => <option key={site.id} value={site.name}>{site.name}</option>)}</select></span><ChevronDown size={15}/></label>
+      <div className="search-panel"><label className="search-field"><MapPin size={17}/><span><small>DESTINATION</small><select aria-label="Destination" value={search} onChange={(event) => setSearch(event.target.value)}><option value="">All destinations</option>{destinationOptions.map((site) => <option key={site.id} value={site.name}>{site.name}</option>)}</select></span><ChevronDown size={15}/></label>
         <label className="search-field date-field"><CalendarDays size={17}/><span><small>WHEN</small><input type="date" min={todayPh()} value={visitDate} onChange={(event) => setVisitDate(event.target.value)}/></span></label>
         <button className="btn btn-primary" onClick={() => { const destination = destinationOptions.find((site) => site.name === search); if (destination) openSite(destination); else document.getElementById('destinations')?.scrollIntoView({ behavior: 'smooth' }); }}><Search size={17}/> Search destination</button></div>
       <div className="hero-note"><div className="avatar-stack"><span>✦</span><span>✦</span><span>✦</span></div><span><b>{allCount} destinations listed</b><br/>Published by Iligan destination teams.</span></div>
     </div></section>
       <div className="trust-strip"><div className="trust-strip-inner"><span><ShieldCheck size={18}/> Capacity-checked reservations</span><span><BadgeCheck size={18}/> Admission fees published by each site</span><span><TicketIcon size={18}/> QR tickets after confirmation</span><span className="strip-location"><MapPin size={16}/> Iligan City, Philippines</span></div></div>
-    <section className="destinations-section section-wrap" id="destinations"><div className="section-heading"><div><span className="eyebrow"><span className="eyebrow-line"/> THE GOOD STUFF</span><h2>Places worth<br className="mobile-only"/> <em>getting lost in.</em></h2></div><Link className="text-link" to="/destinations" aria-label={'View all ' + allCount + ' published destinations'} onClick={() => setCategory('All')}>{allCount} published destinations <ArrowRight size={17}/></Link></div>
+    <VisitorPlanningHub sites={destinationOptions} user={user} visitorActive={visitorActive} configured={configured} ticketBusy={ticketBusy} onRateReview={onRateReview}
+      onGo={onGo} onLogin={onLogin} onTicket={onTicket}>
+    <section className="destinations-section visitor-home-destinations" id="destinations"><div className="section-heading"><div><span className="eyebrow"><span className="eyebrow-line"/> THE GOOD STUFF</span><h2>Places worth<br className="mobile-only"/> <em>getting lost in.</em></h2></div><Link className="text-link" to="/destinations" aria-label={'View all ' + allCount + ' published destinations'} onClick={() => setCategory('All')}>{allCount} published destinations <ArrowRight size={17}/></Link></div>
       <div className="dest-toolbar"><p>Explore destinations published by the Tourism Office.</p><div className="dest-filter-controls"><label className="destination-search"><Search size={15}/><input value={destinationQuery} onChange={(event) => setDestinationQuery(event.target.value)} placeholder="Search destinations" aria-label="Search destinations"/></label><label className="destination-category-filter"><Filter size={15}/><select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Filter destinations by category">{categories.map((item) => <option key={item} value={item}>{item}</option>)}</select></label></div></div>
       <div className="site-grid">{filteredSites.map((site, index) => <SiteCard key={site.id} site={site} index={index} onOpen={() => openSite(site)} isSaved={savedSiteIds.includes(site.id)} onToggleSaved={() => onToggleSavedSite(site.id)}/>)}</div>
       {!filteredSites.length && <div className="empty-state"><Compass size={32}/><h3>No destinations listed yet</h3><p>{allCount === 0 ? 'When a Tourism Office administrator publishes a destination, it will appear here.' : 'No places match this search. Try a different name or category.'}</p></div>}
     </section>
-    <section className="how-section"><div className="section-wrap how-inner"><div className="how-intro"><span className="eyebrow"><span className="eyebrow-line"/> EASY AS 1, 2, 3</span><h2>Less planning.<br/><em>More exploring.</em></h2><p>Choose a destination, reserve a live slot, and show your ticket at the gate.</p><button className="btn btn-outline" onClick={onHow}>How it works <ArrowRight size={16}/></button></div>
-      <div className="steps">{[{ n: '01', title: 'Find your spot', text: 'Browse current destination details and operating hours.', icon: <Compass/> }, { n: '02', title: 'Book your visit', text: 'Choose a time with availability confirmed by the reservation service.', icon: <CalendarDays/> }, { n: '03', title: 'Show your ticket', text: 'Present your QR reservation at the destination for validation.', icon: <TicketIcon/> }].map((step) => <div className="step" key={step.n}><span className="step-icon">{step.icon}</span><span className="step-body"><span className="step-number">{step.n} /</span><b>{step.title}</b><small>{step.text}</small></span><ArrowRight className="step-arrow" size={19}/></div>)}</div></div></section>
-    {!signedIn && <section className="local-note section-wrap"><div className="local-art"><span className="sun-disc"/><span className="hill hill-one"/><span className="hill hill-two"/><span className="hill hill-three"/></div><div className="local-copy"><span className="eyebrow"><span className="eyebrow-line"/> MADE FOR YOUR NEXT DAY OUT</span><h2>Good days start<br/><em>with a plan.</em></h2><p>Create a visitor account to keep reservations and tickets together.</p></div></section>}
+    </VisitorPlanningHub>
   </>;
 }
 
@@ -904,10 +1025,6 @@ function HowPage() {
     ].map(([number, title, text]) => <article key={number}><span>{number}</span><h3>{title}</h3><p>{text}</p></article>)}</div>
     <div className="config-note"><ShieldCheck size={16}/> Sign in to view reservations and tickets linked to your visitor account.</div>
   </section>;
-}
-
-function VisitorShortcuts({ go, signedIn }: { go: (page: Page) => void; signedIn: boolean }) {
-  return <div className="visitor-shortcuts section-wrap"><button onClick={() => go('Bookings')}><CalendarDays size={17}/>{signedIn ? 'Your bookings' : 'Sign in to see bookings'}<ArrowRight size={15}/></button><button onClick={() => go('Tickets')}><TicketIcon size={17}/>Tickets<ArrowRight size={15}/></button><button onClick={() => go('Account')}><ShieldCheck size={17}/>Account<ArrowRight size={15}/></button></div>;
 }
 
 function MobileTabs({ page, go }: { page: Page; go: (page: Page) => void }) {

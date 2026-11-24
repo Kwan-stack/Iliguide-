@@ -35,13 +35,17 @@
 .site-photo{height:auto;aspect-ratio:1.52}
 .site-card-info{padding:clamp(13px,1.35vw,18px)}
 .site-title{font-size:clamp(14px,1.15vw,16px);margin-top:8px}
-.details-layout{grid-template-columns:minmax(0,1.25fr) minmax(300px,.75fr);gap:clamp(20px,2.6vw,34px)}
-.gallery{height:clamp(260px,30vw,410px)}
+.details-page.section-wrap{max-width:1760px}
+.details-layout{grid-template-columns:minmax(0,1.55fr) minmax(340px,.75fr);gap:clamp(22px,2.8vw,42px)}
+.gallery{height:clamp(280px,28vw,500px)}
+.details-page .detail-copy p{max-width:80ch}
 .details-page,.content-page,.dashboard-page{padding-top:clamp(30px,4vw,48px);padding-bottom:clamp(64px,7vw,90px)}
 .footer-inner{grid-template-columns:minmax(0,1.6fr) repeat(3,minmax(0,1fr));gap:clamp(18px,3vw,38px)}
 
 @media(max-width:920px){
   .topbar{height:66px;padding-inline:18px;gap:0;justify-content:space-between}
+  .visitor-topbar{justify-content:flex-start;gap:8px}
+  .visitor-topbar .brand{margin-right:auto}
   .main-nav{display:none;position:absolute;left:0;right:0;top:66px;align-items:stretch;gap:0;padding:12px 20px 18px;border:1px solid #e8eef1;border-top:0;background:#fff;box-shadow:0 16px 20px #12304714;flex-direction:column}
   .main-nav.open{display:flex}
   .main-nav button{padding:12px 4px;border-bottom:1px solid #eff2f3;text-align:left}
@@ -96,3 +100,5 @@
   .footer-inner{grid-template-columns:minmax(0,1fr)}
   .footer-brand{grid-column:auto}
 }
+.footer{margin-top:28px}
+.pwd-review-actions{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0}

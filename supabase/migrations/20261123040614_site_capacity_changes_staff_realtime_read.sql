@@ -1,0 +1,1 @@
+create policy "Staff can read destination capacity revisions" on public.site_capacity_changes for select to authenticated using (private.can_work_site(site_id));

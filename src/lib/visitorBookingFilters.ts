@@ -1,7 +1,7 @@
 import type { Booking } from './iliguide';
 
 export type BookingTab = 'all' | 'upcoming' | 'pending' | 'completed' | 'cancelled';
-type BookingFilter = { tab: BookingTab; query: string; dateFrom: string; dateTo: string; sortOrder: 'newest' | 'oldest'; today: string };
+type BookingFilter = { tab: BookingTab; query: string; dateFrom: string; dateTo?: string; sortOrder: 'newest' | 'oldest'; today: string };
 
 export function matchesBookingTab(booking: Booking, tab: BookingTab, today: string): boolean {
   if (tab === 'all') return true;

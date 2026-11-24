@@ -1,48 +1,54 @@
 import { useEffect, useState } from 'react';
-import { loadSlots, type LiveOccupancy, type Site } from './iliguide';
-import { capacityStatus, isScheduledOpen } from './capacity';
+import { loadSiteCapacityForDate, type Site, type SiteCapacityForDate } from './iliguide';
+import { isScheduledOpen, scheduledCapacityStatus } from './capacity';
 
-export function useCapacityRecommendations(site: Site, sites: Site[], rows: Record<string, LiveOccupancy | null>, date: string, visitors: number) {
-  const [recommendations, setRecommendations] = useState<Site[]>([]);
+export type CapacityRecommendation = { site: Site; capacity: SiteCapacityForDate };
+
+export function useCapacityRecommendations(site: Site, sites: Site[], selected: SiteCapacityForDate | null, date: string, visitors: number, refreshAt: string | null) {
+  const [recommendations, setRecommendations] = useState<CapacityRecommendation[]>([]);
+  const [recommendationsKey, setRecommendationsKey] = useState('');
   const [loading, setLoading] = useState(false);
-  const ids = sites.map((item) => item.id).join(',');
-  const occupancyKey = sites.map((item) => `${item.id}:${rows[item.id]?.current_visitor_count ?? ''}:${rows[item.id]?.approved_visitor_limit ?? ''}:${rows[item.id]?.estimated_live_capacity ?? ''}:${rows[item.id]?.near_threshold_percent ?? ''}`).join(',');
+  const queryKey = `${site.id}:${date}:${visitors}`;
+  const selectedStatus = scheduledCapacityStatus(selected);
+  const selectedKey = selected ? `${selected.projected_visitor_count}:${selected.remaining_bookable_capacity}:${selected.max_slot_remaining}:${selected.approved_visitor_limit}:${selected.estimated_live_capacity}:${selected.capacity_estimate}:${selected.almost_threshold_percent}:${selected.critical_threshold_percent}` : '';
+  const sitesKey = sites.map((item) => `${item.id}:${item.category}:${item.latitude}:${item.longitude}:${item.status}:${item.fee_information_confirmed}:${item.max_per_booking}`).join(',');
+
   useEffect(() => {
     let active = true;
-    const selected = capacityStatus(rows[site.id]);
-    if (!['near', 'almost', 'critical'].includes(selected.level)) { setRecommendations([]); setLoading(false); return; }
-    const candidates = sites.filter((item) => {
-      const crowd = capacityStatus(rows[item.id]);
-      return item.id !== site.id && item.status === 'published' && item.fee_information_confirmed
-        && visitors > 0 && visitors <= item.max_per_booking
-        && crowd.level === 'available' && crowd.percent !== null
-        && selected.percent !== null && crowd.percent < selected.percent;
-    });
+    const selectedIsFull = Boolean(selected && (selected.remaining_bookable_capacity < visitors || selected.max_slot_remaining < visitors));
+    if (!selected || (!selectedIsFull && selectedStatus.level !== 'critical') || visitors < 1) {
+      setRecommendations([]); setRecommendationsKey(queryKey); setLoading(false); return;
+    }
+    const candidates = sites.filter((item) => item.id !== site.id && item.status === 'published'
+      && item.fee_information_confirmed && visitors <= item.max_per_booking && isScheduledOpen(item, date));
     setLoading(true);
     void Promise.all(candidates.map(async (item) => {
       try {
-        const slots = await loadSlots(item.id, date, date);
-        return slots.some((slot) => slot.slot_date === date && slot.status === 'open'
-          && slot.remaining_capacity >= visitors && isScheduledOpen(item, date, slot.starts_at.slice(0, 5))
-          && (date > new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
-            || slot.ends_at.slice(0, 5) > new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()))) ? item : null;
+        const capacity = await loadSiteCapacityForDate(item.id, date);
+        if (!capacity || capacity.max_slot_remaining < visitors || capacity.remaining_bookable_capacity < visitors) return null;
+        const status = scheduledCapacityStatus(capacity);
+        return status.percent != null && status.percent < 100 && status.level !== 'critical'
+          && (selectedStatus.percent == null || status.percent < selectedStatus.percent)
+          ? { site: item, capacity } : null;
       } catch { return null; }
     })).then((results) => {
       if (!active) return;
-      setRecommendations(results.filter((item): item is Site => item !== null).sort((a, b) => {
-        const category = Number(b.category === site.category) - Number(a.category === site.category);
+      setRecommendationsKey(queryKey);
+      setRecommendations(results.filter((item): item is CapacityRecommendation => item !== null).sort((a, b) => {
+        const category = Number(b.site.category === site.category) - Number(a.site.category === site.category);
         if (category) return category;
-        const crowd = (capacityStatus(rows[a.id]).percent ?? 100) - (capacityStatus(rows[b.id]).percent ?? 100);
+        const crowd = (scheduledCapacityStatus(a.capacity).percent ?? 100) - (scheduledCapacityStatus(b.capacity).percent ?? 100);
         if (crowd) return crowd;
-        if (site.latitude != null && site.longitude != null && a.latitude != null && a.longitude != null && b.latitude != null && b.longitude != null) {
+        if (site.latitude != null && site.longitude != null && a.site.latitude != null && a.site.longitude != null && b.site.latitude != null && b.site.longitude != null) {
           const distance = (item: Site) => (item.latitude! - site.latitude!) ** 2 + (item.longitude! - site.longitude!) ** 2;
-          return distance(a) - distance(b);
+          return distance(a.site) - distance(b.site);
         }
-        return a.name.localeCompare(b.name);
+        return a.site.name.localeCompare(b.site.name);
       }));
       setLoading(false);
     });
     return () => { active = false; };
-  }, [site.id, ids, occupancyKey, date, visitors]);
-  return { recommendations, loading };
+  }, [site.id, site.category, site.latitude, site.longitude, sitesKey, selectedKey, selectedStatus.level, selectedStatus.percent, date, visitors, refreshAt]);
+
+  return { recommendations: recommendationsKey === queryKey ? recommendations : [], loading };
 }

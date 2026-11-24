@@ -60,7 +60,7 @@ export default function DestinationLocator({ sites, openSite, bookSite, visitDat
       const popup = document.createElement('div');
       const name = document.createElement('strong'); name.textContent = site.name;
       const count = document.createElement('p'); count.textContent = occupancy
-        ? `${occupancy.current_visitor_count} / ${status.limit ?? 'capacity not configured'} ${status.basis === 'estimated' ? 'provisional map estimate' : 'approved maximum'}${status.percent != null ? ` · ${formatCapacityPercent(status.percent)}` : ''}`
+        ? `${occupancy.current_visitor_count}${status.limit != null ? ` / ${status.limit} approved maximum · ${formatCapacityPercent(status.percent!)}` : ' · capacity not configured'}`
         : 'Capacity Data Unavailable';
       const level = document.createElement('p'); level.textContent = `${status.label} · ${operatingStatus(site)}`;
       const button = document.createElement('button'); button.type = 'button'; button.textContent = 'View Destination';

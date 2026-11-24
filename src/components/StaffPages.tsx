@@ -1,6 +1,6 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
+import { Fragment, useCallback, useContext, useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BadgeCheck, BookOpen, Building2, CalendarClock, CalendarDays, Camera, ChartNoAxesCombined, Check, ChevronLeft, ChevronRight, Clock3, CreditCard, History, ImagePlus, KeyRound, LayoutDashboard, MapPin, MapPinned, MessageSquareText, Pencil, Plus, Printer, RefreshCw, ScanLine, ShieldCheck, Ticket as TicketIcon, Users, UserRound, X, type LucideIcon } from 'lucide-react';
+import { Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BadgeCheck, BookOpen, Building2, CalendarClock, CalendarDays, Camera, ChartNoAxesCombined, Check, ChevronLeft, ChevronRight, Clock3, CreditCard, FileText, History, Image as ImageIcon, ImagePlus, KeyRound, LayoutDashboard, MapPin, MapPinned, Megaphone, MessageSquareText, Pencil, Plus, Printer, RefreshCw, ScanLine, ShieldCheck, Ticket as TicketIcon, Users, UserRound, X, type LucideIcon } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { calculateBookingTotal, db, dateLabel, exportCsv, invokeFunction, loadMyActiveGatekeeperDuty, loadSlots, money, monthDateRange, timeLabel, timestampTimeLabel, type GatekeeperDuty, type Profile, type Site, type Slot, type StaffAssignment } from '../lib/iliguide';
 import { emptyVisitorInformation, requiredVisitorFields, resizeVisitorInformation, visitorInformationComplete, visitorInformationPayload } from '../lib/visitorInformation';
@@ -10,6 +10,7 @@ import { paymentStatusLabel } from '../lib/paymentStatus';
 import { useSilentLoad } from '../lib/useSilentLoad';
 import { VisitorInformationForm } from './VisitorInformationForm';
 import { ChangePasswordForm } from './ChangePasswordForm';
+import { OfficeMobileNavigation } from './StaffWorkspaceShell';
 import { TimePicker } from './TimePicker';
 import DestinationMap from './DestinationMap';
 import type { GatekeeperPage } from '../lib/gatekeeperRoutes';
@@ -17,12 +18,19 @@ import './DutyRoster.css';
 import './CancellationReview.css';
 import type { ManualPaymentSettings } from './VisitorBookingFlow';
 import { DutyDetailsPage, DutyRosterPage } from './DutyRosterCalendar';
-import { capacityStatus } from '../lib/capacity';
+import { capacityStatus, formatCapacityPercent } from '../lib/capacity';
 import { useLiveCapacity } from '../lib/useLiveCapacity';
 import { FeedbackManagementPage } from './ReviewPages';
+import { DestinationAnnouncementsPage } from './DestinationAnnouncements';
 
 type Role = Profile['role'];
-type Page = GatekeeperPage | 'Activity' | 'Slots and closures' | 'Schedule & Operations' | 'Staff and accounts' | 'Sites and staff' | 'Duty roster' | 'Payment verification' | 'Payment settings' | 'Feedback & Reviews';
+type Page = GatekeeperPage | 'Activity' | 'Slots and closures' | 'Schedule & Operations' | 'Staff and accounts' | 'Sites and staff' | 'Duty roster' | 'Payment verification' | 'Payment settings' | 'Feedback & Reviews' | 'Destination updates';
+const attendanceVisitorCount = (row: Record<string, any>) => {
+  const booking = Array.isArray(row.booking) ? row.booking[0] : row.booking;
+  const registrationOnlyWalkIn = booking?.booking_source === 'walk_in'
+    && row.scanned_at === booking.created_at && Object.keys(row.device_information ?? {}).length === 0;
+  return registrationOnlyWalkIn ? 0 : Number(booking?.visitor_count ?? 0);
+};
 type Props = {
   page: Page; role: Role; sites: Site[]; siteId: string; setSiteId: (value: string) => void;
   assignments: StaffAssignment[]; notify: (message: string) => void; busy: boolean;
@@ -59,23 +67,25 @@ export function StaffPages(props: Props) {
   else if (props.page === 'Schedule & Operations') content = props.role === 'tourism_office' || props.role === 'site_admin' ? <ScheduleOperationsPage {...props}/> : <AccessNotice/>;
   else if (props.page === 'Staff and accounts') content = props.role === 'site_admin' || props.role === 'tourism_office' ? <PeoplePage {...props}/> : <AccessNotice/>;
   else if (props.page === 'Reports') content = props.role === 'site_admin' || props.role === 'tourism_office' ? <ReportsPage {...props}/> : <AccessNotice/>;
-  else if (props.page === 'Sites and staff') content = props.role === 'tourism_office' ? <SitesPage {...props}/> : <AccessNotice/>;
+  else if (props.page === 'Sites and staff') content = props.role === 'tourism_office' || props.role === 'site_admin' ? <SitesPage {...props}/> : <AccessNotice/>;
   else if (props.page === 'Duty roster') content = props.role === 'site_admin' || props.role === 'tourism_office' ? <DutyRosterPage {...props}/> : <AccessNotice/>;
   else if (props.page === 'Payment verification') content = props.role === 'site_admin' ? <ManualPaymentVerificationPage {...props}/> : <AccessNotice/>;
   else if (props.page === 'Payment settings') content = props.role === 'tourism_office' || props.role === 'site_admin' ? <PaymentSettingsPage {...props}/> : <AccessNotice/>;
   else if (props.page === 'Feedback & Reviews') content = props.role === 'tourism_office' || props.role === 'site_admin' ? <FeedbackManagementPage role={props.role} sites={props.sites} notify={props.notify}/> : <AccessNotice/>;
+  else if (props.page === 'Destination updates') content = props.role === 'tourism_office' || props.role === 'site_admin' ? <DestinationAnnouncementsPage role={props.role} sites={props.sites} user={props.user} notify={props.notify}/> : <AccessNotice/>;
   else if (props.page === 'Capacity map') content = <CapacityMapPage {...props}/>;
   else if (props.page === 'Visitor Logbook') content = props.role === 'site_admin' || props.role === 'tourism_office' ? <VisitorLogbookPage {...props}/> : <AccessNotice/>;
-  else if (props.page === 'Activity') content = props.role === 'tourism_office' ? <ActivityPage {...props}/> : <AccessNotice/>;
+  else if (props.page === 'Activity') content = props.role === 'tourism_office' || props.role === 'site_admin' ? <ActivityPage {...props}/> : <AccessNotice/>;
   return <StaffConsole {...props}><Fragment key={staffScopeKey}>{content}</Fragment></StaffConsole>;
 }
 
 function StaffConsole(props: Props & { children: ReactNode }) {
+  const mobileNavigation = useContext(OfficeMobileNavigation);
   const items: Array<[string, Page, LucideIcon]> = props.role === 'gatekeeper'
     ? [['Dashboard', 'Overview', LayoutDashboard], ['Reservations', 'Reservations', CalendarDays], ['Visitors', 'Visitor Management', Users], ['Check-in', 'Scan and exit', ScanLine], ['Walk-ins', 'Walk-in registration', TicketIcon], ['Payment verification', 'Payment verification', BadgeCheck], ['Daily logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Today’s duty', 'Duty details', CalendarClock]]
-    : props.role === 'tourism_office'
-      ? [['Overview', 'Overview', LayoutDashboard], ['Schedule & Operations', 'Schedule & Operations', CalendarClock], ['Destinations & staff', 'Sites and staff', Building2], ['Staff & accounts', 'Staff and accounts', Users], ['Payment settings', 'Payment settings', CreditCard], ['Feedback & Reviews', 'Feedback & Reviews', MessageSquareText], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Activity', 'Activity', History]]
-      : [['Overview', 'Overview', LayoutDashboard], ['Schedule & Operations', 'Schedule & Operations', CalendarClock], ['Staff & accounts', 'Staff and accounts', Users], ['Payment verification', 'Payment verification', BadgeCheck], ['Payment settings', 'Payment settings', CreditCard], ['Feedback & Reviews', 'Feedback & Reviews', MessageSquareText], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined]];
+    : props.role === 'tourism_office' || props.role === 'site_admin'
+      ? [['Overview', 'Overview', LayoutDashboard], ['Schedule & Operations', 'Schedule & Operations', CalendarClock], ['Destinations & staff', 'Sites and staff', Building2], ['Staff & accounts', 'Staff and accounts', Users], ['Destination updates', 'Destination updates', Megaphone], ...(props.role === 'site_admin' ? [['Payment verification', 'Payment verification', BadgeCheck] as [string, Page, LucideIcon]] : []), ['Payment settings', 'Payment settings', CreditCard], ['Feedback & Reviews', 'Feedback & Reviews', MessageSquareText], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Activity', 'Activity', History]]
+      : [];
   items.push(['Account & security', 'Change password', KeyRound]);
   const roleName = props.role === 'tourism_office' ? 'Tourism Office' : props.role === 'site_admin' ? 'Site administrator' : 'Site gatekeeper';
   const userName = String(props.user?.user_metadata?.full_name ?? props.user?.email ?? 'Staff account');
@@ -84,7 +94,7 @@ function StaffConsole(props: Props & { children: ReactNode }) {
       <nav className="staff-sidebar-nav" aria-label={`${roleName} navigation`}>{items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} onClick={() => props.go(target)}><Icon size={17}/><span>{label}</span></button>)}</nav>
       <div className="staff-sidebar-account"><span className="staff-account-icon"><UserRound size={17}/></span><span><b>{userName}</b><small>{props.user?.email ?? roleName}</small></span></div>
     </aside>
-    <div className="staff-console-main"><nav className="staff-mobile-nav" aria-label={`${roleName} navigation`}>{items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} onClick={() => props.go(target)}><Icon size={15}/>{label}</button>)}</nav>{props.children}</div>
+    <div className="staff-console-main"><nav className={mobileNavigation.open ? 'staff-mobile-nav open' : 'staff-mobile-nav'} aria-label={`${roleName} navigation`}>{items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} onClick={() => { mobileNavigation.setOpen(false); props.go(target); }}><Icon size={15}/>{label}</button>)}</nav>{props.children}</div>
   </div>;
 }
 
@@ -180,6 +190,7 @@ function OverviewPage(props: Props) {
   const site = isGatekeeper ? assignedGatekeeperSite(props) : props.sites.find((item) => item.id === props.siteId);
   const capacityFeed = useLiveCapacity(isGatekeeper && site ? [site.id] : []);
   const liveOccupancy = site && capacityFeed.state === 'ready' ? capacityFeed.rows[site.id] ?? null : null;
+  const todayBookingCount = Number(todayMetrics?.booking_count ?? 0);
   const dashboardSites = props.role === 'tourism_office' ? props.sites.filter((item) => networkSiteId === 'all' || item.id === networkSiteId) : site ? [site] : [];
   const siteScope = props.role === 'tourism_office' ? props.sites.map((item) => item.id).join(',') : site?.id ?? props.siteId;
   const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${siteScope}:${networkSiteId}:${networkSiteId === 'all' ? selectedYear : monthStart}`);
@@ -198,22 +209,24 @@ function OverviewPage(props: Props) {
           db().from('bookings').select('id,booking_reference,visitor_name,visitor_count,booking_status,site_slots!inner(slot_date,starts_at)')
             .eq('site_id', site.id).gte('site_slots.slot_date', today).lte('site_slots.slot_date', horizon)
             .in('booking_status', ['confirmed', 'awaiting_payment']).order('created_at').limit(12),
-          db().from('attendance_logs').select('scanned_at,booking:bookings!attendance_logs_booking_id_fkey(visitor_count)')
-            .eq('site_id', site.id).eq('action', 'entry').gte('scanned_at', monthStartAt).lt('scanned_at', monthEndAt).order('scanned_at').limit(2000),
+          db().from('attendance_logs').select('scanned_at,device_information,booking:bookings!attendance_logs_booking_id_fkey(visitor_count,booking_source,created_at)')
+            .eq('site_id', site.id).eq('action', 'entry')
+            .gte('scanned_at', monthStartAt).lt('scanned_at', monthEndAt).order('scanned_at').limit(2000),
         ]);
         for (const result of [daily, total, reservations, attendance]) if (result.error) throw result.error;
         if (request !== requestVersion.current) return;
         setTodayMetrics(daily.data ?? null);
         setTotalReservations(total.count ?? 0);
         setUpcoming((reservations.data ?? []) as Array<Record<string, any>>);
-        setGatekeeperAttendance((attendance.data ?? []).map((row: any) => ({ scanned_at: row.scanned_at, visitor_count: Number(Array.isArray(row.booking) ? row.booking[0]?.visitor_count : row.booking?.visitor_count ?? 0) })));
+        setGatekeeperAttendance((attendance.data ?? []).map((row: any) => ({ scanned_at: row.scanned_at, visitor_count: attendanceVisitorCount(row) })));
       } else {
         let query = db().from('booking_daily_metrics')
           .select('site_id, report_date, booking_count, visitor_count, walk_in_count, online_count, paid_revenue')
           .gte('report_date', monthStart).lte('report_date', monthDate === phToday().slice(0, 7) ? phToday() : `${monthDate}-${String(monthEnd).padStart(2, '0')}`);
         if (props.siteId && props.role !== 'tourism_office') query = query.eq('site_id', props.siteId);
-        const attendanceQuery = db().from('attendance_logs').select('site_id,scanned_at,booking:bookings!attendance_logs_booking_id_fkey(visitor_count)')
-          .eq('action', 'entry').gte('scanned_at', new Date(`${monthStart}T00:00:00+08:00`).toISOString())
+        const attendanceQuery = db().from('attendance_logs').select('site_id,scanned_at,device_information,booking:bookings!attendance_logs_booking_id_fkey(visitor_count,booking_source,created_at)')
+          .eq('action', 'entry')
+          .gte('scanned_at', new Date(`${monthStart}T00:00:00+08:00`).toISOString())
           .lt('scanned_at', new Date(Date.parse(`${monthDate}-${String(monthEnd).padStart(2, '0')}T00:00:00+08:00`) + 86400000).toISOString());
         if (props.siteId && props.role !== 'tourism_office') attendanceQuery.eq('site_id', props.siteId);
         if (props.role === 'tourism_office' && networkSiteId !== 'all') {
@@ -244,7 +257,7 @@ function OverviewPage(props: Props) {
           }
           years = [...seenYears].sort((a, b) => b - a);
         }
-        const attendanceRows: Array<{ site_id: string; scanned_at: string; booking: any }> = [];
+        const attendanceRows: Array<Record<string, any>> = [];
         for (let offset = 0; ; offset += 1000) {
           const page = await attendanceQuery.order('scanned_at').range(offset, offset + 999);
           if (page.error) throw page.error;
@@ -255,7 +268,7 @@ function OverviewPage(props: Props) {
         setRows((metrics.data ?? []) as Array<Record<string, any>>);
         setYearlyBookingRows(yearlyRows.map((row) => ({ site_id: row.site_id, report_date: row.report_date, visitor_count: Number(row.expected_visitor_count ?? 0) })));
         if (years.length) setAvailableYears(years);
-        setAttendanceRows(attendanceRows.map((row) => ({ site_id: row.site_id, scanned_at: row.scanned_at, visitor_count: Number(Array.isArray(row.booking) ? row.booking[0]?.visitor_count : row.booking?.visitor_count ?? 0) })));
+        setAttendanceRows(attendanceRows.map((row) => ({ site_id: row.site_id, scanned_at: row.scanned_at, visitor_count: attendanceVisitorCount(row) })));
       }
     } catch (error) {
       if (request === requestVersion.current) props.notify(error instanceof Error ? error.message : 'Could not load workspace metrics.');
@@ -268,9 +281,7 @@ function OverviewPage(props: Props) {
   const gatekeeperDailyMax = Math.max(1, ...gatekeeperDailyCounts);
   const monthlyVisitors = attendanceRows.reduce((sum, row) => sum + row.visitor_count, 0);
   const reportMonthDate = rows.filter((row) => String(row.report_date).startsWith(monthDate));
-  const lastDays = reportMonthDate.slice(-14);
   const weeklyBookings = Array.from({ length: Math.ceil(monthEnd / 7) }, (_, index) => ({ week: index + 1, count: reportMonthDate.filter((row) => Math.floor((Number(String(row.report_date).slice(8)) - 1) / 7) === index).reduce((sum, row) => sum + Number(row.booking_count ?? 0), 0) }));
-  const maxVisitors = Math.max(1, ...lastDays.map((row) => Number(row.visitor_count ?? 0)));
   const monthlyBookingSeries = dashboardSites.map((destination) => ({
     site: destination,
     counts: Array.from({ length: 12 }, (_, month) => yearlyBookingRows.filter((row) => row.site_id === destination.id && Number(row.report_date.slice(5, 7)) === month + 1).reduce((sum, row) => sum + row.visitor_count, 0)),
@@ -286,12 +297,12 @@ function OverviewPage(props: Props) {
         : 'Live records for ' + (props.role === 'tourism_office' ? (dashboardSites.length === props.sites.length ? 'all accessible destinations.' : dashboardSites[0]?.name ?? 'the selected destination.') : site?.name ?? 'your assigned destination.')}</p></div>
       <div className="header-actions">{!isGatekeeper && (props.role === 'tourism_office' ? <select aria-label="Destination filter" value={networkSiteId} onChange={(event) => setNetworkSiteId(event.target.value)}><option value="all">All</option>{props.sites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <SiteSelector {...props}/>)}{props.role === 'tourism_office' && networkSiteId === 'all' ? <label className="dashboard-month-filter">Year<select aria-label="Report year" value={selectedYear} onChange={(event) => setSelectedYear(Number(event.target.value))}>{[...new Set([selectedYear, ...availableYears])].sort((a, b) => b - a).map((year) => <option key={year} value={year}>{year}</option>)}</select></label> : <label className="dashboard-month-filter">Month<input type="month" value={monthDate} onChange={(event) => event.target.value && setMonthDate(event.target.value)}/></label>}<button className="btn btn-outline" onClick={() => void refresh()}><RefreshCw size={15}/> Refresh</button></div></div>
     {isGatekeeper ? <>
-      <div className="stats-grid gatekeeper-primary-stats">{[
-        [liveOccupancy?.current_visitor_count ?? '—', 'Currently inside', Users],
-        [todayMetrics?.expected_visitor_count ?? 0, 'Expected visitors today', CalendarDays],
-        [liveOccupancy?.arrivals_today ?? '—', 'Arrivals today', ArrowRight],
-        [liveOccupancy?.departures_today ?? '—', 'Departures today', ArrowLeft],
-      ].map(([value, label, Icon]) => <div key={String(label)}><Icon size={19}/><small>{label}</small><b>{loading ? '…' : value}</b></div>)}</div>
+      <div className="stats-grid gatekeeper-primary-stats">{([
+        { value: liveOccupancy?.current_visitor_count ?? '—', label: 'Currently inside', Icon: Users },
+        { value: liveOccupancy?.expected_visitor_count ?? 0, label: 'Expected visitors today', Icon: CalendarDays },
+        { value: liveOccupancy?.arrivals_today ?? '—', label: 'Arrivals today', Icon: ArrowRight },
+        { value: liveOccupancy?.departures_today ?? '—', label: 'Departures today', Icon: ArrowLeft },
+      ] as { value: string | number; label: string; Icon: LucideIcon }[]).map(({ value, label, Icon }) => <div key={label}><Icon size={19}/><small>{label}</small><b>{loading ? '…' : value}</b>{label === 'Expected visitors today' && todayMetrics && <span className="gatekeeper-stat-context">{todayBookingCount} reservation{todayBookingCount === 1 ? '' : 's'} scheduled today</span>}</div>)}</div>
       {(() => {
         const crowd = capacityStatus(liveOccupancy);
         const current = liveOccupancy?.current_visitor_count;
@@ -300,39 +311,37 @@ function OverviewPage(props: Props) {
         const warning = crowd.level === 'near' ? 'Visitor occupancy is increasing. Monitor incoming visitors.'
           : crowd.level === 'almost' ? 'The destination is approaching maximum capacity. Prepare to limit entry and advise visitors about alternatives.'
             : crowd.level === 'critical' ? 'Critical capacity warning. Follow the destination’s configured entry restrictions and safety procedures.' : null;
-        return <div className="gatekeeper-dashboard-grid"><section className="capacity-live-card"><div className="card-heading"><span><small>LIVE DESTINATION CAPACITY</small><h3>{site?.name}</h3></span><span className={`capacity-state capacity-level-${crowd.level}`}>{crowd.label}</span></div>
-          <p className="capacity-total"><b>{current == null ? '—' : current.toLocaleString()}</b> / {limit == null ? 'Capacity Not Configured' : `${limit.toLocaleString()}${crowd.basis === 'estimated' ? ' provisional estimate' : ''}`} <span>visitors</span></p>
-          {percent != null && limit != null && <><div className="capacity-progress" role="progressbar" aria-label="Recorded occupancy" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(percent))}><i className={`capacity-progress-${crowd.level}`} style={{ width: `${Math.min(100, percent)}%` }}/></div><div className="capacity-meta"><b>{Math.round(percent)}% occupied</b><span>{Math.max(0, limit - current!)} spaces remaining</span></div></>}
-          {warning && <p className="capacity-warning" role="status">{warning}{crowd.basis === 'estimated' ? ' Map estimate only; does not restrict admission.' : percent != null && percent < 100 && crowd.level === 'critical' ? ' Approved maximum not yet reached.' : ''}</p>}
+        return <div className="gatekeeper-dashboard-grid"><div className="gatekeeper-capacity-stack"><section className="capacity-live-card"><div className="card-heading"><span><small>LIVE DESTINATION CAPACITY</small><h3>{site?.name}</h3></span><span className={`capacity-state capacity-level-${crowd.level}`}>{crowd.label}</span></div>
+          <p className="capacity-total"><b>{current == null ? '—' : current.toLocaleString()}</b> / {limit == null ? 'Capacity Not Configured' : limit.toLocaleString()} <span>visitors</span></p>
+          {percent != null && limit != null && <><div className="capacity-progress" role="progressbar" aria-label="Recorded occupancy" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, percent)}><i className={`capacity-progress-${crowd.level}`} style={{ width: `${Math.min(100, percent)}%` }}/></div><div className="capacity-meta"><b>{formatCapacityPercent(percent)} occupied</b><span>{Math.max(0, limit - current!)} spaces remaining</span></div></>}
+          {warning && <p className="capacity-warning" role="status">{warning}{percent != null && percent < 100 && crowd.level === 'critical' ? crowd.basis === 'estimate' ? ' This is a provisional estimate.' : ' Approved maximum not yet reached.' : ''}</p>}
           <p className="daily-booking-capacity">{capacityFeed.state === 'stale' ? 'Live update interrupted. ' : ''}Last successful update: {capacityFeed.updatedAt ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' }).format(new Date(capacityFeed.updatedAt)) : 'Unavailable'}.</p>
-        </section><section className="quick-actions-card"><div className="card-heading"><span><small>QUICK ACTIONS</small><h3>Visitor operations</h3></span><Activity size={18}/></div><div className="gatekeeper-actions"><button className="gatekeeper-action-primary" onClick={() => props.go('Scan and exit')}><ScanLine/>Scan check-in</button><button onClick={() => props.go('Scan and exit')}><ArrowLeft/>Record check-out</button><button onClick={() => props.go('Walk-in registration')}><TicketIcon/>Walk-in visitor</button><button onClick={() => props.go('Reservations')}><CalendarDays/>Reservations</button><button onClick={() => props.go('Visitor Logbook')}><History/>Attendance log</button><button onClick={() => props.go('Capacity map')}><MapPinned/>Capacity map</button></div></section></div>; })()}
+        </section><section className="arrivals-card"><div className="card-heading"><span><small>UPCOMING · ASSIGNED DESTINATION</small><h3>Reservations</h3></span><button className="link-btn" onClick={() => props.go('Reservations')}>View all <ArrowRight size={14}/></button></div>
+          {loading && <div className="empty-inline">Loading reservations…</div>}
+          {!loading && !upcoming.length && <div className="empty-inline">No upcoming reservations for this destination.</div>}
+          {!loading && upcoming.map((booking) => { const slot = Array.isArray(booking.site_slots) ? booking.site_slots[0] : booking.site_slots; return <div className="arrival-row" key={booking.id}>
+            <span className="arrival-initial">{String(booking.visitor_name ?? '?').slice(0, 1).toUpperCase()}</span>
+            <span><b>{booking.visitor_name}</b><small>{booking.booking_reference} · {dateLabel(slot?.slot_date)} · {slot?.starts_at ? timeLabel(slot.starts_at) : ''} · {booking.visitor_count} visitors</small></span>
+            <span className="status-tag">{String(booking.booking_status).replace(/_/g, ' ')}</span>
+          </div>; })}
+        </section></div><section className="quick-actions-card"><div className="card-heading"><span><small>QUICK ACTIONS</small><h3>Visitor operations</h3></span><Activity size={18}/></div><div className="gatekeeper-actions"><button className="gatekeeper-action-primary" onClick={() => props.go('Scan and exit')}><ScanLine/>Scan check-in</button><button onClick={() => props.go('Scan and exit')}><ArrowLeft/>Record check-out</button><button onClick={() => props.go('Walk-in registration')}><TicketIcon/>Walk-in visitor</button><button onClick={() => props.go('Reservations')}><CalendarDays/>Reservations</button><button onClick={() => props.go('Visitor Logbook')}><History/>Attendance log</button><button onClick={() => props.go('Capacity map')}><MapPinned/>Capacity map</button></div></section></div>; })()}
       {site && <DestinationMap site={site} occupancy={liveOccupancy}/>}
-      <div className="gatekeeper-dashboard-grid"><section className="chart-card"><div className="card-heading"><span><small>RECORDED ATTENDANCE · ASIA/MANILA</small><h3>Visitor activity</h3></span><CalendarDays size={18}/></div>{loading ? <div className="empty-inline">Loading attendance…</div> : gatekeeperAttendance.length ? <><div className="gatekeeper-trend-chart" style={{ gridTemplateColumns: `repeat(${monthEnd}, minmax(3px, 1fr))` }} role="img" aria-label={`Daily checked-in visitors at ${site?.name} for ${monthDate}`}>{gatekeeperDailyCounts.map((count, i) => { const day = i + 1; return <div key={day} title={`${day}: ${count} visitors`}><i style={{ height: `${count / gatekeeperDailyMax * 100}%` }}/>{(day === 1 || day % 5 === 0 || day === monthEnd) && <small>{day}</small>}</div>; })}</div><p className="report-note">Daily visitor count from recorded ticket check-ins for this destination.</p></> : <div className="empty-inline">No visitor attendance recorded for this month.</div>}</section>
-        <section className="arrivals-card"><div className="card-heading"><span><small>UPCOMING · ASSIGNED DESTINATION</small><h3>Reservations</h3></span><button className="link-btn" onClick={() => props.go('Reservations')}>View all <ArrowRight size={14}/></button></div>
-      {loading && <div className="empty-inline">Loading reservations…</div>}
-        {!loading && !upcoming.length && <div className="empty-inline">No upcoming reservations for this destination.</div>}
-        {!loading && upcoming.map((booking) => { const slot = Array.isArray(booking.site_slots) ? booking.site_slots[0] : booking.site_slots; return <div className="arrival-row" key={booking.id}>
-          <span className="arrival-initial">{String(booking.visitor_name ?? '?').slice(0, 1).toUpperCase()}</span>
-          <span><b>{booking.visitor_name}</b><small>{booking.booking_reference} · {dateLabel(slot?.slot_date)} · {slot?.starts_at ? timeLabel(slot.starts_at) : ''} · {booking.visitor_count} visitors</small></span>
-          <span className="status-tag">{String(booking.booking_status).replace(/_/g, ' ')}</span>
-        </div>; })}
-      </section></div>
+      <div className="gatekeeper-dashboard-grid gatekeeper-chart-row"><section className="chart-card"><div className="card-heading"><span><small>RECORDED ATTENDANCE · ASIA/MANILA</small><h3>Visitor activity</h3></span><CalendarDays size={18}/></div>{loading ? <div className="empty-inline">Loading attendance…</div> : gatekeeperAttendance.length ? <><div className="gatekeeper-trend-chart" style={{ gridTemplateColumns: `repeat(${monthEnd}, minmax(3px, 1fr))` }} role="img" aria-label={`Daily checked-in visitors at ${site?.name} for ${monthDate}`}>{gatekeeperDailyCounts.map((count, i) => { const day = i + 1; return <div key={day} title={`${day}: ${count} visitors`}><i style={{ height: `${count / gatekeeperDailyMax * 100}%` }}/>{(day === 1 || day % 5 === 0 || day === monthEnd) && <small>{day}</small>}</div>; })}</div><p className="report-note">Daily visitor count from recorded ticket check-ins for this destination.</p></> : <div className="empty-inline">No visitor attendance recorded for this month.</div>}</section></div>
       <section className="schedule-card gatekeeper-operations"><div className="card-heading"><span><small>TODAY’S OPERATIONS</small><h3>Reservation summary</h3></span><CalendarClock size={18}/></div><div className="gatekeeper-operation-metrics">{[[todayMetrics?.booking_count ?? 0, 'Today’s reservations'], [Math.max(0, Number(todayMetrics?.expected_visitor_count ?? 0) - Number(todayMetrics?.checked_in_visitor_count ?? 0)), 'Not yet checked in'], [todayMetrics?.pending_booking_count ?? 0, 'Awaiting payment'], [todayMetrics?.confirmed_booking_count ?? 0, 'Confirmed'], [todayMetrics?.cancelled_booking_count ?? 0, 'Cancelled'], [totalReservations, 'Total reservations']].map(([value, label]) => <div key={String(label)}><b>{loading ? '…' : value}</b><small>{label}</small></div>)}</div></section>
     </> : <><div className="stats-grid">{[
       [(props.role === 'tourism_office' ? monthlyVisitors : metric('visitor_count')).toLocaleString(), 'Visitors this month'],
       [metric('online_count').toLocaleString(), 'Online bookings'],
       [metric('walk_in_count').toLocaleString(), 'Walk-in bookings'],
     ].map(([value, label]) => <div key={label}><b>{loading ? '…' : value}</b><small>{label}</small></div>)}</div>
-      <div className="dashboard-grid"><div className="chart-card"><div className="card-heading"><span><small>{props.role === 'tourism_office' ? 'SCHEDULED BOOKINGS · ASIA/MANILA' : 'RECORDED VISITS · ASIA/MANILA'}</small><h3>{props.role === 'tourism_office' ? networkSiteId === 'all' ? 'Monthly Booking Activity by Destination' : 'Weekly Booking Activity' : 'Visitor activity'}</h3></span><CalendarDays size={18}/></div>
-        {props.role === 'tourism_office' ? networkSiteId === 'all' ? loading ? <div className="empty-inline">Loading booking activity…</div> : !dashboardSites.length ? <div className="empty-inline">No destinations available.</div> : <>
+      <div className="dashboard-grid"><div className="chart-card"><div className="card-heading"><span><small>SCHEDULED BOOKINGS · ASIA/MANILA</small><h3>{props.role === 'tourism_office' && networkSiteId === 'all' ? 'Monthly Booking Activity by Destination' : 'Weekly Booking Activity'}</h3></span><CalendarDays size={18}/></div>
+        {props.role === 'tourism_office' && networkSiteId === 'all' ? loading ? <div className="empty-inline">Loading booking activity…</div> : !dashboardSites.length ? <div className="empty-inline">No destinations available.</div> : <>
           <div className="network-chart-scroll"><svg className="network-visitor-chart" viewBox="0 0 720 280" role="img" aria-label={`Monthly number of people booked by destination for ${selectedYear}`}>
             {monthlyBookingTicks.map((value) => { const y = 218 - value / monthlyBookingAxisMax * 178; return <g key={value}><line x1="48" x2="704" y1={y} y2={y} className="network-chart-grid"/><text x="38" y={y + 4} textAnchor="end" className="network-chart-label">{value}</text></g>; })}
             {monthLabels.map((month, index) => { const x = 48 + index * 656 / 11; return <text key={month} x={x} y="243" textAnchor="middle" className="network-chart-label">{month}</text>; })}
             <text x="376" y="270" textAnchor="middle" className="network-chart-label">Month</text><text x="12" y="129" textAnchor="middle" transform="rotate(-90 12 129)" className="network-chart-label">Number of People Booking</text>
             {monthlyBookingSeries.map((series, seriesIndex) => { const color = ['#087fa4', '#36a275', '#e17832', '#d6a52f'][seriesIndex % 4]; const points = series.counts.map((value, index) => `${48 + index * 656 / 11},${218 - value / monthlyBookingAxisMax * 178}`).join(' '); return visibleSites.includes(series.site.id) && <g key={series.site.id}><polyline points={points} fill="none" stroke={color} strokeWidth="2.5"/>{series.counts.map((value, index) => <circle key={monthLabels[index]} cx={48 + index * 656 / 11} cy={218 - value / monthlyBookingAxisMax * 178} r="3" fill={color}><title>{`${monthLabels[index]} ${selectedYear} · ${series.site.name}: ${value} people booked`}</title></circle>)}</g>; })}
           </svg></div><div className="network-chart-legend">{monthlyBookingSeries.map((series, index) => <button key={series.site.id} aria-pressed={visibleSites.includes(series.site.id)} onClick={() => setVisibleSites((current) => current.includes(series.site.id) ? current.filter((id) => id !== series.site.id) : [...current, series.site.id])} style={{ opacity: visibleSites.includes(series.site.id) ? 1 : .45 }}><i style={{ background: ['#087fa4', '#36a275', '#e17832', '#d6a52f'][index % 4] }}/>{series.site.name}</button>)}</div>
-          <p className="report-note"><ShieldCheck size={15}/> Monthly totals count visitors in confirmed or completed bookings by scheduled visit date. Cancelled and pending bookings are excluded{monthlyBookingMax === 0 ? `; no valid bookings recorded in ${selectedYear}.` : '.'}</p></> : loading ? <div className="empty-inline">Loading weekly bookings…</div> : <><div className="network-weekly-chart">{weeklyBookings.map((week) => { const max = Math.max(1, ...weeklyBookings.map((item) => item.count)); return <div key={week.week}><i style={{ height: `${Math.max(2, week.count / max * 100)}%` }} title={`Week ${week.week}: ${week.count} bookings`}/><small>Week {week.week}</small><b>{week.count}</b></div>; })}</div><p className="report-note">Bookings grouped by reservation date for {monthDate}.</p></> : !loading && lastDays.length ? <div className="bar-chart">{lastDays.map((row) => <div className="bar-column" key={row.report_date}><i style={{ height: (Number(row.visitor_count) / maxVisitors * 100) + '%' }}/><small>{String(row.report_date).slice(8)}</small></div>)}</div>
-          : <div className="empty-inline">{loading ? 'Loading records…' : 'No booking records for this month.'}</div>}
+          <p className="report-note"><ShieldCheck size={15}/> Monthly totals count visitors in confirmed or completed bookings by scheduled visit date. Cancelled and pending bookings are excluded{monthlyBookingMax === 0 ? `; no valid bookings recorded in ${selectedYear}.` : '.'}</p></> : loading ? <div className="empty-inline">Loading weekly bookings…</div> : <><div className="network-weekly-chart">{weeklyBookings.map((week) => { const max = Math.max(1, ...weeklyBookings.map((item) => item.count)); return <div key={week.week}><i style={{ height: `${Math.max(2, week.count / max * 100)}%` }} title={`Week ${week.week}: ${week.count} bookings`}/><small>Week {week.week}</small><b>{week.count}</b></div>; })}</div><p className="report-note">Bookings grouped by reservation date for {monthDate}.</p></>}
         {props.role !== 'tourism_office' && <p className="report-note"><ShieldCheck size={15}/> Counts come from confirmed database records and are scoped by staff permissions.</p>}</div>
         <div className="activity-card"><div className="card-heading"><span><small>WORKSPACE</small><h3>Quick actions</h3></span><Activity size={18}/></div>
           {props.role === 'tourism_office' ? <><button className="quick-row" onClick={() => props.go('Sites and staff')}><MapPin size={17}/> Manage destinations <ArrowRight size={14}/></button><button className="quick-row" onClick={() => props.go('Reports')}><ArrowDownToLine size={17}/> Export reports <ArrowRight size={14}/></button></>
@@ -353,6 +362,7 @@ function ReservationsPage(props: Props) {
   const [page, setPage] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
   const [paymentBusy, setPaymentBusy] = useState('');
+  const [pwdReviewBusy, setPwdReviewBusy] = useState('');
   const [total, setTotal] = useState(0);
   const site = assignedGatekeeperSite(props);
   const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${site?.id ?? 'unassigned'}`);
@@ -366,7 +376,7 @@ function ReservationsPage(props: Props) {
     setRefreshing(true);
     void (async () => {
       let query = db().from('bookings').select(
-        'id,booking_reference,visitor_name,visitor_count,adult_count,child_count,total_amount,payment_method,booking_status,payment_status,booking_source,created_at,site_slots!inner(slot_date,starts_at,ends_at),reservation_visitors(id,sequence_number,visitor_type,full_name,address,gender,nationality,check_in_status,checked_in_at),payments(payment_mode)',
+        'id,booking_reference,visitor_name,visitor_count,adult_count,child_count,total_amount,payment_method,booking_status,payment_status,booking_source,created_at,site_slots!inner(slot_date,starts_at,ends_at),reservation_visitors(id,sequence_number,visitor_type,full_name,address,gender,nationality,check_in_status,checked_in_at,reservation_pwd_verifications!reservation_pwd_verifications_reservation_visitor_id_fkey(id,disability_category,image_path,verification_status,review_reason,delete_after)),payments(provider,payment_application,payment_mode,payment_status)',
         { count: 'exact' },
       ).eq('site_id', site.id);
       if (visitDate) query = query.eq('site_slots.slot_date', visitDate);
@@ -394,6 +404,42 @@ function ReservationsPage(props: Props) {
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not record onsite payment.'); }
     finally { setPaymentBusy(''); }
   };
+  const viewPwdId = async (path: string) => {
+    const tab = window.open('about:blank', '_blank');
+    if (tab) tab.opener = null;
+    try {
+      const { data, error } = await db().storage.from('pwd-id-documents').createSignedUrl(path, 60);
+      if (error || !data?.signedUrl) throw error ?? new Error('Could not open the private PWD ID photo.');
+      if (tab) tab.location.href = data.signedUrl;
+      else props.notify('Allow pop-ups to view this private PWD ID photo.');
+    } catch (error) { tab?.close(); props.notify(error instanceof Error ? error.message : 'Could not open the private PWD ID photo.'); }
+  };
+  const reviewPwd = async (record: Record<string, any>, status: 'verified' | 'rejected') => {
+    const reason = status === 'rejected' ? window.prompt('Reason for rejecting this PWD document?') : null;
+    if (status === 'rejected' && !reason?.trim()) return;
+    if (status === 'verified' && !window.confirm('Confirm the presented PWD ID matches this visitor?')) return;
+    setPwdReviewBusy(record.id);
+    try {
+      const { error } = await db().rpc('review_pwd_verification', { p_verification_id: record.id, p_status: status, p_reason: reason });
+      if (error) throw error;
+      props.notify(status === 'verified' ? 'PWD ID marked verified.' : 'PWD ID marked rejected.');
+      setRefreshKey((current) => current + 1);
+    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not update PWD verification.'); }
+    finally { setPwdReviewBusy(''); }
+  };
+  const deleteExpiredPwd = async (record: Record<string, any>) => {
+    if (!window.confirm('Delete this expired PWD ID photo and verification record?')) return;
+    setPwdReviewBusy(record.id);
+    try {
+      const { error: fileError } = await db().storage.from('pwd-id-documents').remove([record.image_path]);
+      if (fileError) throw fileError;
+      const { error } = await db().rpc('delete_expired_pwd_verification', { p_verification_id: record.id });
+      if (error) throw error;
+      props.notify('Expired PWD ID photo and record deleted.');
+      setRefreshKey((current) => current + 1);
+    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not delete the expired PWD document.'); }
+    finally { setPwdReviewBusy(''); }
+  };
   const pageCount = Math.max(1, Math.ceil(total / RESERVATION_PAGE_SIZE));
   return <section className="dashboard-page section-wrap"><div className="dash-header"><div>
     <span className="eyebrow"><span className="eyebrow-line"/> {site?.name ?? 'DESTINATION'} · RESERVATIONS</span>
@@ -404,24 +450,28 @@ function ReservationsPage(props: Props) {
       <label>Booking reference or contact name<input value={search} onChange={(event) => updateFilter(setSearch)(event.target.value)} placeholder="Search bookings"/></label>
       <label>Visit date<input type="date" value={visitDate} onChange={(event) => updateFilter(setVisitDate)(event.target.value)}/></label>
       <label>Booking status<select value={status} onChange={(event) => updateFilter(setStatus)(event.target.value)}><option value="all">All statuses</option><option value="awaiting_payment">Awaiting payment</option><option value="confirmed">Confirmed</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option><option value="expired">Expired</option><option value="needs_resolution">Needs resolution</option></select></label>
-      <label>Payment status<select value={paymentStatus} onChange={(event) => updateFilter(setPaymentStatus)(event.target.value)}><option value="all">All payment states</option><option value="not_required">Not collected online</option><option value="pending">Pending</option><option value="paid">Paid</option><option value="failed">Failed</option><option value="expired">Expired</option><option value="refunded">Refunded</option></select></label>
+      <label>Payment status<select value={paymentStatus} onChange={(event) => updateFilter(setPaymentStatus)(event.target.value)}><option value="all">All payment states</option><option value="not_required">No payment recorded / required</option><option value="pending">Pending</option><option value="paid">Paid</option><option value="failed">Failed</option><option value="expired">Expired</option><option value="refunded">Refunded</option></select></label>
     </div>
     <div className="table-toolbar" aria-busy={refreshing || !resultsCurrent}><span>{loading ? 'Loading…' : refreshing ? 'Updating reservations…' : resultsCurrent ? `${total} destination reservations` : 'Showing previous results'}</span><span>Page {page + 1} of {pageCount}</span></div>
     {!loading && !refreshing && resultsCurrent && !rows.length && <div className="empty-inline">No bookings match these filters.</div>}
     {loading && <div className="empty-inline" role="status">Loading reservations…</div>}
     {!loading && !!rows.length && <div className="table-card gatekeeper-bookings-table" aria-busy={refreshing || !resultsCurrent}><table><thead><tr><th>Reference</th><th>Booking contact</th><th>Visit</th><th>Visitors</th><th>Payment</th><th>Status</th><th>Created</th></tr></thead>
-      <tbody>{rows.map((booking) => { const slot = Array.isArray(booking.site_slots) ? booking.site_slots[0] : booking.site_slots; const visitors = booking.reservation_visitors ?? []; const payment = Array.isArray(booking.payments) ? booking.payments[0] : booking.payments; const demoPaid = booking.payment_status === 'paid' && payment?.payment_mode === 'demo';
+      <tbody>{rows.map((booking) => { const slot = Array.isArray(booking.site_slots) ? booking.site_slots[0] : booking.site_slots; const visitors = booking.reservation_visitors ?? []; const payment = Array.isArray(booking.payments) ? booking.payments[0] : booking.payments; const demoPaid = booking.payment_status === 'paid' && payment?.payment_mode === 'demo'; const walkIn = booking.booking_source === 'walk_in'; const paid = booking.payment_status === 'paid' || payment?.payment_status === 'paid'; const paymentMethodLabel = walkIn ? payment?.provider === 'cash' ? paid ? 'Paid with cash' : 'Cash' : payment?.provider === 'manual' && payment.payment_application ? `${paid ? 'Paid online through' : 'Online through'} ${payment.payment_application === 'gcash' ? 'GCash' : 'Maya'}` : payment?.provider === 'onsite' ? 'Paid onsite' : 'Payment method not recorded' : booking.payment_method === 'onsite' ? 'Pay onsite' : 'Online'; const paymentStateLabel = demoPaid ? 'Demo paid' : walkIn && !payment ? 'No payment record' : paymentStatusLabel(String(booking.payment_status), Number(booking.total_amount));
         return <tr key={booking.id}><td><b>{booking.booking_reference}</b><small>{booking.booking_source.replace('_', ' ')}</small></td>
           <td>{booking.visitor_name}</td><td>{dateLabel(slot?.slot_date)}<small>{slot?.starts_at ? timeLabel(slot.starts_at) : ''}</small></td>
           <td>{booking.visitor_count}<small>{booking.adult_count} adults · {booking.child_count} children</small>
-            <details className="booking-visitors"><summary>Visitor list ({visitors.length})</summary><div>{visitors.map((visitor: Record<string, any>) => <article key={visitor.id}>
+            <details className="booking-visitors"><summary>Visitor list ({visitors.length})</summary><div>{visitors.map((visitor: Record<string, any>) => { const pwd = Array.isArray(visitor.reservation_pwd_verifications) ? visitor.reservation_pwd_verifications[0] : visitor.reservation_pwd_verifications; return <article key={visitor.id}>
               <b>{visitor.full_name}</b><small>{visitor.visitor_type} · {visitor.address}</small>
               {requiredVisitorFields(site.slug).includes('gender') && <small>Gender: {visitor.gender ?? '—'}</small>}
               {requiredVisitorFields(site.slug).includes('nationality') && <small>Nationality: {visitor.nationality ?? '—'}</small>}
+              {pwd && <><small>PWD discount claimed · {pwd.disability_category.replace(/_/g, ' ')} · {String(pwd.verification_status).replace(/_/g, ' ')}</small>{pwd.review_reason && <small>Review reason: {pwd.review_reason}</small>}<small>Private ID retained through {dateLabel(pwd.delete_after)}.</small>
+                <button className="link-btn" onClick={() => void viewPwdId(pwd.image_path)}>View private PWD ID</button>
+                {pwd.verification_status === 'pending_verification' && <span className="pwd-review-actions"><button className="btn btn-outline btn-sm" disabled={Boolean(pwdReviewBusy)} onClick={() => void reviewPwd(pwd, 'verified')}>Verify ID</button><button className="btn btn-outline btn-sm" disabled={Boolean(pwdReviewBusy)} onClick={() => void reviewPwd(pwd, 'rejected')}>{pwdReviewBusy === pwd.id ? 'Saving…' : 'Reject'}</button></span>}
+                {(props.role === 'tourism_office' || props.role === 'site_admin') && pwd.delete_after <= new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date()) && <button className="link-btn" disabled={Boolean(pwdReviewBusy)} onClick={() => void deleteExpiredPwd(pwd)}>{pwdReviewBusy === pwd.id ? 'Deleting…' : 'Delete expired ID'}</button>}</>}
               <small>{visitor.check_in_status === 'checked_in' ? 'Checked in' : 'Not checked in'}</small>
-            </article>)}</div></details></td>
-          <td>{booking.payment_method === 'onsite' ? 'Pay onsite' : 'Online'}<small>{money(Number(booking.total_amount))} · {demoPaid ? 'Demo paid' : paymentStatusLabel(String(booking.payment_status), Number(booking.total_amount))}</small>{booking.payment_method === 'onsite' && booking.payment_status === 'pending' && booking.booking_status === 'confirmed' && <button className="link-btn" disabled={Boolean(paymentBusy)} onClick={() => void recordOnsitePayment(booking)}>{paymentBusy === booking.id ? 'Recording…' : 'Record simulated payment'}</button>}</td>
-          <td><span className="status-tag">{String(booking.booking_status).replace(/_/g, ' ')}</span><small>{demoPaid ? 'Demo paid' : paymentStatusLabel(String(booking.payment_status), Number(booking.total_amount))}</small></td>
+            </article>; })}</div></details></td>
+          <td>{paymentMethodLabel}<small>{money(Number(booking.total_amount))} · {paymentStateLabel}</small>{booking.payment_method === 'onsite' && booking.payment_status === 'pending' && booking.booking_status === 'confirmed' && <button className="link-btn" disabled={Boolean(paymentBusy)} onClick={() => void recordOnsitePayment(booking)}>{paymentBusy === booking.id ? 'Recording…' : 'Record simulated payment'}</button>}</td>
+          <td><span className="status-tag">{String(booking.booking_status).replace(/_/g, ' ')}</span><small>{paymentStateLabel}</small></td>
           <td>{new Date(booking.created_at).toLocaleString()}</td></tr>;
       })}</tbody></table></div>}
     <div className="staff-quick"><button className="btn btn-outline" disabled={loading || refreshing || !resultsCurrent || page === 0} onClick={() => setPage((current) => current - 1)}><ArrowLeft size={15}/> Previous</button>
@@ -431,8 +481,8 @@ function ReservationsPage(props: Props) {
 
 const emptyManualPaymentSettings: ManualPaymentSettings = {
   demo_mode: true, payment_window_minutes: 15,
-  gcash_enabled: true, gcash_account_name: 'Illiguide Demo Tourism Office', gcash_account_identifier: 'DEMO-GCASH-001',
-  maya_enabled: true, maya_account_name: 'Illiguide Demo Tourism Office', maya_account_identifier: 'DEMO-MAYA-001',
+  gcash_enabled: true, gcash_account_name: 'Destination Demo Account', gcash_account_identifier: 'DEMO-GCASH-001',
+  maya_enabled: true, maya_account_name: 'Destination Demo Account', maya_account_identifier: 'DEMO-MAYA-001',
   onsite_instructions: 'Present your booking reference at the destination entrance and complete payment with the authorized Gatekeeper.',
 };
 
@@ -455,11 +505,15 @@ function PaymentSettingsPage(props: Props) {
         if (!active) return;
         if (globalResult.error || siteResult.error) props.notify(globalResult.error?.message ?? siteResult.error?.message ?? 'Could not load payment settings.');
         else {
+          const demoAccountName = `${props.sites.find((site) => site.id === siteId)?.name ?? 'Destination'} Demo Account`;
           const next = { ...emptyManualPaymentSettings,
+            gcash_account_name: demoAccountName, maya_account_name: demoAccountName,
             gcash_account_identifier: `DEMO-GCASH-${siteId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
             maya_account_identifier: `DEMO-MAYA-${siteId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
             ...globalResult.data, ...siteResult.data,
           } as ManualPaymentSettings;
+          if (next.gcash_account_name === 'Illiguide Demo Tourism Office') next.gcash_account_name = demoAccountName;
+          if (next.maya_account_name === 'Illiguide Demo Tourism Office') next.maya_account_name = demoAccountName;
           setSettings(next); setSaved(next);
         }
       } catch (error) {
@@ -534,6 +588,7 @@ function ManualPaymentVerificationPage(props: Props) {
   const [busy, setBusy] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [proofPreviews, setProofPreviews] = useState<Record<string, boolean>>({});
   const refresh = useCallback(async () => {
     let query = db().from('payments').select('id,booking_id,payment_mode,payment_application,amount,currency,payment_status,transaction_reference,proof_storage_path,proof_submitted_at,booking:bookings!payments_booking_id_fkey(booking_reference,visitor_name,visitor_email,visitor_phone,site_id,total_amount,tourism_sites(name),site_slots(slot_date,starts_at))')
       .eq('provider', 'manual').eq('payment_mode', 'demo').eq('payment_status', 'pending_verification');
@@ -541,7 +596,8 @@ function ManualPaymentVerificationPage(props: Props) {
     const { data, error } = await query.order('proof_submitted_at', { ascending: true });
     if (error) throw error;
     const signed = await Promise.all((data ?? []).map(async (item: any) => {
-      const { data: url } = await db().storage.from('manual-payment-proofs').createSignedUrl(item.proof_storage_path, 300);
+      const { data: url, error } = await db().storage.from('manual-payment-proofs').createSignedUrl(item.proof_storage_path, 300);
+      if (error) throw error;
       return { ...item, proof_url: url?.signedUrl ?? '' };
     }));
     setRows(signed as ManualPaymentReview[]);
@@ -570,10 +626,13 @@ function ManualPaymentVerificationPage(props: Props) {
   return <section className="dashboard-page section-wrap"><div className="dash-header"><div><h1>Demo payment <em>verification.</em></h1><p>Review fictional transaction references and generated sample proof. No real money is accepted.</p></div><button className="btn btn-outline" onClick={() => setRefreshKey((value) => value + 1)}><RefreshCw size={15}/> Refresh</button></div>
     {loading && <div className="empty-inline" role="status">Loading payment submissions…</div>}
     {!loading && !rows.length && <div className="empty-card"><BadgeCheck size={26}/><h3>No payments awaiting verification</h3><p>New proof submissions appear here.</p></div>}
-    <div className="manual-payment-review-list">{rows.map((row) => { const booking = Array.isArray(row.booking) ? row.booking[0] : row.booking; const site = Array.isArray(booking?.tourism_sites) ? booking.tourism_sites[0] : booking?.tourism_sites; const slot = Array.isArray(booking?.site_slots) ? booking.site_slots[0] : booking?.site_slots; return <article className="manual-payment-review" key={row.id}>
+    <div className="manual-payment-review-list">{rows.map((row) => { const booking = Array.isArray(row.booking) ? row.booking[0] : row.booking; const site = Array.isArray(booking?.tourism_sites) ? booking.tourism_sites[0] : booking?.tourism_sites; const slot = Array.isArray(booking?.site_slots) ? booking.site_slots[0] : booking?.site_slots; const isImageProof = /\.(jpe?g|png)$/i.test(row.proof_storage_path); const proofExpanded = Boolean(proofPreviews[row.id]); return <article className="manual-payment-review" key={row.id}>
       <div><small>{booking?.booking_reference}</small><h2>{booking?.visitor_name} · {site?.name}</h2><p>{booking?.visitor_email || booking?.visitor_phone} · {slot?.slot_date} {slot?.starts_at ? timeLabel(slot.starts_at) : ''}</p></div>
       <dl><div><dt>Mode</dt><dd>DEMO · No funds transferred</dd></div><div><dt>Application</dt><dd>{row.payment_application?.toUpperCase()} · Demo</dd></div><div><dt>Simulated amount</dt><dd>{money(Number(row.amount))}</dd></div><div><dt>Demo transaction reference</dt><dd>{row.transaction_reference}</dd></div><div><dt>Submitted</dt><dd>{new Date(row.proof_submitted_at).toLocaleString()}</dd></div></dl>
-      {row.proof_url && <a className="btn btn-outline" href={row.proof_url} target="_blank" rel="noreferrer">View private proof <ArrowRight size={14}/></a>}
+      {row.proof_url && <div className="manual-payment-proof-preview">
+        <button type="button" className="btn btn-outline" aria-expanded={proofExpanded} onClick={() => setProofPreviews((current) => ({ ...current, [row.id]: !current[row.id] }))}>{proofExpanded ? `Hide ${isImageProof ? 'image' : 'PDF'}` : `View ${isImageProof ? 'image' : 'PDF'}`} {isImageProof ? <ImageIcon size={15}/> : <FileText size={15}/>}</button>
+        {proofExpanded && (isImageProof ? <img className="manual-payment-proof-image" src={row.proof_url} alt={`Payment proof for ${booking?.booking_reference}`}/> : <iframe className="manual-payment-proof-pdf" src={row.proof_url} title={`Payment proof for ${booking?.booking_reference}`}/>)}
+      </div>}
       <label>Rejection reason<textarea value={reasons[row.id] ?? ''} onChange={(event) => setReasons((current) => ({ ...current, [row.id]: event.target.value }))} maxLength={1000} rows={2}/></label>
       <div className="manual-payment-review-actions"><button className="btn btn-outline" disabled={Boolean(busy)} onClick={() => void review(row, false)}>{busy === row.id ? 'Saving…' : 'Reject proof'}</button><button className="btn btn-primary" disabled={Boolean(busy)} onClick={() => void review(row, true)}>{busy === row.id ? 'Saving…' : 'Verify payment'} <Check size={15}/></button></div>
     </article>; })}</div>
@@ -584,7 +643,10 @@ function AccessNotice() {
   return <section className="dashboard-page section-wrap"><div className="empty-card"><ShieldCheck size={30}/><h3>This page is not available to this staff role</h3><p>Access follows the role and destination assignments linked to your account.</p></div></section>;
 }
 
-type ScanResult = { result: string; booking_reference: string | null; visitor_name: string | null; visitor_count: number; entered_at: string | null; exited_at: string | null };
+type ScanResult = { result: string; booking_reference: string | null; visitor_name: string | null; visitor_count: number; entered_at: string | null; exited_at: string | null; entered_count: number; exited_count: number; active_count: number };
+type AttendanceParticipant = { visitor_id: string; full_name: string; visitor_type: string; check_in_status: 'not_checked_in' | 'checked_in' | 'checked_out' };
+const attendanceLimit = (result: ScanResult, action: 'entry' | 'exit') => action === 'entry'
+  ? result.visitor_count - result.entered_count : result.active_count;
 function ScannerPage(props: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
@@ -593,18 +655,57 @@ function ScannerPage(props: Props) {
   const [manual, setManual] = useState('');
   const [cameraOn, setCameraOn] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
+  const [attendanceCount, setAttendanceCount] = useState('1');
+  const [attendanceAction, setAttendanceAction] = useState<'entry' | 'exit'>('entry');
+  const [participants, setParticipants] = useState<AttendanceParticipant[]>([]);
+  const [selectedVisitorIds, setSelectedVisitorIds] = useState<string[]>([]);
+  const [participantsLoading, setParticipantsLoading] = useState(false);
+  const [participantsFailed, setParticipantsFailed] = useState(false);
+  const [pendingEventKey, setPendingEventKey] = useState('');
+  const [ticketToken, setTicketToken] = useState('');
+  const [manualReference, setManualReference] = useState('');
   const [scanError, setScanError] = useState('');
   const [scanBusy, setScanBusy] = useState(false);
   const site = props.sites.find((item) => item.id === props.siteId);
+  const showResult = async (row: ScanResult) => {
+    setResult(row);
+    setParticipants([]); setSelectedVisitorIds([]); setParticipantsFailed(false);
+    if (['entry_confirmation_required', 'checkout_confirmation_required', 'attendance_confirmation_required'].includes(row.result)) {
+      const action = row.result === 'checkout_confirmation_required' ? 'exit' : 'entry';
+      setAttendanceAction(action);
+      setAttendanceCount(String(Math.max(1, attendanceLimit(row, action))));
+      setPendingEventKey(crypto.randomUUID());
+      if (row.booking_reference && props.siteId) {
+        setParticipantsLoading(true);
+        try {
+          const { data, error } = await db().rpc('attendance_participants', {
+            p_booking_reference: row.booking_reference, p_site_id: props.siteId,
+          });
+          if (error) throw error;
+          const rows = Array.isArray(data) ? data as AttendanceParticipant[] : [];
+          const eligible = rows.filter((visitor) => visitor.check_in_status === (action === 'entry' ? 'not_checked_in' : 'checked_in'));
+          setParticipants(rows); setSelectedVisitorIds(eligible.map((visitor) => visitor.visitor_id));
+          if (rows.length) setAttendanceCount(String(eligible.length));
+        } catch {
+          setParticipantsFailed(true);
+          setScanError('Could not load this booking’s visitor list. Retry the scan.');
+        } finally {
+          setParticipantsLoading(false);
+        }
+      }
+    } else setPendingEventKey('');
+  };
 
   const processToken = useCallback(async (token: string) => {
     if (!props.siteId || lockRef.current) return;
     lockRef.current = true;
     setScanBusy(true);
     setScanError('');
+    setTicketToken(token);
+    setManualReference('');
     try {
       const payload = await invokeFunction<{ result: ScanResult }>('scan-ticket', { token, site_id: props.siteId });
-      setResult(payload.result);
+      await showResult(payload.result);
     } catch (error) {
       setScanError(error instanceof Error ? error.message : 'Ticket scan could not be recorded.');
     } finally {
@@ -619,7 +720,7 @@ function ScannerPage(props: Props) {
   const startCamera = async () => {
     if (!videoRef.current) return;
     setScanError('');
-    setResult(null);
+    setResult(null); setTicketToken(''); setManualReference('');
     try {
       const { BrowserQRCodeReader } = await import('@zxing/browser');
       const reader = new BrowserQRCodeReader();
@@ -637,6 +738,7 @@ function ScannerPage(props: Props) {
     event.preventDefault();
     if (!manual.trim() || !props.siteId) return;
     setScanBusy(true); setScanError(''); setResult(null);
+    setTicketToken(''); setManualReference(manual.trim());
     try {
       const { data, error } = await db().rpc('manual_scan_ticket', {
         p_booking_reference: manual.trim(),
@@ -645,12 +747,54 @@ function ScannerPage(props: Props) {
       });
       if (error) throw error;
       const row = (Array.isArray(data) ? data[0] : data) as ScanResult;
-      setResult(row);
+      await showResult(row);
     } catch (error) { setScanError(error instanceof Error ? error.message : 'Could not look up this booking.'); }
     finally { setScanBusy(false); }
   };
+  const confirmAttendance = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!result || !props.siteId || !pendingEventKey) return;
+    const action = result.result === 'entry_confirmation_required' ? 'entry'
+      : result.result === 'checkout_confirmation_required' ? 'exit' : attendanceAction;
+    const max = attendanceLimit(result, action);
+    const count = participants.length ? selectedVisitorIds.length : Number(attendanceCount);
+    if (participantsLoading || participantsFailed) return;
+    if (participants.length && count < 1) {
+      setScanError('Select at least one eligible visitor.');
+      return;
+    }
+    if (!Number.isSafeInteger(count) || count < 1 || count > max) {
+      setScanError(`Enter a visitor count from 1 to ${max}.`);
+      return;
+    }
+    setScanBusy(true); setScanError('');
+    try {
+      let confirmed: ScanResult;
+      if (ticketToken) confirmed = (await invokeFunction<{ result: ScanResult }>('scan-ticket', {
+        token: ticketToken, site_id: props.siteId, action, visitor_count: count,
+        visitor_ids: participants.length ? selectedVisitorIds : [], idempotency_key: pendingEventKey,
+      })).result;
+      else {
+        const { data, error } = await db().rpc('confirm_manual_attendance', {
+          p_booking_reference: manualReference, p_site_id: props.siteId, p_action: action,
+          p_visitor_count: count, p_idempotency_key: pendingEventKey,
+          p_visitor_ids: participants.length ? selectedVisitorIds : [],
+          p_device: { user_agent: navigator.userAgent.slice(0, 240), method: 'manual' },
+        });
+        if (error) throw error;
+        confirmed = (Array.isArray(data) ? data[0] : data) as ScanResult;
+      }
+      await showResult(confirmed);
+    } catch (error) { setScanError(error instanceof Error ? error.message : 'Could not record attendance.'); }
+    finally { setScanBusy(false); }
+  };
 
-  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> {site?.name ?? 'GATEKEEPER'} · SCAN & EXIT</span><h1>One scan at a <em>time.</em></h1><p>Camera scans verify signed tickets. Manual lookup records the same entry or exit action.</p></div></div>
+  const canConfirmAttendance = Boolean(result && ['entry_confirmation_required', 'checkout_confirmation_required', 'attendance_confirmation_required'].includes(result.result));
+  const chooseEntryOrExit = result?.result === 'attendance_confirmation_required';
+  const attendanceMax = result ? attendanceLimit(result, attendanceAction) : 0;
+  const attendanceEligibleParticipants = participants.filter((visitor) => visitor.check_in_status === (attendanceAction === 'entry' ? 'not_checked_in' : 'checked_in'));
+
+  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> {site?.name ?? 'GATEKEEPER'} · SCAN & EXIT</span><h1>One scan at a <em>time.</em></h1><p>Scans validate tickets. Confirm the actual visitor count to record entry or checkout.</p></div></div>
     {!props.siteId && <div className="empty-card"><ShieldCheck size={30}/><h3>No site assignment</h3><p>Ask the Tourism Office to assign your gatekeeper account.</p></div>}
     {!!props.siteId && <div className="scan-layout"><article className="scan-card"><div className="scan-mode"><button type="button" className={scanMode === 'camera' ? 'selected' : ''} aria-pressed={scanMode === 'camera'} onClick={() => { setScanMode('camera'); setManual(''); setScanError(''); }}>Camera</button><button type="button" className={scanMode === 'manual' ? 'selected' : ''} aria-pressed={scanMode === 'manual'} onClick={() => { stopCamera(); setScanMode('manual'); setScanError(''); }}>Manual reference</button></div>
       {scanMode === 'camera' && <>
@@ -659,22 +803,58 @@ function ScannerPage(props: Props) {
           : <button type="button" className="btn btn-primary" onClick={() => void startCamera()} disabled={!props.siteId}><Camera size={15}/> Start camera</button>}
           <span>{site?.name ?? 'Select a site'}</span></div>
       </>}
-      {scanMode === 'manual' && <form className="manual-scan-form" onSubmit={(event) => void manualLookup(event)}><label>Booking reference<input value={manual} onChange={(event) => setManual(event.target.value)} autoFocus placeholder="ILG-…" autoCapitalize="characters" required/></label><button type="submit" className="btn btn-primary" disabled={scanBusy || !manual.trim()}>{scanBusy ? 'Checking…' : 'Record scan'} <ArrowRight size={15}/></button></form>}
+      {scanMode === 'manual' && <form className="manual-scan-form" onSubmit={(event) => void manualLookup(event)}><label>Booking reference<input value={manual} onChange={(event) => setManual(event.target.value)} autoFocus placeholder="ILG-…" autoCapitalize="characters" required/></label><button type="submit" className="btn btn-primary" disabled={scanBusy || !manual.trim()}>{scanBusy ? 'Checking…' : 'Look up booking'} <ArrowRight size={15}/></button></form>}
       {scanError && <p className="form-error" role="alert">{scanError}</p>}
     </article><article className="scan-result-card"><div className="card-heading"><span><small>SCAN RESULT</small><h3>Entry & exit record</h3></span><ShieldCheck size={19}/></div>
       {!result && !scanError && <div className="empty-inline">A scan result will appear here after the server validates the ticket.</div>}
       {result && <div className="scan-result"><span className={result.result.includes('recorded') ? 'scan-result-icon success' : 'scan-result-icon'}>{result.result.includes('recorded') ? <Check size={23}/> : <ShieldCheck size={23}/>}</span>
         <strong>{scanLabel(result.result)}</strong><p>{result.visitor_name || 'Ticket details unavailable'}</p>
-        {result.booking_reference && <small>{result.booking_reference} · {result.visitor_count} visitors</small>}
+        {result.booking_reference && <small>{result.booking_reference} · {result.visitor_count} booked · {result.entered_count} admitted · {result.active_count} inside</small>}
+        {canConfirmAttendance && <p className="scan-confirm-hint">Ticket verified. Confirm the visitors entering now to record their check-in.</p>}
         {result.entered_at && <small>Entry: {new Date(result.entered_at).toLocaleString()}</small>}
         {result.exited_at && <small>Exit: {new Date(result.exited_at).toLocaleString()}</small>}
-        <button className="btn btn-outline" onClick={() => { setResult(null); setScanError(''); }}>Scan another ticket</button></div>}
+        {canConfirmAttendance && <form className="scan-confirm-form" onSubmit={(event) => void confirmAttendance(event)}>
+          {chooseEntryOrExit && <label>Attendance action
+            <select value={attendanceAction} disabled={participantsLoading} onChange={(event) => {
+              const action = event.target.value as 'entry' | 'exit';
+              setAttendanceAction(action);
+              const eligible = participants.filter((visitor) => visitor.check_in_status === (action === 'entry' ? 'not_checked_in' : 'checked_in'));
+              setSelectedVisitorIds(eligible.map((visitor) => visitor.visitor_id));
+              setAttendanceCount(String(participants.length ? eligible.length : Math.max(1, attendanceLimit(result, action))));
+            }}>
+              <option value="entry">Record additional arrivals</option>
+              <option value="exit">Confirm departures</option>
+            </select>
+          </label>}
+          {participantsLoading ? <small>Loading visitor list…</small> : participants.length > 0 ? <fieldset className="scan-participants">
+            <legend>{attendanceAction === 'entry' ? 'Select visitors entering' : 'Select visitors checking out'}</legend>
+            {attendanceEligibleParticipants.map((visitor) => <label key={visitor.visitor_id}>
+              <input type="checkbox" checked={selectedVisitorIds.includes(visitor.visitor_id)} disabled={scanBusy}
+                onChange={(event) => {
+                  const next = event.target.checked
+                    ? [...selectedVisitorIds, visitor.visitor_id]
+                    : selectedVisitorIds.filter((id) => id !== visitor.visitor_id);
+                  setSelectedVisitorIds(next); setAttendanceCount(String(next.length));
+                }}/>
+              <span>{visitor.full_name}<small>{visitor.visitor_type === 'adult' ? 'Adult' : 'Child'}</small></span>
+            </label>)}
+            <small>{selectedVisitorIds.length} of {attendanceEligibleParticipants.length} selected.</small>
+          </fieldset> : <label>{attendanceAction === 'entry' ? 'Visitors entering now' : 'Visitors checking out now'}
+            <input type="number" min="1" max={attendanceMax}
+              value={attendanceCount} onChange={(event) => setAttendanceCount(event.target.value)} required/>
+            <small>Count-only booking. Maximum {attendanceMax}; all visitors enter or exit together.</small>
+          </label>}
+          <button className="btn btn-primary" type="submit" disabled={scanBusy || participantsLoading || participantsFailed || (participants.length > 0 && selectedVisitorIds.length === 0)}>{scanBusy ? 'Saving…' : attendanceAction === 'entry' ? 'Confirm ticket & check-in' : 'Confirm ticket & check-out'} <Check size={15}/></button>
+        </form>}
+        <button type="button" className="btn btn-outline" onClick={() => { setResult(null); setScanError(''); setTicketToken(''); setManualReference(''); setPendingEventKey(''); }}>Scan another ticket</button></div>}
     </article></div>}
   </section>;
 }
 
 function scanLabel(result: string) {
-  return ({ entry_recorded: 'Entry recorded', exit_recorded: 'Exit recorded', completed: 'Visit already completed',
+  return ({ entry_recorded: 'Check-in recorded', exit_recorded: 'Check-out recorded',
+    entry_confirmation_required: 'Confirm actual visitors entering', checkout_confirmation_required: 'Confirm visitors checking out', attendance_confirmation_required: 'Choose entry or checkout', completed: 'Visit already completed',
+    visitor_roster_incomplete: 'Visitor list incomplete; contact the Tourism Office',
     invalid: 'Ticket is invalid', unpaid_or_inactive: 'Booking is unpaid or inactive', outside_window: 'Outside the visit time window' } as Record<string, string>)[result] ?? result.replace(/_/g, ' ');
 }
 
@@ -711,7 +891,13 @@ function SchedulePage(props: Props & { view?: 'all' | 'hours' | 'capacity'; embe
   const [savedHours, setSavedHours] = useState<Hour[]>(closedHours);
   const [specialHours, setSpecialHours] = useState<Array<Record<string, any>>>([]);
   const [slots, setSlots] = useState<Array<Record<string, any>>>([]);
+  const [slotAvailability, setSlotAvailability] = useState<Slot[]>([]);
   const [dailyCapacity, setDailyCapacity] = useState('');
+  const [selectedSlotDate, setSelectedSlotDate] = useState(phToday());
+  const [slotView, setSlotView] = useState<'day' | 'week'>('day');
+  const [slotModalOpen, setSlotModalOpen] = useState(false);
+  const [slotDuration, setSlotDuration] = useState('60');
+  const [editingSlotId, setEditingSlotId] = useState('');
   const [closures, setClosures] = useState<Array<Record<string, any>>>([]);
   const [specialMonth, setSpecialMonth] = useState(() => scheduleMonthStart(phToday()));
   const [selectedSpecialDate, setSelectedSpecialDate] = useState(phToday());
@@ -722,6 +908,7 @@ function SchedulePage(props: Props & { view?: 'all' | 'hours' | 'capacity'; embe
   const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${props.siteId}`);
   const [saving, setSaving] = useState(false);
   const site = props.sites.find((item) => item.id === props.siteId);
+  const slotRangeEnd = new Date(Date.parse(`${selectedSlotDate}T12:00:00+08:00`) + (slotView === 'day' ? 0 : 6) * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
   useEffect(() => setDailyCapacity(site?.daily_capacity == null ? '' : String(site.daily_capacity)), [site?.id, site?.daily_capacity]);
   const refresh = useCallback(async () => {
     if (!props.siteId) {
@@ -730,11 +917,12 @@ function SchedulePage(props: Props & { view?: 'all' | 'hours' | 'capacity'; embe
     }
     try {
       const monthEnd = scheduleMonthEnd(specialMonth);
-      const [hourResult, slotResult, closureResult, exceptionResult] = await Promise.all([
+      const [hourResult, slotResult, closureResult, exceptionResult, availabilityRows] = await Promise.all([
         db().from('site_operating_hours').select('weekday,opens_at,closes_at,is_closed').eq('site_id', props.siteId).order('weekday'),
-        db().from('site_slots').select('id,slot_date,starts_at,ends_at,capacity,status').eq('site_id', props.siteId).gte('slot_date', phToday()).order('slot_date').order('starts_at').limit(120),
+        db().from('site_slots').select('id,slot_date,starts_at,ends_at,capacity,status').eq('site_id', props.siteId).gte('slot_date', selectedSlotDate).lte('slot_date', slotRangeEnd).order('slot_date').order('starts_at'),
         db().from('site_closures').select('id,starts_on,ends_on,starts_at,ends_at,reason').eq('site_id', props.siteId).lte('starts_on', monthEnd).gte('ends_on', specialMonth).order('starts_on').limit(60),
         db().from('site_operating_exceptions').select('id,exception_date,opens_at,closes_at,is_closed,reason').eq('site_id', props.siteId).gte('exception_date', specialMonth).lte('exception_date', monthEnd).order('exception_date').limit(120),
+        loadSlots(props.siteId, selectedSlotDate, slotRangeEnd),
       ]);
       if (hourResult.error) throw hourResult.error;
       if (slotResult.error) throw slotResult.error;
@@ -748,12 +936,18 @@ function SchedulePage(props: Props & { view?: 'all' | 'hours' | 'capacity'; embe
       });
       setHours(loadedHours); setSavedHours(loadedHours);
       setSlots(slotResult.data ?? []);
+      setSlotAvailability(availabilityRows);
       setClosures(closureResult.data ?? []);
       setSpecialHours(exceptionResult.data ?? []);
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not load site schedule.'); }
     finally { finishLoading(); }
-  }, [finishLoading, props.notify, props.siteId, specialMonth]);
+  }, [finishLoading, props.notify, props.siteId, selectedSlotDate, slotRangeEnd, specialMonth]);
   useEffect(() => { void refresh(); }, [refresh]);
+  const slotWeekEnd = slotRangeEnd;
+  const availabilityById = new Map(slotAvailability.map((slot) => [slot.slot_id, slot]));
+  const visibleSlots = slots;
+  const selectedDateHours = hours[new Date(`${selectedSlotDate}T12:00:00+08:00`).getDay()];
+  const slotBooked = (slot: Record<string, any>) => Math.max(0, Number(slot.capacity) - (availabilityById.get(slot.id)?.remaining_capacity ?? Number(slot.capacity)));
 
   const changeHour = (weekday: number, change: Partial<Hour>) => setHours((current) =>
     current.map((row) => row.weekday === weekday ? { ...row, ...change } : row));
@@ -783,14 +977,20 @@ function SchedulePage(props: Props & { view?: 'all' | 'hours' | 'capacity'; embe
   const addSlot = async (event: FormEvent) => {
     event.preventDefault();
     if (!props.siteId || !slotForm.starts_at || !slotForm.ends_at || Number(slotForm.capacity) < 1) return;
+    const booked = slots.find((slot) => slot.id === editingSlotId);
+    if (editingSlotId && booked && (slotForm.date !== booked.slot_date || slotForm.starts_at !== String(booked.starts_at).slice(0, 5) || slotForm.ends_at !== String(booked.ends_at).slice(0, 5)) && slotBooked(booked) > 0) {
+      props.notify('This slot has reservations. Keep its date and time; handle affected bookings before moving it.'); return;
+    }
+    if (editingSlotId && booked && Number(slotForm.capacity) < slotBooked(booked)) { props.notify('Capacity cannot be lower than the reserved visitor count.'); return; }
     setSaving(true);
     try {
-      const { error } = await db().from('site_slots').insert({
-        site_id: props.siteId, slot_date: slotForm.date, starts_at: slotForm.starts_at,
-        ends_at: slotForm.ends_at, capacity: Number(slotForm.capacity), created_by: props.user?.id,
-      });
+      const query = db().from('site_slots');
+      const { error } = editingSlotId
+        ? await query.update({ slot_date: slotForm.date, starts_at: slotForm.starts_at, ends_at: slotForm.ends_at, capacity: Number(slotForm.capacity) }).eq('id', editingSlotId)
+        : await query.insert({ site_id: props.siteId, slot_date: slotForm.date, starts_at: slotForm.starts_at, ends_at: slotForm.ends_at, capacity: Number(slotForm.capacity), created_by: props.user?.id });
       if (error) throw error;
-      props.notify('Visit slot added. Booking requests will check its operating hours and remaining capacity.');
+      props.notify(editingSlotId ? 'Visit slot updated.' : 'Visit slot added. Booking requests check its remaining capacity.');
+      setSlotModalOpen(false); setEditingSlotId('');
       setSlotForm({ ...slotForm, starts_at: '', ends_at: '', capacity: '' });
       await refresh();
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not add the visit slot.'); }
@@ -836,10 +1036,36 @@ function SchedulePage(props: Props & { view?: 'all' | 'hours' | 'capacity'; embe
     finally { setSaving(false); }
   };
   const toggleSlot = async (slot: Record<string, any>) => {
+    const booked = slotBooked(slot);
+    if (slot.status === 'open' && booked > 0 && !window.confirm(`${booked} visitor(s) have reservations for this slot. Close it only after arranging the affected bookings. Continue?`)) return;
     const next = slot.status === 'open' ? 'closed' : 'open';
     const { error } = await db().from('site_slots').update({ status: next }).eq('id', slot.id);
     if (error) props.notify(error.message);
     else { props.notify('Slot status updated.'); await refresh(); }
+  };
+  const generateSlots = async () => {
+    const exception = specialHours.find((row) => row.exception_date === selectedSlotDate);
+    const hoursForDate = exception ? exception.is_closed ? null : exception : selectedDateHours && !selectedDateHours.is_closed ? selectedDateHours : null;
+    if (!props.siteId || !hoursForDate?.opens_at || !hoursForDate?.closes_at) { props.notify('No operating hours are configured for this date.'); return; }
+    const duration = Number(slotDuration), capacity = Number(slotForm.capacity);
+    if (!Number.isInteger(duration) || duration < 15 || duration > 480 || !Number.isInteger(capacity) || capacity < 1) { props.notify('Enter a slot duration from 15 to 480 minutes and a valid capacity.'); return; }
+    const start = Number(hoursForDate.opens_at.slice(0, 2)) * 60 + Number(hoursForDate.opens_at.slice(3, 5));
+    const end = Number(hoursForDate.closes_at.slice(0, 2)) * 60 + Number(hoursForDate.closes_at.slice(3, 5));
+    const proposed = [];
+    for (let minute = start; minute + duration <= end; minute += duration) {
+      const time = (value: number) => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}:00`;
+      proposed.push({ site_id: props.siteId, slot_date: selectedSlotDate, starts_at: time(minute), ends_at: time(minute + duration), capacity, created_by: props.user?.id });
+    }
+    if (!proposed.length) { props.notify('Operating hours are shorter than the selected slot duration.'); return; }
+    const existing = slots.filter((slot) => slot.slot_date === selectedSlotDate);
+    if (proposed.some((candidate) => existing.some((slot) => candidate.starts_at < slot.ends_at && candidate.ends_at > slot.starts_at))) { props.notify('Existing slots overlap this generated schedule. No slots were added.'); return; }
+    setSaving(true);
+    try {
+      const { error } = await db().from('site_slots').insert(proposed);
+      if (error) throw error;
+      props.notify(`${proposed.length} visit slots generated.`); setSlotModalOpen(false); await refresh();
+    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not generate visit slots.'); }
+    finally { setSaving(false); }
   };
   const saveDailyCapacity = async (event: FormEvent) => {
     event.preventDefault();
@@ -930,21 +1156,17 @@ function SchedulePage(props: Props & { view?: 'all' | 'hours' | 'capacity'; embe
         </section>
       </div>
     </div><div className="schedule-settings-actions"><button type="button" className="btn btn-outline" disabled={loading || saving || !hoursDirty} onClick={() => setHours(savedHours)}>Discard Changes</button><button type="button" className="btn btn-primary" disabled={loading || saving || !hoursDirty} onClick={() => void saveHours()}>{saving ? 'Saving…' : 'Save Operating Hours'} <Check size={15}/></button></div></>}{showCapacity && <>
-      {props.role === 'tourism_office' && site && <div className="schedule-card"><div className="schedule-head"><span><small>VISITOR BOOKING AVAILABILITY</small><h3>Daily booking limit</h3></span></div>
+      {(props.role === 'tourism_office' || props.role === 'site_admin') && site && <div className="schedule-card"><div className="schedule-head"><span><small>VISITOR BOOKING AVAILABILITY</small><h3>Daily booking limit</h3></span></div>
         <form className="slot-admin-form" onSubmit={(event) => void saveDailyCapacity(event)}><label>Visitors per day<input type="number" min="1" max="100000" step="1" value={dailyCapacity} onChange={(event) => setDailyCapacity(event.target.value)} placeholder="No configured limit"/></label><span className="field-hint">Shared across this destination’s booking slots. Leave blank for no configured daily limit.</span><button className="btn btn-primary" disabled={loading || saving}>{saving ? 'Saving…' : 'Save daily limit'} <Check size={15}/></button></form>
       </div>}
-      <div className="schedule-card"><div className="schedule-head"><span><small>DATE-SPECIFIC CAPACITY</small><h3>Add a visit slot</h3></span></div>
-        <form className="slot-admin-form" onSubmit={(event) => void addSlot(event)}><label>Date<input type="date" min={phToday()} value={slotForm.date} onChange={(event) => setSlotForm({ ...slotForm, date: event.target.value })} required/></label>
-          <label>Starts<TimePicker value={slotForm.starts_at} onChange={(starts_at) => setSlotForm({ ...slotForm, starts_at })} required/></label>
-          <label>Ends<TimePicker value={slotForm.ends_at} onChange={(ends_at) => setSlotForm({ ...slotForm, ends_at })} required/></label>
-          <label>Capacity<input type="number" min="1" max="100000" value={slotForm.capacity} onChange={(event) => setSlotForm({ ...slotForm, capacity: event.target.value })} required/></label>
-          <button className="btn btn-primary" disabled={loading || saving}>{saving ? 'Saving…' : 'Add slot'} <Plus size={15}/></button></form>
-        {!slots.length && <div className="empty-inline">{loading ? 'Loading…' : 'No upcoming slots have been added.'}</div>}
-        {!loading && <div className="table-card"><table><thead><tr><th>Date</th><th>Time</th><th>Capacity</th><th>Status</th><th/></tr></thead><tbody>{slots.map((slot) => <tr key={slot.id}>
-          <td>{dateLabel(slot.slot_date)}</td><td>{timeLabel(slot.starts_at)} – {timeLabel(slot.ends_at)}</td><td>{slot.capacity}</td><td><span className={slot.status === 'open' ? 'status-tag paid' : 'status-tag'}>{slot.status}</span></td>
-          <td><button className="link-btn" onClick={() => void toggleSlot(slot)}>{slot.status === 'open' ? 'Close' : 'Open'}</button></td></tr>)}</tbody></table></div>}
-      </div>
-      {props.role === 'tourism_office' && site && <CapacityPanel key={site.id} {...props} site={site} canSetApprovedLimit/>}
+      <section className="schedule-card slot-calendar"><header className="slot-calendar-head"><span><small>DATE-SPECIFIC CAPACITY</small><h3>Capacity & Booking Slots</h3><p>Manage visitor availability by date and time.</p></span><div><button className={'btn btn-outline' + (slotView === 'day' ? ' selected' : '')} onClick={() => setSlotView('day')}>Day</button><button className={'btn btn-outline' + (slotView === 'week' ? ' selected' : '')} onClick={() => setSlotView('week')}>Week</button></div></header>
+        <div className="slot-date-bar"><label>Selected date<input type="date" min={phToday()} value={selectedSlotDate} onChange={(event) => { setSelectedSlotDate(event.target.value); setSlotForm((current) => ({ ...current, date: event.target.value })); }}/></label><strong>{dateLabel(selectedSlotDate)}{slotView === 'week' ? ` – ${dateLabel(slotWeekEnd)}` : ''}</strong><div><button className="btn btn-outline" onClick={() => { const shift = slotView === 'day' ? 1 : 7; setSelectedSlotDate(new Date(Date.parse(`${selectedSlotDate}T12:00:00+08:00`) + shift * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })); }}>Next {slotView}</button></div></div>
+        <div className="slot-summary-grid"><article><b>{visibleSlots.length}</b><small>Time slots</small></article><article><b>{visibleSlots.filter((slot) => slot.status === 'open').reduce((sum, slot) => sum + Number(slot.capacity), 0)}</b><small>Open capacity</small></article><article><b>{visibleSlots.filter((slot) => slot.status === 'open').reduce((sum, slot) => sum + (availabilityById.get(slot.id)?.remaining_capacity ?? Number(slot.capacity)), 0)}</b><small>Spaces remaining</small></article><article><b>{visibleSlots.filter((slot) => slot.status === 'closed').length}</b><small>Closed slots</small></article></div>
+        <div className="slot-calendar-actions"><button className="btn btn-primary" onClick={() => { setEditingSlotId(''); setSlotForm({ date: selectedSlotDate, starts_at: '', ends_at: '', capacity: dailyCapacity || '' }); setSlotModalOpen(true); }}><Plus size={15}/> Add slot</button><label>Duration<select value={slotDuration} onChange={(event) => setSlotDuration(event.target.value)}><option value="30">30 minutes</option><option value="60">1 hour</option><option value="90">90 minutes</option><option value="120">2 hours</option></select></label><button className="btn btn-outline" onClick={() => void generateSlots()} disabled={saving || loading}>Generate daily slots</button></div>
+        {loading ? <div className="empty-inline" role="status">Loading slots…</div> : !visibleSlots.length ? <div className="empty-inline">No slots for this {slotView}. Add a slot or generate from operating hours.</div> : <div className="table-card"><table><thead><tr>{slotView === 'week' && <th>Date</th>}<th>Time</th><th>Booked / Capacity</th><th>Availability</th><th>Status</th><th>Actions</th></tr></thead><tbody>{visibleSlots.map((slot) => { const availability = availabilityById.get(slot.id); const booked = slotBooked(slot); const remaining = availability?.remaining_capacity ?? Number(slot.capacity); return <tr key={slot.id}>{slotView === 'week' && <td>{dateLabel(slot.slot_date)}</td>}<td>{timeLabel(slot.starts_at)} – {timeLabel(slot.ends_at)}</td><td>{booked} / {slot.capacity}<small>{remaining} remaining</small></td><td><div className="slot-availability-track" role="progressbar" aria-label={`${booked} of ${slot.capacity} visitors booked`} aria-valuemin={0} aria-valuemax={Number(slot.capacity)} aria-valuenow={booked}><i style={{ width: `${Math.min(100, booked / Math.max(1, Number(slot.capacity)) * 100)}%` }}/></div></td><td><span className={slot.status === 'open' ? 'status-tag paid' : 'status-tag'}>{slot.status}</span></td><td><button className="link-btn" onClick={() => { setEditingSlotId(slot.id); setSlotForm({ date: slot.slot_date, starts_at: String(slot.starts_at).slice(0, 5), ends_at: String(slot.ends_at).slice(0, 5), capacity: String(slot.capacity) }); setSlotModalOpen(true); }}>Edit</button> <button className="link-btn" onClick={() => void toggleSlot(slot)}>{slot.status === 'open' ? 'Close' : 'Reopen'}</button></td></tr>; })}</tbody></table></div>}
+      </section>
+      {slotModalOpen && <div className="slot-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setSlotModalOpen(false); }}><section className="slot-modal" role="dialog" aria-modal="true" aria-labelledby="slot-modal-title"><header><span><small>{editingSlotId ? 'EDIT SLOT' : 'NEW AVAILABILITY'}</small><h3 id="slot-modal-title">{editingSlotId ? 'Edit visit slot' : 'Add visit slot'}</h3></span><button className="icon-btn" aria-label="Close" onClick={() => setSlotModalOpen(false)}>×</button></header><form className="slot-admin-form" onSubmit={(event) => void addSlot(event)}><label>Date<input type="date" min={phToday()} value={slotForm.date} onChange={(event) => setSlotForm({ ...slotForm, date: event.target.value })} required/></label><label>Starts<TimePicker value={slotForm.starts_at} onChange={(starts_at) => setSlotForm({ ...slotForm, starts_at })} required/></label><label>Ends<TimePicker value={slotForm.ends_at} onChange={(ends_at) => setSlotForm({ ...slotForm, ends_at })} required/></label><label>Capacity<input type="number" min="1" max="100000" value={slotForm.capacity} onChange={(event) => setSlotForm({ ...slotForm, capacity: event.target.value })} required/></label><div className="announcement-form-actions"><button type="button" className="btn btn-outline" onClick={() => setSlotModalOpen(false)}>Cancel</button><button className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : editingSlotId ? 'Save changes' : 'Add slot'}</button></div></form></section></div>}
+      {site && <CapacityPanel key={site.id} {...props} site={site} canSetApprovedLimit={props.role === 'tourism_office'}/>}
       </>}
     </>}
   </section>;
@@ -990,7 +1212,7 @@ function PeoplePage(props: Props) {
       setStaffLoadError(message);
       errors.push('Staff assignments: ' + message);
     }
-    if (props.role === 'tourism_office') {
+    if (props.role === 'tourism_office' || props.role === 'site_admin') {
       try {
         const { data, error } = await db().from('support_requests').select('id,user_id,booking_id,subject,message,status,staff_response,created_at,profiles!support_requests_user_id_fkey(full_name,email),booking:bookings!support_requests_booking_id_fkey(booking_reference,site:tourism_sites!bookings_site_id_fkey(name))')
           .order('created_at', { ascending: false }).limit(100);
@@ -1159,7 +1381,7 @@ function SiteImagesManager(props: Props) {
   };
   return <div className="schedule-card"><div className="schedule-head"><span><small>DESTINATION MEDIA</small><h3>Photos {site ? '· ' + site.name : ''}</h3></span><ImagePlus size={18}/></div>
     {!site && <div className="empty-inline">Select an assigned destination to manage its photos.</div>}
-      {site && <><div className="image-manager-grid">{site.images.map((image) => <div className="managed-image" key={image.id}><img src={image.public_url} alt={image.alt_text || site.name}/><span>{image.alt_text || site.name}</span><button aria-label="Remove image" title={site.status === 'published' && site.images.length <= 1 ? 'Published destinations must keep at least one photo' : 'Remove image'} disabled={site.status === 'published' && site.images.length <= 1} onClick={() => void remove(image)}><X size={14}/></button></div>)}
+      {site && <><div className="image-manager-grid">{site.images.map((image) => <div className="managed-image" key={image.id}><img src={image.public_url} alt={image.alt_text || site.name}/><span>{image.alt_text || site.name}</span><button type="button" aria-label="Remove image" title={site.status === 'published' && site.images.length <= 1 ? 'Published destinations must keep at least one photo' : 'Remove image'} disabled={site.status === 'published' && site.images.length <= 1} onClick={() => void remove(image)}><X size={14}/></button></div>)}
       {!site.images.length && <div className="empty-inline">No destination photos uploaded.</div>}</div>
       <div className="image-upload-row"><label>Photo description<input value={alt} onChange={(event) => setAlt(event.target.value)} maxLength={250} placeholder={site.name}/></label>
         <label className="btn btn-outline image-pick">{busy ? 'Uploading…' : atImageLimit ? 'Photo limit reached' : 'Add photo'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || atImageLimit} onChange={(event) => void upload(event)}/></label>
@@ -1355,11 +1577,16 @@ function SitesPage(props: Props) {
   const [photos, setPhotos] = useState<PendingSitePhoto[]>([]);
   const previewUrls = useRef(new Set<string>());
   const [editing, setEditing] = useState('');
+  const [addingDestination, setAddingDestination] = useState(false);
+  const [editorTab, setEditorTab] = useState<'overview' | 'capacity' | 'photos' | 'management' | 'staff'>('overview');
   const [days, setDays] = useState<number[]>([]);
   const [opens, setOpens] = useState('');
   const [closes, setCloses] = useState('');
   const [loading, setLoading] = useState(false);
   const [statusBusy, setStatusBusy] = useState('');
+  const [siteStaff, setSiteStaff] = useState<Array<{ id: string; staff_role: string; name: string; email: string | null }>>([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const site = props.sites.find((item) => item.id === props.siteId) ?? null;
 
   useEffect(() => () => previewUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
   const releasePhotos = (items: PendingSitePhoto[]) => items.forEach(({ preview }) => {
@@ -1386,7 +1613,10 @@ function SitesPage(props: Props) {
     ...(['adult_fee', 'child_fee', 'pwd_discount_percent'].includes(key) ? { fee_information_confirmed: false } : {}),
   }));
   const beginEdit = (site: Site) => {
+    setAddingDestination(false);
     setEditing(site.id);
+    setEditorTab('overview');
+    props.setSiteId(site.id);
     setDraft({
       name: site.name, category: site.category, description: site.description, address: site.address,
       latitude: site.latitude == null ? '' : String(site.latitude), longitude: site.longitude == null ? '' : String(site.longitude),
@@ -1396,10 +1626,33 @@ function SitesPage(props: Props) {
       max_per_booking: String(site.max_per_booking), cancellation_cutoff_hours: String(site.cancellation_cutoff_hours),
     });
   };
+  useEffect(() => {
+    if (site && !editing && !addingDestination) beginEdit(site);
+  }, [site?.id, editing, addingDestination]);
+  useEffect(() => {
+    if (editorTab !== 'staff' || !site) return;
+    let active = true;
+    setStaffLoading(true); setSiteStaff([]);
+    void (async () => {
+      try {
+        const { data, error } = await db().from('staff_assignments')
+          .select('id,staff_role,profiles!staff_assignments_profile_id_fkey(full_name,email)')
+          .eq('site_id', site.id).eq('is_active', true).order('created_at');
+        if (error) throw error;
+        if (active) setSiteStaff((data ?? []).map((row: any) => {
+          const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+          return { id: row.id, staff_role: row.staff_role, name: profile?.full_name || profile?.email || 'Staff member', email: profile?.email ?? null };
+        }));
+      } catch (error) { if (active) props.notify(error instanceof Error ? error.message : 'Could not load destination staff.'); }
+      finally { if (active) setStaffLoading(false); }
+    })();
+    return () => { active = false; };
+  }, [editorTab, site?.id, props.notify]);
   const slugFromName = (name: string) => name.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const saveSite = async (event: FormEvent) => {
     event.preventDefault();
-    if (!props.user) { props.notify('Sign in with a Tourism Office account first.'); return; }
+    if (!props.user) { props.notify('Sign in to manage this destination.'); return; }
+    if (!editing && props.role !== 'tourism_office') { props.notify('Only Tourism Office can create destinations.'); return; }
     const siteName = draft.name.trim(), category = draft.category.trim();
     if (siteName.length < 2 || siteName.length > 160 || category.length < 2 || category.length > 80) {
       props.notify('Enter a destination name and category with at least 2 characters.'); return;
@@ -1487,8 +1740,10 @@ function SitesPage(props: Props) {
       }
       props.setSiteId(createdSiteId);
       props.notify(editing ? 'Destination details and fees saved.' : 'Official destination created and published.');
-      if (!editing) { releasePhotos(photos); setPhotos([]); }
-      setDraft(emptyDraft()); setEditing(''); setDays([]); setOpens(''); setCloses('');
+      if (!editing) {
+        releasePhotos(photos); setPhotos([]); setDraft(emptyDraft()); setEditing('');
+        setAddingDestination(false); setEditorTab('overview'); setDays([]); setOpens(''); setCloses('');
+      }
       props.refresh();
     } catch (error) {
       const cleanupErrors: string[] = [];
@@ -1532,56 +1787,86 @@ function SitesPage(props: Props) {
     finally { setStatusBusy(''); }
   };
 
-  const site = props.sites.find((item) => item.id === props.siteId) ?? null;
-  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> TOURISM OFFICE · NETWORK</span>
-    <h1>Places and <em>people.</em></h1><p>Create official destination records with photos, current fees, and operating hours.</p></div>
-    <button className="btn btn-outline" onClick={() => props.go('Staff and accounts')}>Manage site staff <Users size={15}/></button></div>
-    <div className="sites-admin-layout"><div className="sites-admin-list"><div className="card-heading"><span><small>DATABASE RECORDS</small><h3>Destinations</h3></span><span>{props.sites.length} total</span></div>
-      {!props.sites.length && <div className="empty-inline">No destination records have been created.</div>}
-      {props.sites.map((item) => <article className={props.siteId === item.id ? 'site-admin-row selected' : 'site-admin-row'} key={item.id}>
-        <button className="site-admin-main" onClick={() => props.setSiteId(item.id)}><span><b>{item.name}</b><small>{item.address || item.category} · {item.fee_information_confirmed ? `Adult ${money(item.adult_fee)} / child ${money(item.child_fee)}` : 'Fee information needs confirmation'}</small></span><span className={'status-tag ' + (item.status === 'published' ? 'paid' : '')}>{item.status.replace('_', ' ')}</span></button>
-        <div className="site-admin-actions"><button className="link-btn" onClick={() => beginEdit(item)}>Edit</button>
-          <select aria-label={'Change status for ' + item.name} value={item.status} disabled={statusBusy === item.id} onChange={(event) => void updateStatus(item, event.target.value)}>
-            {['draft', 'published', 'temporarily_closed', 'inactive'].map((status) => <option key={status} value={status}>{status.replace('_', ' ')}</option>)}
-          </select></div>
-      </article>)}
-    </div>
-    <div className="sites-admin-form"><form className="form-card" onSubmit={(event) => void saveSite(event)}><div className="card-heading"><span><small>{editing ? 'EDIT DESTINATION' : 'NEW DESTINATION'}</small><h3>{editing ? 'Update details' : 'Create an official site'}</h3></span><MapPin size={18}/></div>
-      <label>Destination name<input required value={draft.name} onChange={(event) => change('name', event.target.value)} maxLength={160}/></label>
-      <label>Category<input required value={draft.category} onChange={(event) => change('category', event.target.value)} maxLength={80} placeholder="Waterfall, spring, heritage site…"/></label>
-      <label>Location or address<input value={draft.address} onChange={(event) => change('address', event.target.value)} maxLength={500}/></label>
-      <div className="form-two"><label>Map latitude<input type="number" min="-90" max="90" step="any" value={draft.latitude} onChange={(event) => change('latitude', event.target.value)} placeholder="e.g. 8.23"/></label>
-        <label>Map longitude<input type="number" min="-180" max="180" step="any" value={draft.longitude} onChange={(event) => change('longitude', event.target.value)} placeholder="e.g. 124.24"/></label></div>
-      <p className="field-hint">Optional. Enter a verified coordinate pair to place this destination on the map.</p>
-      <label>Description<textarea value={draft.description} onChange={(event) => change('description', event.target.value)} maxLength={5000} rows={4}/></label>
-      {!editing && <div className="destination-photo-field" role="group" aria-labelledby="destination-photo-heading">
-        <div className="destination-photo-heading"><span><b id="destination-photo-heading">Destination photos</b><small>Choose at least 1 and up to 3 photos.</small></span><span className="destination-photo-count">{photos.length}/3</span></div>
-        <div className="destination-photo-grid">
-          {photos.map((photo, index) => <figure className="destination-photo-preview" key={photo.preview}>
-            <img src={photo.preview} alt={`Destination photo ${index + 1} preview`}/>
-            <button type="button" aria-label={`Remove destination photo ${index + 1}`} onClick={() => removePendingPhoto(photo.preview)} disabled={loading}><X size={14}/></button>
-            <figcaption>{index === 0 ? 'Cover photo' : `Photo ${index + 1}`}</figcaption>
-          </figure>)}
-          {photos.length < 3 && <label className="destination-photo-add"><ImagePlus size={20}/><span>{photos.length ? 'Add photos' : 'Choose photos'}</span>
-            <input type="file" accept="image/jpeg,image/png,image/webp" multiple aria-label="Choose 1 to 3 destination photos" disabled={loading} onChange={choosePhotos}/>
-          </label>}
-        </div>
-        <p className="field-hint" aria-live="polite">{photos.length ? `${photos.length} of 3 selected · The first photo is the cover.` : 'JPEG, PNG, or WebP · maximum 5 MiB each. At least one photo is required.'}</p>
-      </div>}
-      <div className="form-two"><label>Adult fee (PHP)<input type="number" min="0" step="0.01" required value={draft.adult_fee} onChange={(event) => change('adult_fee', event.target.value)}/></label>
-        <label>Child fee (PHP)<input type="number" min="0" step="0.01" required value={draft.child_fee} onChange={(event) => change('child_fee', event.target.value)}/></label></div>
-      <label>PWD discount (%)<input type="number" min="0" max="100" step="0.01" required value={draft.pwd_discount_percent} onChange={(event) => change('pwd_discount_percent', event.target.value)}/></label>
-      <small className="field-hint">Set a PWD discount only when adult and child admission fees match. Manage daily booking limits in Schedule &amp; Operations.</small>
-      <label className="checkbox-field"><input type="checkbox" checked={draft.fee_information_confirmed} onChange={(event) => setDraft((current) => ({ ...current, fee_information_confirmed: event.target.checked }))}/> I confirm these are the destination’s current admission fees.</label>
-      <div className="form-two"><label>Max visitors / booking<input type="number" min="1" max="500" required value={draft.max_per_booking} onChange={(event) => change('max_per_booking', event.target.value)}/></label>
-        <label>Cancellation cutoff (hours)<input type="number" min="0" max="8760" required value={draft.cancellation_cutoff_hours} onChange={(event) => change('cancellation_cutoff_hours', event.target.value)}/></label></div>
-      {!editing && <><fieldset className="operating-days"><legend>Operating days</legend>{dayNames.map((day, weekday) => <label key={day}><input type="checkbox" checked={days.includes(weekday)} onChange={(event) => setDays(event.target.checked ? [...days, weekday] : days.filter((value) => value !== weekday))}/>{day.slice(0, 3)}</label>)}</fieldset>
-        <div className="form-two"><label>Opens at<TimePicker value={opens} onChange={setOpens} required/></label><label>Closes at<TimePicker value={closes} onChange={setCloses} required/></label></div></>}
-      <button className="btn btn-primary btn-wide" disabled={loading}>{loading ? 'Saving…' : editing ? 'Save destination' : 'Create official destination'} <Check size={15}/></button>
-      {editing && <button type="button" className="link-btn form-cancel" onClick={() => { setEditing(''); setDraft(emptyDraft()); }}>Cancel edit</button>}
-      {!editing && <p className="field-hint">Once saved, the destination appears publicly. Add visit slots so visitors can book a time.</p>}
-    </form></div></div>
-    {site && <><div className="workspace-panel-select"><label>Manage destination photos <SiteSelector {...props}/></label></div><SiteManagementPanel site={site} notify={props.notify} refresh={props.refresh}/><SiteImagesManager {...props}/></>}
+  const editorTabs: Array<{ id: typeof editorTab; label: string }> = [
+    { id: 'overview', label: 'Overview' }, { id: 'capacity', label: 'Capacity & Hours' }, { id: 'photos', label: 'Photos & Media' },
+    ...(props.role === 'tourism_office' ? [{ id: 'management' as const, label: 'Management' }] : []),
+    { id: 'staff', label: 'Staff & Assignments' },
+  ];
+  const visibleTabs = addingDestination ? editorTabs.slice(0, 3) : editorTabs;
+  const overviewFields = () => <>
+    <label>Destination name<input required value={draft.name} onChange={(event) => change('name', event.target.value)} maxLength={160}/></label>
+    <label>Category<input required value={draft.category} onChange={(event) => change('category', event.target.value)} maxLength={80} placeholder="Waterfall, spring, heritage site…"/></label>
+    <label>Location or address<input value={draft.address} onChange={(event) => change('address', event.target.value)} maxLength={500}/></label>
+    <div className="form-two"><label>Map latitude<input type="number" min="-90" max="90" step="any" value={draft.latitude} onChange={(event) => change('latitude', event.target.value)} placeholder="e.g. 8.23"/></label>
+      <label>Map longitude<input type="number" min="-180" max="180" step="any" value={draft.longitude} onChange={(event) => change('longitude', event.target.value)} placeholder="e.g. 124.24"/></label></div>
+    <p className="field-hint">Optional. Enter a verified coordinate pair to place this destination on the map.</p>
+    <label>Description<textarea value={draft.description} onChange={(event) => change('description', event.target.value)} maxLength={5000} rows={4}/></label>
+  </>;
+  const capacityFields = () => <>
+    <div className="form-two"><label>Adult fee (PHP)<input type="number" min="0" step="0.01" required value={draft.adult_fee} onChange={(event) => change('adult_fee', event.target.value)}/></label>
+      <label>Child fee (PHP)<input type="number" min="0" step="0.01" required value={draft.child_fee} onChange={(event) => change('child_fee', event.target.value)}/></label></div>
+    <label>PWD discount (%)<input type="number" min="0" max="100" step="0.01" required value={draft.pwd_discount_percent} onChange={(event) => change('pwd_discount_percent', event.target.value)}/></label>
+    <small className="field-hint">Set a PWD discount only when adult and child admission fees match.</small>
+    <label className="checkbox-field"><input type="checkbox" checked={draft.fee_information_confirmed} onChange={(event) => setDraft((current) => ({ ...current, fee_information_confirmed: event.target.checked }))}/> I confirm these are the destination’s current admission fees.</label>
+    <div className="form-two"><label>Max visitors / booking<input type="number" min="1" max="500" required value={draft.max_per_booking} onChange={(event) => change('max_per_booking', event.target.value)}/></label>
+      <label>Cancellation cutoff (hours)<input type="number" min="0" max="8760" required value={draft.cancellation_cutoff_hours} onChange={(event) => change('cancellation_cutoff_hours', event.target.value)}/></label></div>
+    {addingDestination ? <>
+      <fieldset className="operating-days"><legend>Default operating days</legend>{dayNames.map((day, weekday) => <label key={day}><input type="checkbox" checked={days.includes(weekday)} onChange={(event) => setDays(event.target.checked ? [...days, weekday] : days.filter((value) => value !== weekday))}/>{day.slice(0, 3)}</label>)}</fieldset>
+      <div className="form-two"><label>Opens at<TimePicker value={opens} onChange={setOpens} required/></label><label>Closes at<TimePicker value={closes} onChange={setCloses} required/></label></div>
+      <p className="field-hint">Detailed hours, capacity limits, and booking slots remain editable in Schedule &amp; Operations.</p>
+    </> : <div className="site-admin-crosslink"><span><b>Operating hours, capacity, and booking slots</b><small>Managed in Schedule &amp; Operations to keep visitor availability in sync.</small></span><button type="button" className="link-btn" onClick={() => props.go('Schedule & Operations')}>Open Schedule &amp; Operations <ArrowRight size={14}/></button></div>}
+  </>;
+  const pendingPhotoFields = () => <div className="destination-photo-field" role="group" aria-labelledby="destination-photo-heading">
+    <div className="destination-photo-heading"><span><b id="destination-photo-heading">Destination photos</b><small>Choose at least 1 and up to 3 photos.</small></span><span className="destination-photo-count">{photos.length}/3</span></div>
+    <div className="destination-photo-grid">{photos.map((photo, index) => <figure className="destination-photo-preview" key={photo.preview}>
+      <img src={photo.preview} alt={`Destination photo ${index + 1} preview`}/>
+      <button type="button" aria-label={`Remove destination photo ${index + 1}`} onClick={() => removePendingPhoto(photo.preview)} disabled={loading}><X size={14}/></button>
+      <figcaption>{index === 0 ? 'Cover photo' : `Photo ${index + 1}`}</figcaption>
+    </figure>)}
+      {photos.length < 3 && <label className="destination-photo-add"><ImagePlus size={20}/><span>{photos.length ? 'Add photos' : 'Choose photos'}</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple aria-label="Choose 1 to 3 destination photos" disabled={loading} onChange={choosePhotos}/></label>}
+    </div><p className="field-hint" aria-live="polite">{photos.length ? `${photos.length} of 3 selected · The first photo is the cover.` : 'JPEG, PNG, or WebP · maximum 5 MiB each. At least one photo is required.'}</p>
+  </div>;
+  const tabNav = <div className="site-editor-tabs" role="tablist" aria-label="Destination settings">{visibleTabs.map((tab) => <button key={tab.id} type="button" role="tab" id={`site-tab-${tab.id}`} aria-controls={`site-panel-${tab.id}`} aria-selected={editorTab === tab.id} tabIndex={editorTab === tab.id ? 0 : -1} className={editorTab === tab.id ? 'active' : ''} onClick={() => setEditorTab(tab.id)} onKeyDown={(event) => {
+    if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const index = visibleTabs.findIndex((item) => item.id === tab.id);
+    const target = event.key === 'Home' ? 0 : event.key === 'End' ? visibleTabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + visibleTabs.length) % visibleTabs.length;
+    setEditorTab(visibleTabs[target].id);
+    document.getElementById(`site-tab-${visibleTabs[target].id}`)?.focus();
+  }}>{tab.label}</button>)}</div>;
+  const editorContent = <>
+    {editorTab === 'overview' && <div className="site-editor-panel" role="tabpanel" tabIndex={0} id="site-panel-overview" aria-labelledby="site-tab-overview">
+      {addingDestination ? <div className="form-card">{overviewFields()}<div className="site-editor-actions"><button type="button" className="btn btn-primary" onClick={() => setEditorTab('capacity')}>Continue to Capacity &amp; Hours <ArrowRight size={15}/></button></div></div>
+        : <form className="form-card" onSubmit={(event) => void saveSite(event)}>{overviewFields()}<div className="site-editor-actions"><button className="btn btn-primary" disabled={loading}>{loading ? 'Saving…' : 'Save changes'} <Check size={15}/></button></div></form>}
+    </div>}
+    {editorTab === 'capacity' && <div className="site-editor-panel" role="tabpanel" tabIndex={0} id="site-panel-capacity" aria-labelledby="site-tab-capacity">
+      {addingDestination ? <div className="form-card">{capacityFields()}<div className="site-editor-actions"><button type="button" className="btn btn-primary" onClick={() => setEditorTab('photos')}>Continue to Photos <ArrowRight size={15}/></button></div></div>
+        : <form className="form-card" onSubmit={(event) => void saveSite(event)}>{capacityFields()}<div className="site-editor-actions"><button className="btn btn-primary" disabled={loading}>{loading ? 'Saving…' : 'Save changes'} <Check size={15}/></button></div></form>}
+    </div>}
+    {editorTab === 'photos' && <div className="site-editor-panel" role="tabpanel" tabIndex={0} id="site-panel-photos" aria-labelledby="site-tab-photos">
+      {addingDestination ? <form className="form-card" onSubmit={(event) => void saveSite(event)}>{pendingPhotoFields()}<p className="field-hint">Destination goes public after required details, fees, hours, and photos are saved.</p><div className="site-editor-actions"><button className="btn btn-primary" disabled={loading}>{loading ? 'Creating…' : 'Create official destination'} <Check size={15}/></button></div></form> : <SiteImagesManager {...props}/>}
+    </div>}
+    {!addingDestination && editorTab === 'management' && props.role === 'tourism_office' && site && <div className="site-editor-panel" role="tabpanel" tabIndex={0} id="site-panel-management" aria-labelledby="site-tab-management"><SiteManagementPanel site={site} notify={props.notify} refresh={props.refresh}/></div>}
+    {!addingDestination && editorTab === 'staff' && site && <div className="site-editor-panel" role="tabpanel" tabIndex={0} id="site-panel-staff" aria-labelledby="site-tab-staff">
+      <section className="schedule-card site-staff-panel"><div className="card-heading"><span><small>AUTHORIZED PERSONNEL</small><h3>{site.name} staff</h3></span><Users size={18}/></div>
+        {staffLoading ? <div className="empty-inline" role="status">Loading assigned staff…</div> : !siteStaff.length ? <div className="empty-inline">No active staff assignments for this destination.</div> : <div className="site-staff-list">{siteStaff.map((member) => <article key={member.id}><span><b>{member.name}</b><small>{member.email ?? 'Email unavailable'}</small></span><span className="status-tag">{member.staff_role.replace(/_/g, ' ')}</span></article>)}</div>}
+        <div className="site-staff-actions"><button type="button" className="btn btn-outline" onClick={() => props.go('Staff and accounts')}>Manage staff accounts <Users size={15}/></button><button type="button" className="btn btn-outline" onClick={() => props.go('Schedule & Operations')}>Open duty calendar <CalendarClock size={15}/></button></div>
+      </section>
+    </div>}
+  </>;
+  const pageHeading = <div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> {props.role === 'tourism_office' ? 'TOURISM OFFICE · NETWORK' : 'SITE ADMINISTRATION'}</span><h1>Places and <em>people.</em></h1><p>Manage tourism destinations and assigned personnel.</p></div>{props.role === 'tourism_office' && <button className="btn btn-primary" onClick={() => { releasePhotos(photos); setPhotos([]); setDraft(emptyDraft()); setDays([]); setOpens(''); setCloses(''); setEditing(''); setAddingDestination(true); setEditorTab('overview'); }}>Add destination <Plus size={16}/></button>}</div>;
+  const editorHeading = <div className="site-editor-heading"><div><small>{addingDestination ? 'NEW DESTINATION' : 'DESTINATION PROFILE'}</small><h2>{addingDestination ? 'Create an official destination' : site ? `Edit ${site.name}` : 'Loading destination…'}</h2></div>{site && <span className={'status-tag ' + (site.status === 'published' ? 'paid' : '')}>{site.status.replace('_', ' ')}</span>}</div>;
+  return <section className="dashboard-page section-wrap sites-admin-page">{pageHeading}
+    {addingDestination ? <main className="site-admin-create-view"><button type="button" className="link-btn site-editor-back" onClick={() => { setAddingDestination(false); setEditing(''); if (site) beginEdit(site); }}>← Back to destinations</button>{editorHeading}{tabNav}{editorContent}</main> : <div className="sites-admin-layout">
+      <aside className="sites-admin-list" aria-label="Destinations"><div className="card-heading"><span><small>PLACES AND PEOPLE</small><h3>Destinations</h3></span><span>{props.sites.length} total</span></div>
+        <label className="site-admin-mobile-picker">Destination<select aria-label="Select destination" value={site?.id ?? ''} onChange={(event) => { const selected = props.sites.find((item) => item.id === event.target.value); if (selected) beginEdit(selected); }}><option value="" disabled>Select destination</option>{props.sites.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <div className="site-admin-destination-list">{!props.sites.length && <div className="empty-inline">No destination records have been created.</div>}{props.sites.map((item) => <article className={site?.id === item.id ? 'site-admin-row selected' : 'site-admin-row'} key={item.id}>
+          <button className="site-admin-main" aria-current={site?.id === item.id ? 'true' : undefined} onClick={() => beginEdit(item)}><span><b>{item.name}</b><small>{item.address || item.category} · {item.fee_information_confirmed ? `Adult ${money(item.adult_fee)} / child ${money(item.child_fee)}` : 'Fee information needs confirmation'}</small></span><span className={'status-tag ' + (item.status === 'published' ? 'paid' : '')}>{item.status.replace('_', ' ')}</span></button>
+          <div className="site-admin-actions"><label className="field-optional">Status<select aria-label={'Change status for ' + item.name} value={item.status} disabled={statusBusy === item.id} onChange={(event) => void updateStatus(item, event.target.value)}>{['draft', 'published', 'temporarily_closed', 'inactive'].map((status) => <option key={status} value={status}>{status.replace('_', ' ')}</option>)}</select></label></div>
+        </article>)}</div>
+      </aside>
+      {site ? <main className="sites-admin-editor">{editorHeading}{tabNav}{editorContent}</main> : <div className="empty-card site-admin-empty"><MapPin size={26}/><h3>Select a destination</h3><p>Choose a destination to edit its details, media, access, and assignments.</p></div>}
+    </div>}
   </section>;
 }
 
@@ -1671,6 +1956,7 @@ function CapacityMapPage(props: Props) {
   const crowd = capacityStatus(occupancy);
   const approvedLimit = occupancy?.approved_visitor_limit;
   const mapLimit = crowd.limit;
+  const mapLimitLabel = crowd.basis === 'estimate' ? 'provisional daily estimate' : 'approved visitor limit';
   const atLimit = approvedLimit != null && (occupancy?.current_visitor_count ?? 0) >= approvedLimit;
   const limitPercent = crowd.percent;
   const approachingLimit = ['near', 'almost', 'critical'].includes(crowd.level) && !atLimit;
@@ -1678,10 +1964,10 @@ function CapacityMapPage(props: Props) {
   const capacityLabel = site?.status !== 'published' ? 'Closed / restricted' : crowd.label;
   return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> OPERATIONS · SITE CAPACITY</span><h1>Capacity <em>map.</em></h1><p>Live attendance and verified site-location records for {site?.name ?? 'the selected destination'}.</p></div>{!gatekeeper && <label className="staff-site-picker">Destination<SiteSelector {...props}/></label>}</div>
     {!site ? <div className="empty-card"><MapPinned size={28}/><h3>No destination selected</h3><p>Select a site assigned to your staff account.</p></div> : loading ? <div className="empty-card" role="status"><MapPinned size={28}/><h3>Loading capacity data</h3><p>Getting the records for {site.name}.</p></div> : <><div className="capacity-status-card"><div className={'capacity-status-label ' + (atLimit || site.status !== 'published' ? 'warning' : approachingLimit || approvedLimit == null ? 'informational' : 'available')}><span className="status-dot"/>{capacityLabel}</div>
-        {mapLimit != null ? <><div className="capacity-status-headline"><b>{loading ? '—' : occupancy?.current_visitor_count ?? '—'}</b><span>estimated visitors currently inside</span><strong>{remaining ?? '—'} remaining</strong></div><div className="capacity-progress" role="progressbar" aria-label="Recorded occupancy against map reference" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(limitPercent ?? 0))}><i style={{ width: `${Math.min(100, limitPercent ?? 0)}%` }}/></div><div className="capacity-progress-label"><span>{Math.round(limitPercent ?? 0)}% of {crowd.basis === 'estimated' ? 'provisional map estimate' : 'approved visitor limit'}</span><span>{crowd.basis === 'estimated' ? 'Estimate' : 'Limit'}: {mapLimit}</span></div>{crowd.basis === 'estimated' && <p className="field-hint">Provisional estimate for map coloring only. It does not restrict admission.</p>}</>
+        {mapLimit != null ? <><div className="capacity-status-headline"><b>{loading ? '—' : occupancy?.current_visitor_count ?? '—'}</b><span>visitors currently inside</span><strong>{remaining ?? '—'} spaces remaining</strong></div><div className="capacity-progress" role="progressbar" aria-label={`Recorded occupancy against ${mapLimitLabel}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, limitPercent ?? 0)}><i style={{ width: `${Math.min(100, limitPercent ?? 0)}%` }}/></div><div className="capacity-progress-label"><span>{formatCapacityPercent(limitPercent ?? 0)} of {mapLimitLabel}</span><span>Limit: {mapLimit}</span></div></>
           : <p>{occupancy ? 'Capacity Not Configured. Physical estimates remain informational and do not determine admission status.' : 'Capacity Data Unavailable. Refresh to try again.'}</p>}
         {atLimit && <div className="capacity-limit-alert"><ShieldCheck size={18}/><span>Approved visitor limit reached. New ticket arrivals and walk-in admissions will be rejected by the database.</span></div>}
-        {approachingLimit && <p className="field-hint">{crowd.label}: {Math.round(limitPercent!)}% recorded occupancy. Approved limit remains {approvedLimit} visitors.</p>}
+        {approachingLimit && <p className="field-hint">{crowd.label}: {formatCapacityPercent(limitPercent!)} recorded occupancy. {crowd.basis === 'estimate' ? 'Estimate is provisional; official approval remains unset.' : `Approved limit: ${approvedLimit} visitors.`}</p>}
         {site.status !== 'published' && <div className="capacity-limit-alert"><ShieldCheck size={18}/><span>This destination is not published. Follow the site’s approved closure procedure.</span></div>}
         <div className="capacity-live-grid">{[['Currently onsite', occupancy?.current_visitor_count], ['Arrivals today', occupancy?.arrivals_today], ['Departures today', occupancy?.departures_today], ['Provisional map estimate', occupancy?.estimated_live_capacity], ['Physical estimate', occupancy?.capacity_estimate]].map(([label, value]) => <article key={String(label)}><small>{label}{label === 'Physical estimate' || label === 'Provisional map estimate' ? ' · informational' : ''}</small><b>{loading ? '—' : value ?? 'Not recorded'}</b></article>)}</div>
         <p className="field-hint">Physical estimate and approved visitor limit are separate. No per-zone occupancy is inferred from the site-wide count.</p>
@@ -1843,9 +2129,11 @@ function CapacityPanel(props: Props & { site: Site; canSetApprovedLimit?: boolea
 function WalkInPage(props: Props) {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [slotId, setSlotId] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'' | 'cash' | 'gcash' | 'maya'>('');
   const [form, setForm] = useState({ name: '', email: '', phone: '', adults: 1, children: 0, pwd: 0 });
   const [visitorRecords, setVisitorRecords] = useState(() => emptyVisitorInformation(1));
   const [ticketToken, setTicketToken] = useState('');
+  const [ticketError, setTicketError] = useState('');
   const [reference, setReference] = useState('');
   const site = props.sites.find((item) => item.id === props.siteId);
   const [slotsLoading, finishSlotsLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.siteId}`);
@@ -1853,6 +2141,7 @@ function WalkInPage(props: Props) {
     ? calculateBookingTotal(site.adult_fee, site.child_fee, site.pwd_discount_percent, form.adults, form.children, form.pwd)
     : 0;
   const maxWalkInVisitors = site?.slug === 'sikyop-agri-tourism-adventure' ? Math.min(19, site.max_per_booking) : site?.max_per_booking ?? 20;
+  const walkInReady = Boolean(site && !props.busy && !slotsLoading && slots.some((slot) => slot.slot_id === slotId) && paymentMethod && !bookingContactError(form.name, form.email, form.phone) && visitorInformationComplete(visitorRecords, site.slug));
   useEffect(() => {
     setVisitorRecords((current) => resizeVisitorInformation(current, form.adults + form.children));
   }, [form.adults, form.children]);
@@ -1872,12 +2161,13 @@ function WalkInPage(props: Props) {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!site || !slotId) { props.notify('Choose a current slot.'); return; }
+    if (!paymentMethod) { props.notify('Select how the visitor paid.'); return; }
     if (!visitorInformationComplete(visitorRecords, site.slug)) { props.notify('Complete visitor information for everyone in the walk-in group.'); return; }
     const contactError = bookingContactError(form.name, form.email, form.phone);
     if (contactError) { props.notify(contactError); return; }
     props.setBusy(true);
     try {
-      const { data, error } = await db().rpc('register_walk_in_with_visitors', {
+      const { data, error } = await db().rpc('register_walk_in_with_payment', {
         p_site_id: site.id,
         p_slot_id: slotId,
         p_name: form.name.trim(),
@@ -1887,25 +2177,40 @@ function WalkInPage(props: Props) {
         p_email: form.email.trim() || null,
         p_phone: form.phone.trim() || null,
         p_visitors: visitorInformationPayload(visitorRecords, site.slug),
+        p_payment_method: paymentMethod,
       });
       if (error) throw error;
       const row = (Array.isArray(data) ? data[0] : data) as { booking_id: string; booking_reference: string; guest_access_token: string };
+      setReference(row.booking_reference);
+      setTicketToken('');
+      setTicketError('');
+      setForm({ name: '', email: '', phone: '', adults: 1, children: 0, pwd: 0 });
+      setVisitorRecords(emptyVisitorInformation(1));
+      setSlotId('');
+      setPaymentMethod('');
+      props.notify('Walk-in and payment recorded.');
       if (form.email.trim()) void invokeFunction('send-booking-email', {
         booking_reference: row.booking_reference,
         guest_access_token: row.guest_access_token || null,
         event: 'confirmed',
       }).catch(() => props.notify('Walk-in recorded, but the confirmation email could not be sent.'));
-      const result = await invokeFunction<{ token: string }>('ticket', {
-        booking_reference: row.booking_reference,
-        guest_access_token: row.guest_access_token || null,
-      });
-      setReference(row.booking_reference);
-      setTicketToken(result.token);
-      props.notify('Walk-in recorded.');
-      setForm({ name: '', email: '', phone: '', adults: 1, children: 0, pwd: 0 });
-      const refreshed = await loadSlots(site.id, phToday(), phToday());
-      setSlots(currentSlots(refreshed));
-  } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not register this walk-in.'); }
+      try {
+        const result = await invokeFunction<{ token: string }>('ticket', {
+          booking_reference: row.booking_reference,
+          guest_access_token: row.guest_access_token || null,
+        });
+        setTicketToken(result.token);
+      } catch {
+        setTicketError('Walk-in recorded; ticket could not be generated. Use the booking reference.');
+        props.notify('Walk-in recorded, but ticket generation failed.');
+      }
+      try {
+        const refreshed = await loadSlots(site.id, phToday(), phToday());
+        setSlots(currentSlots(refreshed));
+      } catch {
+        props.notify('Walk-in recorded, but today’s slots could not refresh.');
+      }
+    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not register this walk-in.'); }
     finally { props.setBusy(false); }
   };
   const slotOptions = slotsLoading ? [] : slots;
@@ -1921,13 +2226,15 @@ function WalkInPage(props: Props) {
       {site && <VisitorInformationForm siteSlug={site.slug} adults={form.adults} children={form.children} visitors={visitorRecords}
         onChange={(index, field, value) => setVisitorRecords((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item))}/>}
       {site.pwd_discount_percent > 0 && <label>PWD visitors<input type="number" min="0" max={form.adults + form.children} value={form.pwd} onChange={(event) => { const parsed = Number.parseInt(event.target.value, 10); setForm({ ...form, pwd: Math.max(0, Math.min(form.adults + form.children, Number.isNaN(parsed) ? 0 : parsed)) }); }} required/><small>{site.pwd_discount_percent}% discount per PWD visitor. Verify eligibility at the gate.</small></label>}
-      <div className="booking-total"><span>Estimated fees<small>{form.adults} adults · {form.children} children · {form.pwd} PWD · not collected</small></span><b>{money(total)}</b></div>
-      <button className="btn btn-primary btn-wide" disabled={props.busy || !slotOptions.length || !site || !visitorInformationComplete(visitorRecords, site.slug)}>{props.busy ? 'Saving…' : 'Record walk-in'} <Check size={16}/></button>
-      <p className="secure-note"><ShieldCheck size={14}/> Database checks site assignment, slot time, and shared daily capacity. No payment is recorded.</p>
+      <div className="booking-total"><span>Estimated fees<small>{form.adults} adults · {form.children} children · {form.pwd} PWD · {paymentMethod ? 'Payment method selected' : 'Payment method required'}</small></span><b>{money(total)}</b></div>
+      <label>Payment received through<select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as typeof paymentMethod)} required><option value="">Choose payment method</option><option value="cash">Cash</option><option value="gcash">GCash (online)</option><option value="maya">Maya (online)</option></select><small>Record after receiving payment. GCash/Maya entries are demo records; this form does not verify transfers.</small></label>
+      <button className="btn btn-primary btn-wide" disabled={!walkInReady}>{props.busy ? 'Saving…' : 'Record walk-in'} <Check size={16}/></button>
+      <p className="secure-note"><ShieldCheck size={14}/> Visitor, payment method, and payment status save with the walk-in.</p>
     </form><article className="qr-preview"><span className="eyebrow"><span className="eyebrow-line"/> WALK-IN TICKET</span>
       {ticketToken ? <><h3>{reference}</h3><div className="ticket-qr"><QRCodeSVG value={ticketToken} size={190} level="H" includeMargin/><small>Present this QR code at the entry point for validation.</small></div>
         <button className="link-btn" onClick={() => { void navigator.clipboard.writeText(reference); props.notify('Booking reference copied.'); }}>Copy booking reference</button></>
-        : <div className="empty-card compact-empty"><TicketIcon size={28}/><h3>Ticket appears after registration</h3><p>Only a walk-in successfully recorded by the database receives a ticket.</p></div>}
+        : ticketError ? <div className="empty-card compact-empty"><TicketIcon size={28}/><h3>{reference}</h3><p>{ticketError}</p><button className="link-btn" onClick={() => { void navigator.clipboard.writeText(reference); props.notify('Booking reference copied.'); }}>Copy booking reference</button></div>
+          : <div className="empty-card compact-empty"><TicketIcon size={28}/><h3>Ticket appears after registration</h3><p>Only a walk-in successfully recorded by the database receives a ticket.</p></div>}
     </article></div>}
   </section>;
 }

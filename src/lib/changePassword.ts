@@ -3,25 +3,36 @@ import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
 type PasswordAuth = Pick<SupabaseClient['auth'], 'signInWithPassword' | 'updateUser'>;
 type RecoveryAuth = Pick<SupabaseClient['auth'], 'getSession' | 'exchangeCodeForSession' | 'verifyOtp' | 'updateUser'>;
 
-export async function completePasswordReset(auth: RecoveryAuth, code: string | null, newPassword: string, tokenHash: string | null = null): Promise<void> {
+export async function completePasswordReset(
+  auth: RecoveryAuth,
+  code: string | null,
+  newPassword: string,
+  tokenHash: string | null = null,
+  recoveryUserId: string | null = null,
+  onRecoverySession?: (userId: string) => void,
+): Promise<void> {
   if (newPassword.length < 8) throw new Error('New password must be at least 8 characters.');
+  const invalidLink = 'This password reset link is invalid or has expired. Request a new link to continue.';
   let session: Session | null = null;
   if (tokenHash) {
     const result = await auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' });
-    if (result.error) throw new Error('This password reset link is invalid or expired. Request a new one.');
+    if (result.error) throw new Error(invalidLink);
     session = result.data.session;
-  }
-  if (!session) {
-    const result = await auth.getSession();
-    if (result.error) throw new Error('Could not verify this password reset link. Open the latest link in the same browser or request a new one.');
-    session = result.data.session;
-  }
-  if (!session && code) {
+  } else if (code) {
     const result = await auth.exchangeCodeForSession(code);
-    if (result.error) throw new Error('Could not verify this password reset link. Open the latest link in the same browser or request a new one.');
+    if (result.error) throw new Error('Could not verify this password reset link. Request a new link to continue.');
     session = result.data.session;
+  } else if (recoveryUserId) {
+    const result = await auth.getSession();
+    if (result.error || result.data.session?.user.id !== recoveryUserId) {
+      throw new Error('Could not verify this password reset link. Request a new link to continue.');
+    }
+    session = result.data.session;
+  } else {
+    throw new Error(invalidLink);
   }
-  if (!session) throw new Error('Password reset session is missing. Request a new reset link and open it in the same browser.');
+  if (!session?.user.id) throw new Error(invalidLink);
+  onRecoverySession?.(session.user.id);
   const { error: updateError } = await auth.updateUser({ password: newPassword });
   if (updateError) throw updateError;
 }

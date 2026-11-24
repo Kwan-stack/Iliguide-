@@ -1,4 +1,4 @@
-import type { LiveOccupancy, Site } from './iliguide';
+import type { LiveOccupancy, Site, SiteCapacityForDate } from './iliguide';
 
 export type CrowdLevel = 'available' | 'near' | 'almost' | 'critical' | 'unconfigured' | 'unknown';
 
@@ -7,21 +7,28 @@ export function capacityHeatOpacity(percent: number) {
 }
 
 export function formatCapacityPercent(percent: number) {
-  return percent > 0 && percent < 10 ? `${percent.toFixed(1)}%` : `${Math.round(percent)}%`;
+  return percent > 0 && percent < 1 ? `${percent.toFixed(2)}%`
+    : percent > 0 && percent < 10 ? `${percent.toFixed(1)}%` : `${Math.round(percent)}%`;
 }
 
 export function capacityStatus(occupancy: LiveOccupancy | null | undefined) {
   if (!occupancy || !Number.isFinite(occupancy.current_visitor_count)) return { level: 'unknown' as CrowdLevel, percent: null, label: 'Capacity Data Unavailable', limit: null, basis: 'none' as const };
-  const limit = occupancy.approved_visitor_limit ?? occupancy.estimated_live_capacity ?? null;
-  const basis = occupancy.approved_visitor_limit != null ? 'approved' as const : occupancy.estimated_live_capacity != null ? 'estimated' as const : 'none' as const;
+  const estimate = occupancy.estimated_live_capacity ?? occupancy.capacity_estimate ?? null;
+  const limit = occupancy.approved_visitor_limit ?? estimate;
+  const basis = occupancy.approved_visitor_limit != null ? 'approved' as const : estimate != null ? 'estimate' as const : 'none' as const;
   if (limit == null || limit <= 0) return { level: 'unconfigured' as CrowdLevel, percent: null, label: 'Capacity Not Configured', limit: null, basis };
   const percent = occupancy.current_visitor_count * 100 / limit;
   const near = occupancy.near_threshold_percent ?? 70;
   const almost = occupancy.almost_threshold_percent ?? 85;
   const critical = occupancy.critical_threshold_percent ?? 95;
   const level: CrowdLevel = percent >= critical ? 'critical' : percent >= almost ? 'almost' : percent >= near ? 'near' : 'available';
-  const label = { available: 'Available', near: 'Near Capacity', almost: 'Almost Full', critical: 'Full / Overcrowded' }[level];
+  const label = { available: 'Available', near: 'Near Capacity', almost: 'Almost Full', critical: 'Full / Overcrowded' }[level]
+    + (basis === 'estimate' ? ' · Provisional estimate' : '');
   return { level, percent, label, limit, basis };
+}
+
+export function scheduledCapacityStatus(snapshot: SiteCapacityForDate | null | undefined) {
+  return snapshot ? capacityStatus({ ...snapshot, current_visitor_count: snapshot.projected_visitor_count }) : capacityStatus(null);
 }
 
 export function operatingStatus(site: Site, now = new Date()) {

@@ -1,7 +1,7 @@
 alter table public.reviews
-  add column category text not null default 'overall_experience'
+  add column if not exists category text not null default 'overall_experience'
     check (category in ('overall_experience', 'cleanliness', 'facilities', 'staff_service', 'safety', 'accessibility')),
-  add column moderation_note text;
+  add column if not exists moderation_note text;
 
 create table public.review_reports (
   id uuid primary key default gen_random_uuid(),

@@ -66,6 +66,7 @@ export type Slot = {
 export type LiveOccupancy = {
   site_id: string;
   current_visitor_count: number;
+  expected_visitor_count?: number;
   arrivals_today: number;
   departures_today: number;
   last_recorded_at: string | null;
@@ -78,6 +79,15 @@ export type LiveOccupancy = {
   almost_threshold_percent?: number;
   critical_threshold_percent?: number;
   restrict_at_warning?: boolean;
+};
+export type SiteCapacityForDate = LiveOccupancy & {
+  visit_date: string;
+  projected_visitor_count: number;
+  reserved_visitor_count: number;
+  remaining_bookable_capacity: number;
+  max_slot_remaining: number;
+  slot_capacity: number;
+  updated_at: string | null;
 };
 export type GatekeeperDuty = {
   duty_id: string;
@@ -258,6 +268,7 @@ export async function loadLiveOccupancy(siteId: string): Promise<LiveOccupancy |
   return {
     ...row,
     current_visitor_count: Number(row.current_visitor_count ?? 0),
+    expected_visitor_count: Number(row.expected_visitor_count ?? 0),
     arrivals_today: Number(row.arrivals_today ?? 0),
     departures_today: Number(row.departures_today ?? 0),
     approved_visitor_limit: row.approved_visitor_limit == null ? null : Number(row.approved_visitor_limit),
@@ -269,6 +280,33 @@ export async function loadLiveOccupancy(siteId: string): Promise<LiveOccupancy |
     critical_threshold_percent: Number(row.critical_threshold_percent ?? 95),
     restrict_at_warning: Boolean(row.restrict_at_warning),
   } as LiveOccupancy;
+}
+
+export async function loadSiteCapacityForDate(siteId: string, date: string): Promise<SiteCapacityForDate | null> {
+  const { data, error } = await db().rpc('site_capacity_for_date', { p_site_id: siteId, p_visit_date: date });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return null;
+  return {
+    ...row,
+    visit_date: String(row.visit_date),
+    current_visitor_count: Number(row.current_visitor_count ?? 0),
+    projected_visitor_count: Number(row.projected_visitor_count ?? 0),
+    reserved_visitor_count: Number(row.reserved_visitor_count ?? 0),
+    remaining_bookable_capacity: Number(row.remaining_bookable_capacity ?? 0),
+    max_slot_remaining: Number(row.max_slot_remaining ?? 0),
+    slot_capacity: Number(row.slot_capacity ?? 0),
+    arrivals_today: Number(row.arrivals_today ?? 0),
+    departures_today: Number(row.departures_today ?? 0),
+    approved_visitor_limit: row.approved_visitor_limit == null ? null : Number(row.approved_visitor_limit),
+    estimated_live_capacity: row.estimated_live_capacity == null ? null : Number(row.estimated_live_capacity),
+    capacity_estimate: row.capacity_estimate == null ? null : Number(row.capacity_estimate),
+    near_threshold_percent: Number(row.near_threshold_percent ?? 70),
+    almost_threshold_percent: Number(row.almost_threshold_percent ?? 85),
+    critical_threshold_percent: Number(row.critical_threshold_percent ?? 95),
+    restrict_at_warning: Boolean(row.restrict_at_warning),
+    updated_at: row.updated_at == null ? null : String(row.updated_at),
+  } as SiteCapacityForDate;
 }
 
 export async function loadMyActiveGatekeeperDuty(siteId: string): Promise<GatekeeperDuty | null> {

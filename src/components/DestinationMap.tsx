@@ -155,14 +155,14 @@ export default function DestinationMap({ site, zones = noZones, occupancy, compa
         {coordinateSource && <p className="destination-map-source-note">{coordinateSource.note} <a href={coordinateSource.url} target="_blank" rel="noopener noreferrer">{coordinateSource.label} <ArrowUpRight size={12}/></a></p>}
         <div className="destination-map-legend">
           {zoneCount > 0 && <span><i className="map-legend-zone"/>Approved site zones</span>}
-          {occupancyState === 'ready' && <><span><i className={`map-legend-level map-legend-${status.level}`}/>{status.label}{status.percent != null ? ` · ${count} / ${status.limit} ${status.basis === 'estimated' ? 'provisional estimate' : 'approved limit'} (${formatCapacityPercent(status.percent)})` : ''}</span>{status.percent != null && <span><i className="map-legend-heat"/>Site-wide capacity heat</span>}</>}
+          {occupancyState === 'ready' && <><span><i className={`map-legend-level map-legend-${status.level}`}/>{status.label}{status.percent != null ? ` · ${count} / ${status.limit} approved limit (${formatCapacityPercent(status.percent)})` : ''}</span>{status.percent != null && <span><i className="map-legend-heat"/>Site-wide capacity heat</span>}</>}
           {occupancyState === 'loading' && <span><i className="map-legend-empty"/>Loading attendance</span>}
           {occupancyState === 'unavailable' && <span><i className="map-legend-empty"/>Attendance unavailable</span>}
           {!zoneCount && <span><Layers size={13}/> No approved zone boundaries recorded</span>}
         </div>
         <p className="destination-map-note">
           {occupancyState === 'ready'
-              ? status.basis === 'estimated' ? 'Crowd color uses a provisional school-project map estimate, not an approved admission limit. Occupancy comes from recorded arrivals and departures; individual or zone locations are not tracked.' : 'Capacity is estimated from recorded arrivals and departures. The indicator represents the whole destination; individual visitor positions and zone occupancy are not tracked.'
+              ? 'Crowd color uses the approved visitor limit. Occupancy comes from recorded arrivals and departures; individual or zone locations are not tracked.'
               : occupancyState === 'loading'
                 ? 'Loading recorded occupancy. The map remains available while attendance is checked.'
                 : 'Recorded attendance is unavailable. The map remains focused on the destination location.'}

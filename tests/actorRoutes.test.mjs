@@ -51,6 +51,13 @@ test('destination feedback stays out of Gatekeeper access', () => {
   assert.equal(staffPageForRole('visitor', 'Feedback & Reviews'), 'Discover');
 });
 
+test('destination updates are restricted to Tourism Office and assigned Site Admin routes', () => {
+  assert.equal(staffPageForRole('tourism_office', 'Destination updates'), 'Destination updates');
+  assert.equal(staffPageForRole('site_admin', 'Destination updates'), 'Destination updates');
+  assert.equal(staffPageForRole('gatekeeper', 'Destination updates'), 'Overview');
+  assert.equal(staffPageForRole('visitor', 'Destination updates'), 'Discover');
+});
+
 test('legacy schedule pages remain available to Site Admin and Gatekeeper roles stay blocked', () => {
   assert.equal(staffPageForRole('site_admin', 'Duty roster'), 'Duty roster');
   assert.equal(staffPageForRole('site_admin', 'Slots and closures'), 'Slots and closures');

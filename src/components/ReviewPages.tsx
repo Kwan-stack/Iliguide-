@@ -16,6 +16,9 @@ export const reviewCategories = [
 const categoryLabel = (value: string) => reviewCategories.find(([key]) => key === value)?.[1] ?? 'Overall experience';
 const dateText = (value: string) => new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'Asia/Manila' }).format(new Date(value));
 const reportLabel = (value: string) => ({ inaccurate: 'Inaccurate', inappropriate: 'Inappropriate', spam: 'Spam', other: 'Other' }[value] ?? value);
+const errorText = (error: unknown, fallback: string) => error instanceof Error ? error.message
+  : error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string'
+    ? (error as { message: string }).message : fallback;
 
 export function ReviewComposer({ bookingId, siteName, existing, onClose, onSaved, notify }: {
   bookingId: string; siteName: string; existing?: ReviewRow; onClose: () => void; onSaved: () => void; notify: (message: string) => void;
@@ -51,7 +54,7 @@ export function ReviewComposer({ bookingId, siteName, existing, onClose, onSaved
         : await db().rpc('submit_visitor_review', { p_booking_id: bookingId, p_rating: rating, p_category: category, p_comment: comment.trim() });
       if (error) throw error;
       notify(existing ? 'Review updated. It will appear after moderation.' : 'Review submitted for moderation.'); onSaved();
-    } catch (error) { notify(error instanceof Error ? error.message : 'Could not save your review.'); }
+    } catch (error) { notify(errorText(error, 'Could not save your review.')); }
     finally { setBusy(false); }
   };
   return <div className="review-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -98,7 +101,7 @@ export function DestinationReviews({ siteId, isVisitor, notify }: { siteId: stri
         setSummary({ review_count: Number(metricResult.data?.review_count ?? 0), average_rating: Number(metricResult.data?.average_rating ?? 0) });
         setReported(new Set(ownReports)); setLoading(false);
       }
-    })().catch((error) => { if (active) { notify(error instanceof Error ? error.message : 'Could not load destination reviews.'); setLoading(false); } });
+    })().catch((error) => { if (active) { notify(errorText(error, 'Could not load destination reviews.')); setLoading(false); } });
     return () => { active = false; };
   }, [siteId, isVisitor, refresh, notify]);
   const report = async (event: FormEvent, reviewId: string) => {
@@ -107,7 +110,7 @@ export function DestinationReviews({ siteId, isVisitor, notify }: { siteId: stri
       const { error } = await db().rpc('submit_review_report', { p_review_id: reviewId, p_reason: reason, p_details: details.trim() });
       if (error) throw error;
       notify('Report sent to the destination team.'); setReporting(''); setDetails(''); setRefresh((value) => value + 1);
-    } catch (error) { notify(error instanceof Error ? error.message : 'Could not send this report.'); }
+    } catch (error) { notify(errorText(error, 'Could not send this report.')); }
   };
   return <section className="destination-reviews" aria-labelledby="destination-reviews-title"><div className="destination-reviews-heading"><div><span className="eyebrow"><span className="eyebrow-line"/> VISITOR FEEDBACK</span><h2 id="destination-reviews-title">Ratings &amp; reviews</h2></div><div className="review-score"><Star size={19} fill="currentColor"/><b>{summary.average_rating ? summary.average_rating.toFixed(1) : '—'}</b><span>{summary.review_count} published reviews</span></div></div>
     {loading ? <p className="empty-inline">Loading reviews…</p> : rows.length ? <div className="destination-review-list">{rows.map((row) => <article className="destination-review" key={row.id}><div className="destination-review-top"><span className="review-avatar"><CheckCircle2 size={18}/></span><div><b>Verified visitor</b><small>{dateText(row.created_at)} · {categoryLabel(row.category)}</small></div><span className="review-stars" aria-label={`${row.rating} out of 5 stars`}>{'★'.repeat(row.rating)}<span>{'★'.repeat(5 - row.rating)}</span></span></div>
@@ -159,7 +162,7 @@ export function FeedbackManagementPage({ role, sites, notify }: { role: Profile[
         }
       }
       if (active) { setRows(loaded); setReports(loadedReports); setLoading(false); }
-    })().catch((error) => { if (active) { notify(error instanceof Error ? error.message : 'Could not load feedback.'); setRows([]); setReports([]); setLoading(false); } });
+    })().catch((error) => { if (active) { notify(errorText(error, 'Could not load feedback.')); setRows([]); setReports([]); setLoading(false); } });
     return () => { active = false; };
   }, [siteIds, refresh, notify]);
   const reportGroups = useMemo(() => {
@@ -202,7 +205,7 @@ export function FeedbackManagementPage({ role, sites, notify }: { role: Profile[
       const { error } = await db().rpc('moderate_review', { p_review_id: row.id, p_status: nextStatus, p_note: notes[row.id]?.trim() ?? '' });
       if (error) throw error;
       setNotes((current) => ({ ...current, [row.id]: '' })); setRefresh((value) => value + 1); notify(nextStatus === 'hidden' ? 'Review hidden.' : 'Review published.');
-    } catch (error) { notify(error instanceof Error ? error.message : 'Could not moderate this review.'); }
+    } catch (error) { notify(errorText(error, 'Could not moderate this review.')); }
     finally { setBusyId(''); }
   };
   const resolveReport = async (report: ReviewReport, resolution: 'actioned' | 'dismissed') => {
@@ -211,7 +214,7 @@ export function FeedbackManagementPage({ role, sites, notify }: { role: Profile[
       const { error } = await db().rpc('resolve_review_report', { p_report_id: report.id, p_status: resolution, p_note: notes[report.review_id]?.trim() ?? '' });
       if (error) throw error;
       setNotes((current) => ({ ...current, [report.review_id]: '' })); setRefresh((value) => value + 1); notify(resolution === 'actioned' ? 'Report marked actioned.' : 'Report dismissed.');
-    } catch (error) { notify(error instanceof Error ? error.message : 'Could not resolve this report.'); }
+    } catch (error) { notify(errorText(error, 'Could not resolve this report.')); }
     finally { setBusyId(''); }
   };
   const toggleHistory = async (reviewId: string) => {
