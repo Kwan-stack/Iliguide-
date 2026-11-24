@@ -7,3 +7,8 @@ export function paymentStatusLabel(status: string, amount: number): string {
   if (status === 'pending_verification') return 'pending verification';
   return status.replace(/_/g, ' ');
 }
+
+export function bookingStatusLabel(status: string, method: string, manualPaymentStatus?: string | null): string {
+  if (method === 'online' && manualPaymentStatus === 'pending_verification') return 'pending verification';
+  return status.replace(/_/g, ' ');
+}

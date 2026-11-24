@@ -5,7 +5,7 @@ import type { RealtimeChannel, User } from '@supabase/supabase-js';
 import { ArrowRight, BadgeCheck, CalendarDays, Clock3, Compass, MapPinned, Megaphone, MessageSquareText, RefreshCw, Ticket as TicketIcon, Users } from 'lucide-react';
 import { canIssueVisitorTicket, upcomingBookings } from '../lib/visitorPlanning';
 import { db, dateLabel, loadOwnBookings, timeLabel, type Booking, type Site } from '../lib/iliguide';
-import { isFreeRegistration, paymentStatusLabel } from '../lib/paymentStatus';
+import { bookingStatusLabel, isFreeRegistration, paymentStatusLabel } from '../lib/paymentStatus';
 import './VisitorPlanningHub.css';
 import './VisitorAnnouncements.css';
 
@@ -136,7 +136,7 @@ export function VisitorPlanningHub({ sites, user, visitorActive, configured, tic
                 <span><Users size={15}/>{nextVisit.visitor_count} visitor{nextVisit.visitor_count === 1 ? '' : 's'}</span>
                 <span className="visitor-registration-status"><BadgeCheck size={15}/>{isFreeRegistration(nextVisit.payment_status, nextVisit.total_amount) ? 'Free reservation' : paymentStatusLabel(nextVisit.payment_status, nextVisit.total_amount)}</span>
               </div>
-              <span className={`visitor-booking-state visitor-state-${nextVisit.booking_status}`}>{nextVisit.booking_status.replace(/_/g, ' ')}</span>
+              <span className={`visitor-booking-state visitor-state-${nextVisit.booking_status}`}>{bookingStatusLabel(nextVisit.booking_status, nextVisit.payment_method, nextVisit.manual_payment_status)}</span>
               <div className="visitor-upcoming-buttons"><button className="btn btn-outline" onClick={() => onGo('Bookings')}>View My Booking <ArrowRight size={14}/></button>
                 {canIssueVisitorTicket(nextVisit) && <button className="btn btn-primary" disabled={ticketBusy} onClick={() => onTicket(nextVisit)}><TicketIcon size={15}/>{ticketBusy ? 'Opening…' : 'View QR Ticket'}</button>}
               </div>
