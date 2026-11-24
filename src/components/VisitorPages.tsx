@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { QRCodeSVG } from 'qrcode.react';
 import { ArrowDownToLine, ArrowRight, CalendarDays, Clock3, Heart, LogOut, Search, ShieldCheck, Ticket as TicketIcon, UserRound, BadgeCheck } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
-import { db, dateLabel, invokeFunction, isValidOptionalPhone, loadOwnBookings, money, type Booking, type Profile, type Site, type Ticket, type TravelerProfile } from '../lib/iliguide';
+import { db, dateLabel, invokeFunction, isValidOptionalPhone, loadOwnBookings, money, timeLabel, type Booking, type Profile, type Site, type Ticket, type TravelerProfile } from '../lib/iliguide';
 import { supabase } from '../lib/supabase';
 import { ChangePasswordForm } from './ChangePasswordForm';
 import { filterVisitorBookings, matchesBookingTab, type BookingTab } from '../lib/visitorBookingFilters';
@@ -214,10 +214,10 @@ function TicketView({ booking, ticket, notify }: { booking: Booking; ticket: Tic
       const text = (value: string, x: number, y: number, font: string, color: string) => {
         context.font = font; context.fillStyle = color; context.fillText(value, x, y);
       };
-      const card = (label: string, value: string, x: number, y: number, width: number) => {
+      const card = (label: string, value: string, x: number, y: number, width: number, valueSize = 22) => {
         roundRect(x, y, width, 92, 12, '#f5f8fa', '#e0e8ec');
         text(label.toUpperCase(), x + 18, y + 28, '700 13px Arial, sans-serif', '#71828b');
-        text(value, x + 18, y + 64, '700 22px Arial, sans-serif', '#1b2935');
+        text(value, x + 18, y + 64, `700 ${valueSize}px Arial, sans-serif`, '#1b2935');
       };
       roundRect(0, 0, 1200, 820, 0, '#f2f6f7');
       roundRect(38, 38, 1124, 744, 26, '#ffffff', '#dce5ea');
@@ -244,14 +244,16 @@ function TicketView({ booking, ticket, notify }: { booking: Booking; ticket: Tic
       text(ticket.booking.visitor_name, 84, 400, '700 20px Arial, sans-serif', '#1b2935');
       text('BOOKING REFERENCE', 420, 370, '700 12px Arial, sans-serif', '#71828b');
       text(booking.booking_reference, 420, 400, '700 20px Arial, sans-serif', '#1b2935');
-      card('Visit date', dateLabel(ticket.booking.slot_date), 84, 438, 330);
-      card('Visitors', String(ticket.booking.visitor_count), 434, 438, 330);
-      card(booking.payment_status === 'not_required' ? 'Estimated fee' : 'Admission', money(ticket.booking.total_amount), 84, 548, 680);
+      card('Visit date', dateLabel(ticket.booking.slot_date), 84, 438, 210, 16);
+      card('Visit time', `${timeLabel(ticket.booking.starts_at)} – ${timeLabel(ticket.booking.ends_at)}`, 310, 438, 210, 16);
+      card('Visitors', String(ticket.booking.visitor_count), 536, 438, 210);
+      card(booking.payment_status === 'not_required' ? 'Estimated fee' : 'Admission', money(ticket.booking.total_amount), 84, 548, 330);
+      card('Payment method', booking.payment_method === 'onsite' ? 'Pay onsite' : 'Online payment', 434, 548, 330);
       roundRect(812, 230, 306, 438, 18, '#ffffff', '#dce5ea');
       context.drawImage(qrImage, 847, 265, 236, 236);
       text('PRIVATE BOOKING QR', 872, 535, '700 14px Arial, sans-serif', '#006f93');
-      text('Contains a secure ticket token.', 856, 565, '14px Arial, sans-serif', '#526471');
-      text('Not valid for destination admission.', 838, 591, '14px Arial, sans-serif', '#526471');
+      text('Secure booking lookup for gatekeeper.', 838, 565, '14px Arial, sans-serif', '#526471');
+      text('Details printed on this ticket.', 856, 591, '14px Arial, sans-serif', '#526471');
       context.strokeStyle = '#dce5ea'; context.lineWidth = 2; context.beginPath(); context.moveTo(84, 690); context.lineTo(1118, 690); context.stroke();
       text(booking.payment_status === 'not_required' ? 'Reservation record · No payment collected' : 'Reservation record', 84, 728, '700 14px Arial, sans-serif', '#526471');
       text('ILIGUIDE · ILIGAN CITY', 84, 755, '700 12px Arial, sans-serif', '#8797a2');
