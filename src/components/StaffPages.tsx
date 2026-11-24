@@ -401,6 +401,7 @@ function ReservationsPage(props: Props) {
       const { error } = await db().rpc('record_onsite_payment', { p_booking_id: booking.id });
       if (error) throw error;
       props.notify('Simulated onsite payment recorded.');
+      setRows((current) => current.map((row) => row.id === booking.id ? { ...row, payment_status: 'paid' } : row));
       setRefreshKey((current) => current + 1);
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not record onsite payment.'); }
     finally { setPaymentBusy(''); }
@@ -471,7 +472,7 @@ function ReservationsPage(props: Props) {
                 {(props.role === 'tourism_office' || props.role === 'site_admin') && pwd.delete_after <= new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date()) && <button className="link-btn" disabled={Boolean(pwdReviewBusy)} onClick={() => void deleteExpiredPwd(pwd)}>{pwdReviewBusy === pwd.id ? 'Deleting…' : 'Delete expired ID'}</button>}</>}
               <small>{visitor.check_in_status === 'checked_in' ? 'Checked in' : 'Not checked in'}</small>
             </article>; })}</div></details></td>
-          <td>{paymentMethodLabel}<small>{money(Number(booking.total_amount))} · {paymentStateLabel}</small>{booking.payment_method === 'onsite' && booking.payment_status === 'pending' && booking.booking_status === 'confirmed' && <button className="link-btn" disabled={Boolean(paymentBusy)} onClick={() => void recordOnsitePayment(booking)}>{paymentBusy === booking.id ? 'Recording…' : 'Record simulated payment'}</button>}</td>
+          <td>{paymentMethodLabel}<small>{money(Number(booking.total_amount))} · {paymentStateLabel}</small>{booking.payment_method === 'onsite' && booking.payment_status === 'pending' && booking.booking_status === 'confirmed' && <button className="record-payment-btn" type="button" aria-label={`Record payment for ${booking.booking_reference}`} aria-busy={paymentBusy === booking.id} disabled={Boolean(paymentBusy)} onClick={() => void recordOnsitePayment(booking)}><CreditCard size={13}/>{paymentBusy === booking.id ? 'Recording…' : 'Record Payment'}</button>}</td>
           <td><span className="status-tag">{String(booking.booking_status).replace(/_/g, ' ')}</span><small>{paymentStateLabel}</small></td>
           <td>{new Date(booking.created_at).toLocaleString()}</td></tr>;
       })}</tbody></table></div>}
