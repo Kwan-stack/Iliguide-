@@ -1,5 +1,5 @@
 begin;
-select plan(64);
+select plan(94);
 
 insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at)
 values
@@ -11,7 +11,9 @@ update public.profiles set role = 'gatekeeper' where id = '81000000-0000-4000-80
 update public.profiles set role = 'visitor' where id = '81000000-0000-4000-8000-000000000003';
 
 insert into public.tourism_sites (id, name, slug, management_organization_id)
-values ('82000000-0000-4000-8000-000000000001', 'Attendance Test Destination', 'attendance-test-destination', '00000000-0000-4000-8000-000000000001');
+values
+  ('82000000-0000-4000-8000-000000000001', 'Attendance Test Destination', 'attendance-test-destination', '00000000-0000-4000-8000-000000000001'),
+  ('82000000-0000-4000-8000-000000000002', 'Other Test Destination', 'other-test-destination', '00000000-0000-4000-8000-000000000001');
 insert into public.site_images (site_id, storage_path, image_role, alt_text)
 values ('82000000-0000-4000-8000-000000000001', 'attendance-test/cover.jpg', 'cover', 'Test destination');
 update public.tourism_sites set status = 'published' where id = '82000000-0000-4000-8000-000000000001';
@@ -24,7 +26,10 @@ values ('81000000-0000-4000-8000-000000000002', '82000000-0000-4000-8000-0000000
 insert into public.site_slots (id, site_id, slot_date, starts_at, ends_at, capacity, status)
 values
   ('83000000-0000-4000-8000-000000000001', '82000000-0000-4000-8000-000000000001', (now() at time zone 'Asia/Manila')::date, '00:00', '23:59:59.999999', 20, 'open'),
-  ('83000000-0000-4000-8000-000000000002', '82000000-0000-4000-8000-000000000001', (now() at time zone 'Asia/Manila')::date - 1, '00:00', '23:59:59.999999', 20, 'open');
+  ('83000000-0000-4000-8000-000000000002', '82000000-0000-4000-8000-000000000001', (now() at time zone 'Asia/Manila')::date - 1, '00:00', '23:59:59.999999', 20, 'open'),
+  ('83000000-0000-4000-8000-000000000003', '82000000-0000-4000-8000-000000000001', (now() at time zone 'Asia/Manila')::date + 1, '00:00', '23:59:59.999999', 20, 'open'),
+  ('83000000-0000-4000-8000-000000000004', '82000000-0000-4000-8000-000000000001', (now() at time zone 'Asia/Manila')::date + 5, '00:00', '23:59:59.999999', 20, 'open'),
+  ('83000000-0000-4000-8000-000000000005', '82000000-0000-4000-8000-000000000002', (now() at time zone 'Asia/Manila')::date, '00:00', '23:59:59.999999', 20, 'open');
 insert into public.bookings (
   id, booking_reference, site_id, slot_id, visitor_name, visitor_email,
   adult_count, child_count, pwd_count, total_amount, payment_status, booking_status, qr_token_hash
@@ -42,11 +47,37 @@ values
   ('84100000-0000-4000-8000-000000000004', '84000000-0000-4000-8000-000000000001', 4, 'adult', 'Visitor Four', 'Test address');
 insert into public.bookings (
   id, booking_reference, site_id, slot_id, visitor_name, visitor_email,
-  adult_count, child_count, total_amount, payment_status, booking_status
+  adult_count, child_count, total_amount, payment_status, booking_status, qr_token_hash
 ) values (
   '84000000-0000-4000-8000-000000000002', 'ILG-ATTENDANCE-OVERNIGHT',
   '82000000-0000-4000-8000-000000000001', '83000000-0000-4000-8000-000000000002',
-  'Overnight Test Visitor', 'qr-visitor@example.invalid', 1, 0, 50, 'paid', 'confirmed'
+  'Overnight Test Visitor', 'qr-visitor@example.invalid', 1, 0, 50, 'paid', 'confirmed',
+  extensions.digest(convert_to('overnight-ticket', 'UTF8'), 'sha256')
+), (
+  '84000000-0000-4000-8000-000000000003', 'ILG-ATTENDANCE-CANCELLED',
+  '82000000-0000-4000-8000-000000000001', '83000000-0000-4000-8000-000000000001',
+  'Cancelled Test Visitor', 'qr-visitor@example.invalid', 1, 0, 50, 'paid', 'cancelled',
+  extensions.digest(convert_to('cancelled-ticket', 'UTF8'), 'sha256')
+), (
+  '84000000-0000-4000-8000-000000000004', 'ILG-ATTENDANCE-PENDING',
+  '82000000-0000-4000-8000-000000000001', '83000000-0000-4000-8000-000000000001',
+  'Pending Test Visitor', 'qr-visitor@example.invalid', 1, 0, 50, 'pending', 'awaiting_payment',
+  extensions.digest(convert_to('pending-ticket', 'UTF8'), 'sha256')
+), (
+  '84000000-0000-4000-8000-000000000005', 'ILG-ATTENDANCE-TOMORROW',
+  '82000000-0000-4000-8000-000000000001', '83000000-0000-4000-8000-000000000003',
+  'Tomorrow Test Visitor', 'qr-visitor@example.invalid', 1, 0, 50, 'paid', 'confirmed',
+  extensions.digest(convert_to('tomorrow-ticket', 'UTF8'), 'sha256')
+), (
+  '84000000-0000-4000-8000-000000000006', 'ILG-ATTENDANCE-FUTURE',
+  '82000000-0000-4000-8000-000000000001', '83000000-0000-4000-8000-000000000004',
+  'Future Test Visitor', 'qr-visitor@example.invalid', 1, 0, 50, 'paid', 'confirmed',
+  extensions.digest(convert_to('future-ticket', 'UTF8'), 'sha256')
+), (
+  '84000000-0000-4000-8000-000000000007', 'ILG-ATTENDANCE-WRONG-SITE',
+  '82000000-0000-4000-8000-000000000002', '83000000-0000-4000-8000-000000000005',
+  'Wrong Destination Test Visitor', 'qr-visitor@example.invalid', 1, 0, 50, 'paid', 'confirmed',
+  extensions.digest(convert_to('wrong-site-ticket', 'UTF8'), 'sha256')
 );
 
 set local role authenticated;
@@ -76,20 +107,59 @@ select * from public.register_walk_in_with_visitors(
   '82000000-0000-4000-8000-000000000001', '83000000-0000-4000-8000-000000000001',
   'Synthetic Walk-in', 7, 0, 0, 'walkin@example.invalid', null, '[]'::jsonb
 );
+update public.bookings b
+set qr_token_hash = extensions.digest(convert_to('walkin-ticket', 'UTF8'), 'sha256')
+where b.id = (select booking_id from attendance_walkin);
 create temporary table capacity_revision_before on commit drop as
 select revision from public.site_capacity_changes where site_id = '82000000-0000-4000-8000-000000000001';
+
+update public.site_slots set ends_at = case
+  when (now() at time zone 'Asia/Manila')::time <= time '00:01' then time '00:00'
+  else ((now() at time zone 'Asia/Manila')::time - interval '1 minute')::time end
+where id = '83000000-0000-4000-8000-000000000001';
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '81000000-0000-4000-8000-000000000002', true);
 select is((select count(*)::integer from public.attendance_participants('ILG-ATTENDANCE-ONLINE', '82000000-0000-4000-8000-000000000001')), 4, 'Assigned gatekeeper sees individual booking participants');
 select is((select result from public.scan_ticket(
   '84000000-0000-4000-8000-000000000001', extensions.digest(convert_to('attendance-ticket', 'UTF8'), 'sha256'),
-  '82000000-0000-4000-8000-000000000001', '{}'::jsonb)), 'entry_confirmation_required', 'A valid QR scan requests entry confirmation');
+  '82000000-0000-4000-8000-000000000001', '{}'::jsonb)), 'entry_confirmation_required', 'Same-day tickets remain valid after the configured slot ends');
 select is((select result from public.scan_ticket(
   '84000000-0000-4000-8000-000000000001', extensions.digest(convert_to('wrong-ticket', 'UTF8'), 'sha256'),
   '82000000-0000-4000-8000-000000000001', '{}'::jsonb)), 'invalid', 'A QR token with the wrong hash is rejected');
+select is((select result from public.scan_ticket(
+  '84000000-0000-4000-8000-000000000005', extensions.digest(convert_to('tomorrow-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', '{}'::jsonb)), 'not_yet_valid', 'Tomorrow’s ticket is not yet valid');
+select is((select result from public.scan_ticket(
+  '84000000-0000-4000-8000-000000000006', extensions.digest(convert_to('future-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', '{}'::jsonb)), 'not_yet_valid', 'A ticket several days ahead is rejected');
+select is((select result from public.scan_ticket(
+  '84000000-0000-4000-8000-000000000003', extensions.digest(convert_to('cancelled-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', '{}'::jsonb)), 'cancelled', 'A cancelled reservation is rejected');
+select is((select result from public.scan_ticket(
+  '84000000-0000-4000-8000-000000000004', extensions.digest(convert_to('pending-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', '{}'::jsonb)), 'unpaid_or_inactive', 'A payment-pending reservation cannot enter');
+select is((select result from public.scan_ticket(
+  '84000000-0000-4000-8000-000000000007', extensions.digest(convert_to('wrong-site-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', '{}'::jsonb)), 'wrong_destination', 'A valid ticket for another destination is rejected');
+select throws_ok($$select * from public.confirm_ticket_attendance(
+  '84000000-0000-4000-8000-000000000005', extensions.digest(convert_to('tomorrow-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', 'entry', 1, '85000000-0000-4000-8000-000000000020', '{}'::jsonb)$$,
+  'P0001', 'QR ticket not yet valid', 'Server rejects direct confirmation of a future visit');
+select throws_ok($$select * from public.confirm_ticket_attendance(
+  '84000000-0000-4000-8000-000000000003', extensions.digest(convert_to('cancelled-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', 'entry', 1, '85000000-0000-4000-8000-000000000043', '{}'::jsonb)$$,
+  'P0001', 'Booking is unpaid or inactive', 'Cancelled booking cannot record attendance');
+select throws_ok($$select * from public.confirm_ticket_attendance(
+  '84000000-0000-4000-8000-000000000004', extensions.digest(convert_to('pending-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', 'entry', 1, '85000000-0000-4000-8000-000000000044', '{}'::jsonb)$$,
+  'P0001', 'Booking is unpaid or inactive', 'Payment-pending booking cannot record attendance');
+select is((select count(*)::integer from public.attendance_logs where booking_id in (
+  '84000000-0000-4000-8000-000000000003', '84000000-0000-4000-8000-000000000004',
+  '84000000-0000-4000-8000-000000000005', '84000000-0000-4000-8000-000000000006',
+  '84000000-0000-4000-8000-000000000007')), 0, 'Rejected tickets create no attendance records');
 select is((select result from public.manual_scan_ticket('ILG-ATTENDANCE-OVERNIGHT', '82000000-0000-4000-8000-000000000001')),
-  'outside_window', 'A past booking cannot create a new admission');
+  'expired', 'A past booking without active attendance is expired');
 select throws_ok($$select * from public.manual_scan_ticket('ILG-ATTENDANCE-ONLINE', '82999999-0000-4000-8000-000000000001')$$,
   'P0001', 'Gatekeeper access denied', 'An unassigned destination scan is denied');
 select throws_ok($$select * from public.confirm_ticket_attendance(
@@ -136,16 +206,30 @@ select is((select count(*)::integer from public.attendance_logs where booking_id
 select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'expected_visitor_count')::bigint, 4::bigint, 'Expected visitors include the online group, not the registered walk-in');
 select is((select result from public.manual_scan_ticket((select booking_reference from attendance_walkin), '82000000-0000-4000-8000-000000000001')),
   'entry_confirmation_required', 'A registered walk-in still requires explicit admission confirmation');
+select throws_ok($$select * from public.confirm_ticket_attendance(
+  (select booking_id from attendance_walkin), extensions.digest(convert_to('walkin-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', 'entry', 7, '85000000-0000-4000-8000-000000000003', '{}'::jsonb)$$,
+  'P0001', 'Approved visitor limit reached; admission cannot be recorded', 'Configured capacity blocks an over-limit group');
 select throws_ok($$select * from public.confirm_manual_attendance(
   (select booking_reference from attendance_walkin), '82000000-0000-4000-8000-000000000001',
-  'entry', 7, '85000000-0000-4000-8000-000000000003', '{}'::jsonb)$$,
-  'P0001', 'Approved visitor limit reached; admission cannot be recorded', 'Configured capacity blocks an over-limit group');
+  'entry', 7, '85000000-0000-4000-8000-000000000044', '{}'::jsonb)$$,
+  'P0001', 'Walk-in attendance requires QR ticket verification', 'Manual reference cannot admit a walk-in without its QR ticket');
+select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'current_visitor_count')::bigint, 2::bigint,
+  'Rejected manual walk-in admission leaves occupancy unchanged');
 select lives_ok($$select * from public.confirm_ticket_attendance(
   '84000000-0000-4000-8000-000000000001', extensions.digest(convert_to('attendance-ticket', 'UTF8'), 'sha256'),
   '82000000-0000-4000-8000-000000000001', 'entry', 2, '85000000-0000-4000-8000-000000000004', '{}'::jsonb,
   array['84100000-0000-4000-8000-000000000003'::uuid, '84100000-0000-4000-8000-000000000004'::uuid])$$,
   'Remaining visitors may enter while earlier group members are still inside');
 select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'current_visitor_count')::bigint, 4::bigint, 'Second partial admission raises occupancy to four');
+select is((select result from public.scan_ticket(
+  '84000000-0000-4000-8000-000000000001', extensions.digest(convert_to('attendance-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', '{}'::jsonb)), 'checkout_confirmation_required', 'Rescanning a fully admitted booking requests checkout confirmation');
+select is((select count(*)::integer from public.attendance_logs
+  where booking_id = '84000000-0000-4000-8000-000000000001' and action = 'exit'), 0,
+  'A checkout prompt does not write a departure event');
+select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'current_visitor_count')::bigint, 4::bigint,
+  'A checkout prompt leaves live occupancy unchanged until confirmed');
 select lives_ok($$select * from public.confirm_ticket_attendance(
   '84000000-0000-4000-8000-000000000001', extensions.digest(convert_to('attendance-ticket', 'UTF8'), 'sha256'),
   '82000000-0000-4000-8000-000000000001', 'exit', 1, '85000000-0000-4000-8000-000000000005', '{}'::jsonb,
@@ -185,42 +269,85 @@ select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')
 select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'approved_visitor_limit')::integer, 8, 'Capacity snapshot uses the configured approved limit');
 select ok((select revision > (select revision from capacity_revision_before) from public.site_capacity_changes where site_id = '82000000-0000-4000-8000-000000000001'), 'Attendance changes increment the Realtime revision');
 
-select lives_ok($$select * from public.confirm_manual_attendance(
-  (select booking_reference from attendance_walkin), '82000000-0000-4000-8000-000000000001',
-  'entry', 7, '85000000-0000-4000-8000-000000000009', '{}'::jsonb)$$,
-  'Walk-in admission is recorded only after confirmation');
+select lives_ok($$select * from public.confirm_ticket_attendance(
+  (select booking_id from attendance_walkin), extensions.digest(convert_to('walkin-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', 'entry', 7, '85000000-0000-4000-8000-000000000009', '{}'::jsonb)$$,
+  'A walk-in enters only after a valid QR ticket and Gatekeeper confirmation');
 select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'current_visitor_count')::bigint, 7::bigint, 'Confirmed walk-in entry increases occupancy');
+select throws_ok($$select * from public.confirm_manual_attendance(
+  (select booking_reference from attendance_walkin), '82000000-0000-4000-8000-000000000001',
+  'exit', 3, '85000000-0000-4000-8000-000000000045', '{}'::jsonb)$$,
+  'P0001', 'Walk-in attendance requires QR ticket verification', 'Manual reference cannot check out a walk-in without its QR ticket');
+select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'current_visitor_count')::bigint, 7::bigint,
+  'Rejected manual walk-in checkout leaves occupancy unchanged');
 select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'expected_visitor_count')::bigint, 4::bigint, 'Walk-in admission remains excluded from expected online visitors');
 select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'arrivals_today')::bigint, 11::bigint, 'Arrivals today combines confirmed online and walk-in admissions');
-select lives_ok($$select * from public.confirm_manual_attendance(
-  (select booking_reference from attendance_walkin), '82000000-0000-4000-8000-000000000001',
-  'exit', 3, '85000000-0000-4000-8000-00000000000a', '{}'::jsonb)$$,
+select lives_ok($$select * from public.confirm_ticket_attendance(
+  (select booking_id from attendance_walkin), extensions.digest(convert_to('walkin-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', 'exit', 3, '85000000-0000-4000-8000-00000000000a', '{}'::jsonb)$$,
   'Walk-in checkout supports a partial group departure');
 select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'current_visitor_count')::bigint, 4::bigint, 'Partial walk-in checkout leaves four inside');
-select lives_ok($$select * from public.confirm_manual_attendance(
-  (select booking_reference from attendance_walkin), '82000000-0000-4000-8000-000000000001',
-  'exit', 4, '85000000-0000-4000-8000-00000000000b', '{}'::jsonb)$$,
+select lives_ok($$select * from public.confirm_ticket_attendance(
+  (select booking_id from attendance_walkin), extensions.digest(convert_to('walkin-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', 'exit', 4, '85000000-0000-4000-8000-00000000000b', '{}'::jsonb)$$,
   'Final walk-in checkout completes its group');
 select is((select booking_status::text from public.bookings where id = (select booking_id from attendance_walkin)), 'completed', 'Walk-in booking completes after checkout');
 
 reset role;
-insert into public.attendance_logs (booking_id, site_id, gatekeeper_id, action, visitor_count, scanned_at, idempotency_key)
-values (
-  '84000000-0000-4000-8000-000000000002', '82000000-0000-4000-8000-000000000001',
-  '81000000-0000-4000-8000-000000000002', 'entry', 1,
-  (((now() at time zone 'Asia/Manila')::date - 1)::timestamp + time '12:00') at time zone 'Asia/Manila',
-  '85000000-0000-4000-8000-00000000000c'
-);
+update public.site_slots set starts_at = time '00:01' where id = '83000000-0000-4000-8000-000000000002';
+update public.site_slots set slot_date = (now() at time zone 'Asia/Manila')::date where id = '83000000-0000-4000-8000-000000000002';
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '81000000-0000-4000-8000-000000000002', true);
+select lives_ok($$select * from public.confirm_manual_attendance(
+  'ILG-ATTENDANCE-OVERNIGHT', '82000000-0000-4000-8000-000000000001',
+  'entry', 1, '85000000-0000-4000-8000-00000000000c', '{}'::jsonb)$$,
+  'A synthetic visit records its original check-in before date rollover');
+reset role;
+update public.attendance_logs set scanned_at =
+  (((now() at time zone 'Asia/Manila')::date - 1)::timestamp + time '12:00') at time zone 'Asia/Manila'
+where idempotency_key = '85000000-0000-4000-8000-00000000000c';
+update public.site_slots set slot_date = (now() at time zone 'Asia/Manila')::date - 1
+where id = '83000000-0000-4000-8000-000000000002';
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '81000000-0000-4000-8000-000000000002', true);
 select is((select result from public.manual_scan_ticket('ILG-ATTENDANCE-OVERNIGHT', '82000000-0000-4000-8000-000000000001')),
-  'checkout_confirmation_required', 'An active visit remains eligible for checkout after its booking day');
+  'overdue_checkout_required', 'Overnight attendance requires explicit reconciliation');
+select is((select result from public.scan_ticket(
+  '84000000-0000-4000-8000-000000000002', extensions.digest(convert_to('overnight-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', '{}'::jsonb)), 'expired', 'Overnight QR is expired for normal scanning');
 select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'current_visitor_count')::bigint, 1::bigint, 'Active occupancy persists across the Manila date boundary');
 select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'arrivals_today')::bigint, 11::bigint, 'Yesterday entry does not inflate today arrivals');
-select lives_ok($$select * from public.confirm_manual_attendance(
+select throws_ok($$select * from public.confirm_ticket_attendance(
+  '84000000-0000-4000-8000-000000000002', extensions.digest(convert_to('overnight-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', 'exit', 1, '85000000-0000-4000-8000-000000000030', '{}'::jsonb)$$,
+  'P0001', 'Expired QR ticket', 'Expired QR cannot record an ordinary checkout');
+select throws_ok($$select * from public.confirm_manual_attendance(
   'ILG-ATTENDANCE-OVERNIGHT', '82000000-0000-4000-8000-000000000001',
-  'exit', 1, '85000000-0000-4000-8000-00000000000d', '{}'::jsonb)$$,
-  'An overnight active visitor can check out after the visit window');
+  'exit', 1, '85000000-0000-4000-8000-000000000031', '{}'::jsonb)$$,
+  'P0001', 'Expired QR ticket', 'Ordinary manual checkout cannot bypass same-day validation');
+select throws_ok($$select * from public.reconcile_overdue_checkout(
+  'ILG-ATTENDANCE-OVERNIGHT', '82000000-0000-4000-8000-000000000001', 1,
+  '85000000-0000-4000-8000-000000000032', '   ', '{}'::uuid[])$$,
+  'P0001', 'A reason is required for overdue checkout', 'Overdue checkout requires an audit reason');
+select throws_ok($$select * from public.reconcile_overdue_checkout(
+  'ILG-ATTENDANCE-OVERNIGHT', '82000000-0000-4000-8000-000000000001', 1,
+  '85000000-0000-4000-8000-000000000033', E'\t\n', '{}'::uuid[])$$,
+  'P0001', 'A reason is required for overdue checkout', 'Whitespace-only reconciliation reasons are rejected');
+select throws_ok($$select * from public.reconcile_overdue_checkout(
+  'ILG-ATTENDANCE-WRONG-SITE', '82000000-0000-4000-8000-000000000002', 1,
+  '85000000-0000-4000-8000-000000000045', 'Unauthorized destination', '{}'::uuid[])$$,
+  'P0001', 'Gatekeeper access denied', 'Gatekeepers cannot reconcile another destination');
+select lives_ok($$select * from public.reconcile_overdue_checkout(
+  'ILG-ATTENDANCE-OVERNIGHT', '82000000-0000-4000-8000-000000000001', 1,
+  '85000000-0000-4000-8000-00000000000d', 'Visitor remained onsite after closing', '{}'::uuid[])$$,
+  'Authorized Gatekeeper can reconcile an active overdue visit');
+select is((select reconciliation_reason from public.attendance_logs
+  where idempotency_key = '85000000-0000-4000-8000-00000000000d'),
+  'Visitor remained onsite after closing', 'The reconciliation reason is retained in the attendance audit');
+select is((select result from public.reconcile_overdue_checkout(
+  'ILG-ATTENDANCE-OVERNIGHT', '82000000-0000-4000-8000-000000000001', 1,
+  '85000000-0000-4000-8000-00000000000d', 'Visitor remained onsite after closing', '{}'::uuid[])),
+  'exit_recorded', 'Overdue reconciliation retries are idempotent');
 select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'current_visitor_count')::bigint, 0::bigint, 'Overnight checkout clears active occupancy');
 select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'arrivals_today')::bigint, 11::bigint, 'Prior-day arrival remains outside today total');
 select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'departures_today')::bigint, 12::bigint, 'Overnight checkout increments today departures');
@@ -240,6 +367,36 @@ select throws_ok($$insert into public.attendance_logs (booking_id, site_id, gate
   values ('84000000-0000-4000-8000-000000000001', '82000000-0000-4000-8000-000000000001',
   '81000000-0000-4000-8000-000000000003', 'entry', 1, '85000000-0000-4000-8000-00000000000f')$$,
   '42501', null, 'Visitors cannot insert their own attendance rows');
+select throws_ok($$select * from public.reconcile_overdue_checkout(
+  'ILG-ATTENDANCE-OVERNIGHT', '82000000-0000-4000-8000-000000000001', 1,
+  '85000000-0000-4000-8000-000000000042', 'Unauthorized visitor action', '{}'::uuid[])$$,
+  'P0001', 'Gatekeeper access denied', 'Visitors cannot reconcile overdue checkouts');
+
+reset role;
+insert into public.bookings (
+  id, booking_reference, site_id, slot_id, visitor_name, visitor_email,
+  adult_count, child_count, total_amount, payment_status, booking_status, qr_token_hash
+) values (
+  '84000000-0000-4000-8000-000000000008', 'ILG-ATTENDANCE-FREE',
+  '82000000-0000-4000-8000-000000000001', '83000000-0000-4000-8000-000000000001',
+  'Free Test Visitor', 'qr-visitor@example.invalid', 1, 0, 0, 'not_required', 'confirmed',
+  extensions.digest(convert_to('free-ticket', 'UTF8'), 'sha256')
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '81000000-0000-4000-8000-000000000002', true);
+select is((select result from public.scan_ticket(
+  '84000000-0000-4000-8000-000000000008', extensions.digest(convert_to('free-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', '{}'::jsonb)), 'entry_confirmation_required', 'Free admission is eligible without payment');
+select lives_ok($$select * from public.confirm_ticket_attendance(
+  '84000000-0000-4000-8000-000000000008', extensions.digest(convert_to('free-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', 'entry', 1, '85000000-0000-4000-8000-000000000040', '{}'::jsonb)$$,
+  'A confirmed free reservation records check-in');
+select lives_ok($$select * from public.confirm_ticket_attendance(
+  '84000000-0000-4000-8000-000000000008', extensions.digest(convert_to('free-ticket', 'UTF8'), 'sha256'),
+  '82000000-0000-4000-8000-000000000001', 'exit', 1, '85000000-0000-4000-8000-000000000041', '{}'::jsonb)$$,
+  'A free reservation can check out through the normal same-day QR flow');
+select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'current_visitor_count')::bigint, 0::bigint,
+  'Free visit entry and exit leave centralized occupancy balanced');
 
 select * from finish();
 rollback;

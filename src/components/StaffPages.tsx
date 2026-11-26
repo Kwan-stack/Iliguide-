@@ -652,6 +652,9 @@ type ScanResult = { result: string; booking_reference: string | null; visitor_na
 type AttendanceParticipant = { visitor_id: string; full_name: string; visitor_type: string; check_in_status: 'not_checked_in' | 'checked_in' | 'checked_out' };
 const attendanceLimit = (result: ScanResult, action: 'entry' | 'exit') => action === 'entry'
   ? result.visitor_count - result.entered_count : result.active_count;
+const attendanceDateTime = (value: string) => new Intl.DateTimeFormat('en-PH', {
+  dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila',
+}).format(new Date(value));
 function ScannerPage(props: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
@@ -669,14 +672,18 @@ function ScannerPage(props: Props) {
   const [pendingEventKey, setPendingEventKey] = useState('');
   const [ticketToken, setTicketToken] = useState('');
   const [manualReference, setManualReference] = useState('');
+  const [reconciliationReason, setReconciliationReason] = useState('');
+  const [lastAttendance, setLastAttendance] = useState<{ action: 'entry' | 'exit'; count: number; reference: string; at: string | null } | null>(null);
   const [scanError, setScanError] = useState('');
   const [scanBusy, setScanBusy] = useState(false);
   const site = props.sites.find((item) => item.id === props.siteId);
   const showResult = async (row: ScanResult) => {
     setResult(row);
+    setReconciliationReason('');
+    setLastAttendance(null);
     setParticipants([]); setSelectedVisitorIds([]); setParticipantsFailed(false);
-    if (['entry_confirmation_required', 'checkout_confirmation_required', 'attendance_confirmation_required'].includes(row.result)) {
-      const action = row.result === 'checkout_confirmation_required' ? 'exit' : 'entry';
+    if (['entry_confirmation_required', 'checkout_confirmation_required', 'attendance_confirmation_required', 'overdue_checkout_required'].includes(row.result)) {
+      const action = ['checkout_confirmation_required', 'overdue_checkout_required'].includes(row.result) ? 'exit' : 'entry';
       setAttendanceAction(action);
       setAttendanceCount(String(Math.max(1, attendanceLimit(row, action))));
       setPendingEventKey(crypto.randomUUID());
@@ -759,13 +766,18 @@ function ScannerPage(props: Props) {
   const confirmAttendance = async (event: FormEvent) => {
     event.preventDefault();
     if (!result || !props.siteId || !pendingEventKey) return;
+    const overdueCheckout = result.result === 'overdue_checkout_required';
     const action = result.result === 'entry_confirmation_required' ? 'entry'
-      : result.result === 'checkout_confirmation_required' ? 'exit' : attendanceAction;
+      : ['checkout_confirmation_required', 'overdue_checkout_required'].includes(result.result) ? 'exit' : attendanceAction;
     const max = attendanceLimit(result, action);
     const count = participants.length ? selectedVisitorIds.length : Number(attendanceCount);
     if (participantsLoading || participantsFailed) return;
     if (participants.length && count < 1) {
       setScanError('Select at least one eligible visitor.');
+      return;
+    }
+    if (overdueCheckout && !reconciliationReason.trim()) {
+      setScanError('Enter a reason for this overdue checkout.');
       return;
     }
     if (!Number.isSafeInteger(count) || count < 1 || count > max) {
@@ -775,7 +787,16 @@ function ScannerPage(props: Props) {
     setScanBusy(true); setScanError('');
     try {
       let confirmed: ScanResult;
-      if (ticketToken) confirmed = (await invokeFunction<{ result: ScanResult }>('scan-ticket', {
+      if (overdueCheckout) {
+        const { data, error } = await db().rpc('reconcile_overdue_checkout', {
+          p_booking_reference: manualReference, p_site_id: props.siteId, p_visitor_count: count,
+          p_idempotency_key: pendingEventKey, p_reason: reconciliationReason.trim(),
+          p_visitor_ids: participants.length ? selectedVisitorIds : [],
+          p_device: { user_agent: navigator.userAgent.slice(0, 240), method: 'manual' },
+        });
+        if (error) throw error;
+        confirmed = (Array.isArray(data) ? data[0] : data) as ScanResult;
+      } else if (ticketToken) confirmed = (await invokeFunction<{ result: ScanResult }>('scan-ticket', {
         token: ticketToken, site_id: props.siteId, action, visitor_count: count,
         visitor_ids: participants.length ? selectedVisitorIds : [], idempotency_key: pendingEventKey,
       })).result;
@@ -791,17 +812,21 @@ function ScannerPage(props: Props) {
       }
       await showResult(confirmed);
       if (confirmed.result === 'entry_recorded') {
-        props.notify('Check-in recorded successfully.');
+        const at = confirmed.entered_count === count ? confirmed.entered_at : null;
+        setLastAttendance({ action, count, reference: confirmed.booking_reference ?? manualReference, at });
+        props.notify(`Check-in Successful · ${confirmed.booking_reference ?? manualReference} · ${site?.name ?? 'Destination'} · ${count} visitor${count === 1 ? '' : 's'}${at ? ` · ${attendanceDateTime(at)}` : ''}`);
         props.refresh();
       } else if (confirmed.result === 'exit_recorded') {
-        props.notify('Check-out recorded successfully.');
+        const at = confirmed.exited_at;
+        setLastAttendance({ action, count, reference: confirmed.booking_reference ?? manualReference, at });
+        props.notify(`Check-out Successful · ${confirmed.booking_reference ?? manualReference} · ${site?.name ?? 'Destination'} · ${count} visitor${count === 1 ? '' : 's'}${at ? ` · ${attendanceDateTime(at)}` : ''}`);
         props.refresh();
       }
     } catch (error) { setScanError(error instanceof Error ? error.message : 'Could not record attendance.'); }
     finally { setScanBusy(false); }
   };
 
-  const canConfirmAttendance = Boolean(result && ['entry_confirmation_required', 'checkout_confirmation_required', 'attendance_confirmation_required'].includes(result.result));
+  const canConfirmAttendance = Boolean(result && ['entry_confirmation_required', 'checkout_confirmation_required', 'attendance_confirmation_required', 'overdue_checkout_required'].includes(result.result));
   const chooseEntryOrExit = result?.result === 'attendance_confirmation_required';
   const attendanceMax = result ? attendanceLimit(result, attendanceAction) : 0;
   const attendanceEligibleParticipants = participants.filter((visitor) => visitor.check_in_status === (attendanceAction === 'entry' ? 'not_checked_in' : 'checked_in'));
@@ -822,10 +847,20 @@ function ScannerPage(props: Props) {
       {result && <div className="scan-result"><span className={result.result.includes('recorded') ? 'scan-result-icon success' : 'scan-result-icon'}>{result.result.includes('recorded') ? <Check size={23}/> : <ShieldCheck size={23}/>}</span>
         <strong>{scanLabel(result.result)}</strong><p>{result.visitor_name || 'Ticket details unavailable'}</p>
         {result.booking_reference && <small>{result.booking_reference} · {result.visitor_count} booked · {result.entered_count} admitted · {result.active_count} inside</small>}
-        {canConfirmAttendance && <p className="scan-confirm-hint">Ticket verified. Confirm the visitors entering now to record their check-in.</p>}
-        {result.entered_at && <small>Entry: {new Date(result.entered_at).toLocaleString()}</small>}
-        {result.exited_at && <small>Exit: {new Date(result.exited_at).toLocaleString()}</small>}
+        {lastAttendance && lastAttendance.reference === result.booking_reference && <p className="scan-confirm-hint" role="status">
+          {lastAttendance.action === 'entry' ? 'Check-in Successful' : 'Check-out Successful'} · {site?.name ?? 'Destination'} · {lastAttendance.count} visitor{lastAttendance.count === 1 ? '' : 's'}{lastAttendance.at ? ` · ${attendanceDateTime(lastAttendance.at)}` : ''}
+        </p>}
+        {scanNotice(result.result) && <p className="scan-confirm-hint">{scanNotice(result.result)}</p>}
+        {canConfirmAttendance && <p className="scan-confirm-hint">{result.result === 'overdue_checkout_required'
+          ? 'QR ticket expired. Use this manual checkout only for visitors still inside, and record why.'
+          : attendanceAction === 'exit' ? 'Confirm the visitors currently inside who are leaving now.'
+            : 'Ticket verified. Confirm the visitors entering now to record their check-in.'}</p>}
+        {result.entered_at && <small>Entry: {attendanceDateTime(result.entered_at)}</small>}
+        {result.exited_at && <small>Exit: {attendanceDateTime(result.exited_at)}</small>}
         {canConfirmAttendance && <form className="scan-confirm-form" onSubmit={(event) => void confirmAttendance(event)}>
+          {result.result === 'overdue_checkout_required' && <label>Reason for overdue checkout<textarea value={reconciliationReason}
+            onChange={(event) => setReconciliationReason(event.target.value)} maxLength={1000} required rows={3}
+            placeholder="Record why the visitor is checking out after the reservation date."/></label>}
           {chooseEntryOrExit && <label>Attendance action
             <select value={attendanceAction} disabled={participantsLoading} onChange={(event) => {
               const action = event.target.value as 'entry' | 'exit';
@@ -856,18 +891,33 @@ function ScannerPage(props: Props) {
               value={attendanceCount} onChange={(event) => setAttendanceCount(event.target.value)} required/>
             <small>Count-only booking. Maximum {attendanceMax}; all visitors enter or exit together.</small>
           </label>}
-          <button className="btn btn-primary" type="submit" disabled={scanBusy || participantsLoading || participantsFailed || (participants.length > 0 && selectedVisitorIds.length === 0)}>{scanBusy ? 'Saving…' : attendanceAction === 'entry' ? 'Check In' : 'Confirm ticket & check-out'} <Check size={15}/></button>
+          <button className="btn btn-primary" type="submit" disabled={scanBusy || participantsLoading || participantsFailed || (participants.length > 0 && selectedVisitorIds.length === 0)}>{scanBusy ? 'Saving…' : result.result === 'overdue_checkout_required' ? 'Confirm overdue check-out' : attendanceAction === 'entry' ? 'Check in' : 'Confirm check-out'} <Check size={15}/></button>
         </form>}
-        <button type="button" className="btn btn-outline" onClick={() => { setResult(null); setScanError(''); setTicketToken(''); setManualReference(''); setPendingEventKey(''); }}>Scan another ticket</button></div>}
+        <button type="button" className="btn btn-outline" onClick={() => { setResult(null); setScanError(''); setTicketToken(''); setManualReference(''); setPendingEventKey(''); setReconciliationReason(''); setLastAttendance(null); }}>{canConfirmAttendance ? 'Cancel' : 'Scan another ticket'}</button></div>}
     </article></div>}
   </section>;
 }
 
 function scanLabel(result: string) {
   return ({ entry_recorded: 'Check-in recorded', exit_recorded: 'Check-out recorded',
-    entry_confirmation_required: 'Confirm actual visitors entering', checkout_confirmation_required: 'Confirm visitors checking out', attendance_confirmation_required: 'Choose entry or checkout', completed: 'Visit already completed',
+    entry_confirmation_required: 'Confirm actual visitors entering', checkout_confirmation_required: 'Confirm visitors checking out', attendance_confirmation_required: 'Choose entry or checkout', completed: 'Visit Already Completed',
     visitor_roster_incomplete: 'Visitor list incomplete; contact the Tourism Office',
-    invalid: 'Ticket is invalid', unpaid_or_inactive: 'Booking is unpaid or inactive', outside_window: 'Outside the visit time window' } as Record<string, string>)[result] ?? result.replace(/_/g, ' ');
+    invalid: 'Ticket is invalid', wrong_destination: 'Invalid Destination', expired: 'Expired QR Ticket',
+    not_yet_valid: 'QR Ticket Not Yet Valid', overdue_checkout_required: 'Overdue checkout requires reconciliation',
+    cancelled: 'Reservation Cancelled', expired_reservation: 'Reservation Expired',
+    unpaid_or_inactive: 'Booking is unpaid or inactive' } as Record<string, string>)[result] ?? result.replace(/_/g, ' ');
+}
+
+function scanNotice(result: string) {
+  return ({
+    wrong_destination: 'This QR ticket belongs to a different destination.',
+    expired: 'This ticket was valid only on its scheduled visit date.',
+    expired_reservation: 'This reservation’s visit date has passed.',
+    not_yet_valid: 'This QR ticket is scheduled for a future visit and cannot be used today.',
+    cancelled: 'Cancelled reservations cannot be admitted.',
+    unpaid_or_inactive: 'Admission requires a confirmed reservation with payment complete or not required.',
+    completed: 'This visit already has a recorded check-in and check-out.',
+  } as Record<string, string>)[result] ?? '';
 }
 
 type Hour = { weekday: number; opens_at: string; closes_at: string; is_closed: boolean };
