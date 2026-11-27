@@ -1,14 +1,16 @@
 begin;
-select plan(94);
+select plan(96);
 
 insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at)
 values
   ('81000000-0000-4000-8000-000000000001', 'authenticated', 'authenticated', 'qr-office@example.invalid', '', now()),
   ('81000000-0000-4000-8000-000000000002', 'authenticated', 'authenticated', 'qr-gatekeeper@example.invalid', '', now()),
-  ('81000000-0000-4000-8000-000000000003', 'authenticated', 'authenticated', 'qr-visitor@example.invalid', '', now());
+  ('81000000-0000-4000-8000-000000000003', 'authenticated', 'authenticated', 'qr-visitor@example.invalid', '', now()),
+  ('81000000-0000-4000-8000-000000000004', 'authenticated', 'authenticated', 'qr-off-duty-gatekeeper@example.invalid', '', now());
 update public.profiles set role = 'tourism_office' where id = '81000000-0000-4000-8000-000000000001';
 update public.profiles set role = 'gatekeeper' where id = '81000000-0000-4000-8000-000000000002';
 update public.profiles set role = 'visitor' where id = '81000000-0000-4000-8000-000000000003';
+update public.profiles set role = 'gatekeeper' where id = '81000000-0000-4000-8000-000000000004';
 
 insert into public.tourism_sites (id, name, slug, management_organization_id)
 values
@@ -22,7 +24,9 @@ values ('82000000-0000-4000-8000-000000000001', 50, 50, 20, 20);
 insert into public.site_operating_hours (site_id, weekday, opens_at, closes_at)
 values ('82000000-0000-4000-8000-000000000001', extract(dow from (now() at time zone 'Asia/Manila')::date)::smallint, '00:00', '23:59:59.999999');
 insert into public.staff_assignments (profile_id, site_id, staff_role)
-values ('81000000-0000-4000-8000-000000000002', '82000000-0000-4000-8000-000000000001', 'gatekeeper');
+values
+  ('81000000-0000-4000-8000-000000000002', '82000000-0000-4000-8000-000000000001', 'gatekeeper'),
+  ('81000000-0000-4000-8000-000000000004', '82000000-0000-4000-8000-000000000001', 'gatekeeper');
 insert into public.site_slots (id, site_id, slot_date, starts_at, ends_at, capacity, status)
 values
   ('83000000-0000-4000-8000-000000000001', '82000000-0000-4000-8000-000000000001', (now() at time zone 'Asia/Manila')::date, '00:00', '23:59:59.999999', 20, 'open'),
@@ -99,6 +103,15 @@ values (
   (((now() at time zone 'Asia/Manila')::date + 1)::timestamp at time zone 'Asia/Manila'),
   '81000000-0000-4000-8000-000000000002', 'active'
 );
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '81000000-0000-4000-8000-000000000002', true);
+select is(private.can_review_site_payment('82000000-0000-4000-8000-000000000001'), true,
+  'Gatekeeper with an active shift can review destination payments');
+select set_config('request.jwt.claim.sub', '81000000-0000-4000-8000-000000000004', true);
+select is(private.can_review_site_payment('82000000-0000-4000-8000-000000000001'), false,
+  'Assigned gatekeeper without an active shift cannot review destination payments');
 reset role;
 
 select set_config('request.jwt.claim.sub', '81000000-0000-4000-8000-000000000002', true);
