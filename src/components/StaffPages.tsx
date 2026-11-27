@@ -927,7 +927,7 @@ function ScannerPage(props: Props) {
 
 function scanLabel(result: string) {
   return ({ entry_recorded: 'Check-in recorded', exit_recorded: 'Check-out recorded',
-    entry_confirmation_required: 'Confirm actual visitors entering', checkout_confirmation_required: 'Confirm visitors checking out', attendance_confirmation_required: 'Choose entry or checkout', completed: 'Visit Already Completed',
+    entry_confirmation_required: 'Confirm actual visitors entering', checkout_confirmation_required: 'Confirm visitors checking out', attendance_confirmation_required: 'Choose entry or checkout', completed: 'Ticket Already Used',
     visitor_roster_incomplete: 'Visitor list incomplete; contact the Tourism Office',
     invalid: 'Ticket is invalid', wrong_destination: 'Invalid Destination', expired: 'Expired QR Ticket',
     not_yet_valid: 'QR Ticket Not Yet Valid', overdue_checkout_required: 'Overdue checkout requires reconciliation',
@@ -943,7 +943,7 @@ function scanNotice(result: string) {
     not_yet_valid: 'This QR ticket is scheduled for a future visit and cannot be used today.',
     cancelled: 'Cancelled reservations cannot be admitted.',
     unpaid_or_inactive: 'Admission requires a confirmed reservation with payment complete or not required.',
-    completed: 'This visit already has a recorded check-in and check-out.',
+    completed: 'This booking has already been completed. No further entry or exit transactions are permitted.',
   } as Record<string, string>)[result] ?? '';
 }
 

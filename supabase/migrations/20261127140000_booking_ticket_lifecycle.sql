@@ -11,7 +11,10 @@ create function private.snapshot_booking_site_name()
 returns trigger language plpgsql security definer set search_path = ''
 as $$
 begin
-  if tg_op = 'INSERT' or new.site_id is distinct from old.site_id then
+  if tg_op = 'INSERT' then
+    select s.name into new.site_name_snapshot from public.tourism_sites s where s.id = new.site_id;
+    if new.site_name_snapshot is null then raise exception 'Booking destination is unavailable'; end if;
+  elsif new.site_id is distinct from old.site_id then
     select s.name into new.site_name_snapshot from public.tourism_sites s where s.id = new.site_id;
     if new.site_name_snapshot is null then raise exception 'Booking destination is unavailable'; end if;
   end if;
@@ -70,15 +73,13 @@ begin
     greatest(coalesce(a.entered_count, 0) - coalesce(a.exited_count, 0), 0), a.entered_at, a.exited_at,
     b.booking_status::text
   from public.bookings b
-  left join (
-    select l.booking_id,
-      coalesce(sum(l.visitor_count) filter (where l.action = 'entry' and l.counts_toward_occupancy), 0)::integer as entered_count,
+  left join lateral (
+    select coalesce(sum(l.visitor_count) filter (where l.action = 'entry' and l.counts_toward_occupancy), 0)::integer as entered_count,
       coalesce(sum(l.visitor_count) filter (where l.action = 'exit' and l.counts_toward_occupancy), 0)::integer as exited_count,
       min(l.scanned_at) filter (where l.action = 'entry' and l.counts_toward_occupancy) as entered_at,
       max(l.scanned_at) filter (where l.action = 'exit' and l.counts_toward_occupancy) as exited_at
-    from public.attendance_logs l
-    group by l.booking_id
-  ) a on a.booking_id = b.id
+    from public.attendance_logs l where l.booking_id = b.id
+  ) a on true
   where b.visitor_id = auth.uid() and (p_booking_id is null or b.id = p_booking_id);
 end
 $$;

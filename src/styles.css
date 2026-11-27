@@ -216,3 +216,66 @@ body{min-width:0}@media(max-width:760px){html,body,#root,.app-shell,.office-app-
   :is(.app-shell,.office-app-shell) :is(input,select,textarea){max-width:100%}
   :is(.app-shell,.office-app-shell) img,:is(.app-shell,.office-app-shell) video,:is(.app-shell,.office-app-shell) canvas{max-width:100%}
 }
+/* Completed visits keep booking details and receipts while removing QR access. */
+.ticket-card-completed{display:block;max-width:850px;padding:22px 24px}
+.completed-ticket-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:18px}
+.completed-ticket-head h2{font:800 25px Manrope,sans-serif;letter-spacing:-.6px;margin:10px 0 4px}
+.completed-ticket-head p{margin:0;color:var(--muted);font-size:11px}
+.completed-ticket-head>div:last-child{display:flex;flex-direction:column;align-items:flex-end;gap:7px}
+.completed-ticket-head>div:last-child>small{color:var(--muted);font-size:10px}
+.completed-ticket-badge{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:6px 10px;background:#e8f7f0;color:#158453;font-size:10px;font-weight:750}
+.ticket-data.completed-ticket-data{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.completed-ticket-data>span{min-width:0;padding:12px;border-radius:9px;background:#f3f7f7;overflow-wrap:anywhere}
+.completed-ticket-data>span small{font-size:9px}
+.completed-ticket-data>span b{font-size:12px;line-height:1.45}
+.completed-ticket-data>.completed-duration{grid-column:1/-1}
+.completed-ticket-notice{display:flex;align-items:flex-start;gap:10px;padding:13px 2px;margin-top:16px;border-top:1px solid var(--line);color:#16865a}
+.completed-ticket-notice>svg{flex:none}
+.completed-ticket-notice>span{display:grid;gap:4px}
+.completed-ticket-notice b{font-size:12px}
+.completed-ticket-notice small{color:var(--muted);font-size:10px;line-height:1.6}
+.completed-receipt{width:100%;justify-content:center;margin-top:4px}
+.ticket-card-unavailable>p{color:var(--muted);font-size:11px}
+.ticket-card-live .ticket-qr>[role=status]{color:var(--muted);font-size:11px;text-align:center}
+@media(max-width:560px){.ticket-card-completed{padding:15px}.completed-ticket-head{flex-direction:column;gap:10px}.completed-ticket-head>div:last-child{align-items:flex-start}.completed-ticket-head h2{font-size:21px}.completed-ticket-data>span{padding:10px}.completed-ticket-data>span b{font-size:11px}.completed-ticket-notice small{font-size:9px}}
+.profile-management-panel{display:grid;grid-template-columns:66px minmax(0,1fr);gap:0 12px;padding:15px}
+.profile-management-panel .profile-panel-heading{grid-column:1/-1;margin-bottom:13px}
+.profile-photo-wrap{position:relative;grid-column:1;grid-row:2/4;width:66px;height:66px}
+.profile-management-panel .profile-photo-preview{width:66px;height:66px;margin:0;border-radius:50%;background:#e8f5f4}
+.profile-management-panel .profile-photo-preview svg{width:29px;height:29px}
+.profile-photo-action{position:absolute;right:-3px;bottom:-3px;z-index:3;display:grid;place-items:center;width:25px;height:25px;padding:0;border:2px solid #fff;border-radius:50%;background:var(--deep);color:#fff;cursor:pointer}
+.profile-photo-action:focus-visible,.profile-management-panel button:focus-visible,.profile-dialog-backdrop button:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+.profile-photo-input{display:none}
+.profile-management-panel .profile-identity{grid-column:2;justify-items:start;align-self:center;gap:4px;text-align:left}
+.profile-management-panel .profile-identity>b{font-size:12px}
+.profile-management-panel .profile-identity>small{max-width:100%;overflow-wrap:anywhere}
+.profile-management-panel .profile-identity>.verified-label,.profile-management-panel .profile-identity>.verification-pending{margin:3px 0 0}
+.profile-edit-button{justify-content:center;min-height:33px;margin-top:7px;padding:7px 11px;font-size:9px}
+.profile-management-panel .profile-logout{grid-column:1/-1;justify-self:stretch;max-width:none;margin:14px 0 0;padding-top:12px;border:0;border-top:1px solid var(--line);border-radius:0;background:transparent}
+.profile-menu-backdrop{position:fixed;inset:0;z-index:40;border:0;background:transparent}
+.profile-photo-menu{position:absolute;top:calc(100% + 9px);left:0;z-index:41;display:grid;gap:5px;width:210px;padding:10px;border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:0 12px 34px #173b4b24}
+.profile-photo-menu>b{padding:3px 6px;color:var(--muted);font-size:9px;letter-spacing:.7px;text-transform:uppercase}
+.profile-photo-menu>button{display:flex;align-items:center;gap:8px;padding:9px 8px;border:0;border-radius:7px;background:transparent;color:var(--ink);font:650 11px Manrope,sans-serif;text-align:left;cursor:pointer}
+.profile-photo-menu>button:hover{background:#eef8f7;color:var(--deep)}
+.profile-photo-menu>.profile-photo-remove{color:#b43b3b}
+.profile-photo-menu>small{padding:3px 6px;color:var(--muted);font-size:8px}
+.profile-nav-icon{overflow:hidden}
+.profile-nav-icon>img{width:100%;height:100%;border-radius:inherit;object-fit:cover}
+.profile-form-grid input:disabled{background:#f5f8f8;color:#657780;cursor:default}
+.profile-form-actions{gap:9px}
+.profile-form-actions .btn{min-width:120px}
+.profile-dialog-backdrop{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px;background:#112b38a8;backdrop-filter:blur(3px)}
+.profile-photo-dialog,.profile-confirm-dialog{position:relative;width:min(100%,410px);padding:25px;border:1px solid #dbe8e8;border-radius:18px;background:#fff;box-shadow:0 24px 70px #102b3c40}
+.profile-photo-dialog h2,.profile-confirm-dialog h2{margin:10px 0 6px;color:var(--ink);font-size:21px;letter-spacing:-.5px}
+.profile-photo-dialog>p,.profile-confirm-dialog>p{margin:0;color:var(--muted);font-size:11px;line-height:1.6}
+.profile-dialog-close{position:absolute;top:14px;right:14px;display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--line);border-radius:50%;background:#fff;color:var(--ink);cursor:pointer}
+.profile-photo-draft{display:grid;place-items:center;width:180px;height:180px;margin:20px auto;overflow:hidden;border:4px solid #e8f5f4;border-radius:50%;background:#edf5f4}
+.profile-photo-draft img{width:100%;height:100%;object-fit:cover}
+.profile-dialog-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:20px}
+.profile-dialog-actions .btn{min-width:112px;justify-content:center}
+.profile-confirm-dialog{width:min(100%,390px);padding:27px}
+.profile-confirm-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:#fff0ed;color:#bb4537}
+.btn-danger{display:inline-flex;align-items:center;gap:7px;padding:10px 15px;border:1px solid #b93737;border-radius:8px;background:#b93737;color:#fff;font:700 10px Manrope,sans-serif;cursor:pointer}
+.btn-danger:disabled{opacity:.65;cursor:wait}
+@media(max-width:860px){.profile-management-panel{grid-template-columns:66px minmax(0,1fr)}.profile-photo-wrap{grid-column:1;grid-row:2/4;width:66px;height:66px}.profile-management-panel .profile-photo-preview{width:66px;height:66px}.profile-management-panel .profile-identity{grid-column:2}.profile-management-panel .profile-logout{grid-column:1/-1;max-width:none;justify-self:stretch}}
+@media(max-width:560px){.profile-management-panel{grid-template-columns:58px minmax(0,1fr);padding:13px;column-gap:11px}.profile-photo-wrap,.profile-management-panel .profile-photo-preview{width:58px;height:58px}.profile-management-panel .profile-identity>b{font-size:11px}.profile-management-panel .profile-identity>small{font-size:9px}.profile-edit-button{margin-top:5px}.profile-photo-menu{position:fixed;top:auto;right:0;bottom:0;left:0;z-index:41;width:100%;gap:7px;padding:20px 18px calc(20px + env(safe-area-inset-bottom));border:0;border-radius:18px 18px 0 0;box-shadow:0 -12px 40px #173b4b2b}.profile-photo-menu>b{font-size:10px}.profile-photo-menu>button{padding:12px;font-size:13px}.profile-photo-menu>small{font-size:9px}.profile-photo-dialog,.profile-confirm-dialog{padding:21px}.profile-photo-draft{width:158px;height:158px}.profile-form-actions{flex-wrap:wrap}.profile-form-actions .btn{flex:1}.profile-dialog-actions .btn{min-width:0;flex:1}}

@@ -83,6 +83,7 @@ export default function App() {
   const authUserId = useRef<string | null>(null);
   const [savedSiteIds, setSavedSiteIds] = useState<string[]>(() => readSavedSiteIds(null));
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [visitorAvatarUrl, setVisitorAvatarUrl] = useState('');
   const [travelers, setTravelers] = useState<TravelerProfile[]>([]);
   const [assignments, setAssignments] = useState<StaffAssignment[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
@@ -130,6 +131,14 @@ export default function App() {
 
   const staffRole = user && profile?.account_status === 'active' && profile.role !== 'visitor' ? profile.role : null;
   const role: Profile['role'] = profile?.account_status === 'active' ? profile.role : 'visitor';
+  useEffect(() => {
+    if (!supabaseConfigured || role !== 'visitor' || !user || !profile?.avatar_path) { setVisitorAvatarUrl(''); return; }
+    let active = true;
+    void db().storage.from('visitor-avatars').createSignedUrl(profile.avatar_path, 3600)
+      .then(({ data }) => { if (active) setVisitorAvatarUrl(data?.signedUrl ?? ''); })
+      .catch(() => { if (active) setVisitorAvatarUrl(''); });
+    return () => { active = false; };
+  }, [profile?.avatar_path, role, user?.id]);
   const activeSite = sites.find((site) => site.id === siteId) ?? null;
   const updateBookingAvailability = useCallback((nextSiteId: string, nextDate: string, allowed: boolean, reason: string) => {
     setBookingAvailability((current) => current.siteId === nextSiteId && current.date === nextDate && current.allowed === allowed && current.reason === reason
@@ -772,7 +781,7 @@ export default function App() {
         ? passwordRecovery ? null : <Link className="link-btn" to="/">Explore Iligan</Link>
         : role === 'visitor'
         ? user
-          ? <><VisitorNotificationButton key={user.id} userId={user.id} configured={supabaseConfigured} notify={notify} onOpenBookings={() => go('Bookings')}/><button className={page === 'Account' ? 'profile-nav-btn active' : 'profile-nav-btn'} aria-label="Open profile" title="Profile" aria-current={page === 'Account' ? 'page' : undefined} onClick={() => go('Account')}><span className="profile-nav-icon"><UserRound size={18}/></span></button></>
+          ? <><VisitorNotificationButton key={user.id} userId={user.id} configured={supabaseConfigured} notify={notify} onOpenBookings={(bookingId) => { setActiveBooking(null); setActiveTicket(null); setActiveGuestCode(''); setPage('Bookings'); navigate(bookingId ? `/bookings?booking=${encodeURIComponent(bookingId)}` : '/bookings'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}/><button className={page === 'Account' ? 'profile-nav-btn active' : 'profile-nav-btn'} aria-label="Open profile" title="Profile" aria-current={page === 'Account' ? 'page' : undefined} onClick={() => go('Account')}><span className="profile-nav-icon">{visitorAvatarUrl ? <img src={visitorAvatarUrl} alt=""/> : <UserRound size={18}/>}</span></button></>
           : <><button className="link-btn" onClick={() => setAuthMode('signup')}>Sign up</button><Link className="btn btn-primary btn-sm header-auth-login" to={visitorLoginUrl(page === 'Discover' ? '/discover' : location.pathname)}>Log in</Link></>
         : <><span className="role-pill"><span className="status-dot"/>{role.replace('_', ' ')}</span><button className="link-btn" onClick={signOut}>Log out</button></>}
       </div>

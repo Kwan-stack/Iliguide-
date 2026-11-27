@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowDownToLine, ArrowRight, CalendarDays, Clock3, Heart, LogOut, Search, ShieldCheck, Ticket as TicketIcon, UserRound, BadgeCheck } from 'lucide-react';
+import { ArrowDownToLine, ArrowRight, BadgeCheck, CalendarDays, Camera, Clock3, Heart, LogOut, Pencil, Search, ShieldCheck, Ticket as TicketIcon, Trash2, UserRound, X } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { db, dateLabel, invokeFunction, isValidOptionalPhone, loadOwnBookings, money, timeLabel, timestampTimeLabel, type Booking, type Profile, type Site, type Ticket, type TravelerProfile } from '../lib/iliguide';
 import { supabase } from '../lib/supabase';
@@ -58,6 +58,7 @@ export function VisitorPages(props: Props) {
   const [ownReviews, setOwnReviews] = useState<ReviewRow[]>([]);
   const [reviewRefresh, setReviewRefresh] = useState(0);
   const [reviewBooking, setReviewBooking] = useState<{ booking: Booking; review?: ReviewRow } | null>(null);
+  const displayBooking = props.booking ? bookings.find((item) => item.booking_id === props.booking?.booking_id) ?? props.booking : null;
 
   useEffect(() => {
     if (previousBookingScope.current !== bookingScope) {
@@ -88,7 +89,9 @@ export function VisitorPages(props: Props) {
     const channel = db().channel(`visitor-booking-attendance-${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (event) => {
         if ((event.new as { booking_id?: string | null }).booking_id) setBookingsReloadKey((key) => key + 1);
-      }).subscribe();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bookings', filter: `visitor_id=eq.${userId}` }, () => setBookingsReloadKey((key) => key + 1))
+      .subscribe();
     return () => { void db().removeChannel(channel); };
   }, [props.user?.id, props.configured]);
 
@@ -159,11 +162,11 @@ export function VisitorPages(props: Props) {
       <p>{props.page === 'Tickets' ? 'A ticket is available after your reservation is confirmed.' : props.reviewOnly ? 'Choose a completed visit to review your experience.' : 'Review reservations made with your visitor account.'}</p>
     </div></div>
     <p className="config-note">Reservations and tickets here do not grant admission at the destination.</p>
-    {props.booking && <BookingRecord booking={props.booking} token={props.guestAccessToken} onTicket={props.onTicket} onConfirmation={props.onConfirmation}
-      cancellationReason={cancellationReasons[props.booking.booking_id] ?? ''}
-      setCancellationReason={(value) => setReasonForBooking(props.booking!.booking_id, value)}
-      onCancel={() => void requestCancel(props.booking, props.guestAccessToken)} cancelBusy={actionBusy}/>}
-    {props.page === 'Tickets' && props.ticket && props.booking && <TicketView booking={props.booking} ticket={props.ticket} userId={props.user?.id ?? null} configured={props.configured} notify={props.notify} onConfirmation={props.onConfirmation}/>}
+    {displayBooking && <BookingRecord booking={displayBooking} token={props.guestAccessToken} onTicket={props.onTicket} onConfirmation={props.onConfirmation} showTicketAction={props.page !== 'Tickets' && props.ticket?.booking.booking_id !== displayBooking.booking_id}
+      cancellationReason={cancellationReasons[displayBooking.booking_id] ?? ''}
+      setCancellationReason={(value) => setReasonForBooking(displayBooking.booking_id, value)}
+      onCancel={() => void requestCancel(displayBooking, props.guestAccessToken)} cancelBusy={actionBusy}/>}
+    {props.page === 'Tickets' && props.ticket && displayBooking && <TicketView booking={displayBooking} ticket={props.ticket} userId={props.user?.id ?? null} configured={props.configured} notify={props.notify} onConfirmation={props.onConfirmation}/>}
     <div className="bookings-list-heading"><h2>{props.reviewOnly ? 'Completed visits' : 'My bookings'}</h2><span>{loading ? 'Loading…' : props.reviewOnly ? reviewBookings.length + ' visits' : bookings.length + ' records'}</span></div>
     {!props.user && <div className="empty-card"><UserRound size={30}/><h3>{props.reviewOnly ? 'Sign in to review completed visits' : 'Sign in to see your bookings'}</h3><p>Reservations are linked to your visitor account.</p><button className="btn btn-primary" onClick={props.onLogin}>Sign in <ArrowRight size={15}/></button></div>}
     {props.user && !bookings.length && !loading && <div className="empty-card"><CalendarDays size={30}/><h3>{props.reviewOnly ? 'No completed visits to review yet' : 'No bookings on this account'}</h3><p>{props.reviewOnly ? 'After a destination records your visit as completed, it will appear here.' : 'When you book while signed in, the current reservation will appear here.'}</p></div>}
@@ -182,7 +185,7 @@ export function VisitorPages(props: Props) {
         <button className="link-btn" aria-expanded={expandedBooking === item.booking_id} onClick={() => setExpandedBooking(expandedBooking === item.booking_id ? '' : item.booking_id)}>{expandedBooking === item.booking_id ? 'Hide details' : 'View details'}</button>
         {item.booking_status === 'completed' && props.profile?.role === 'visitor' && props.profile.account_status === 'active' && <button className="btn btn-outline" onClick={() => setReviewBooking({ booking: item, review })}>{review ? 'View my review' : 'Write a review'}</button>}
       </div><div className="booking-record-statuses"><span className={`status-tag ${item.booking_status === 'confirmed' || item.booking_status === 'completed' ? 'paid' : ''}`}>{visitorBookingStatus(item)}</span>{review && <span className={`review-status-tag review-status-${review.review_status}`}>{review.review_status === 'pending' ? 'Review pending' : review.review_status}</span>}</div></div>
-      {expandedBooking === item.booking_id && <div className="booking-record-expanded"><BookingRecord booking={item} token="" onTicket={props.onTicket} onConfirmation={props.onConfirmation}
+      {expandedBooking === item.booking_id && <div className="booking-record-expanded"><BookingRecord booking={item} token="" onTicket={props.onTicket} onConfirmation={props.onConfirmation} showTicketAction={props.page !== 'Tickets' && props.ticket?.booking.booking_id !== item.booking_id}
         cancellationReason={cancellationReasons[item.booking_id] ?? ''}
         setCancellationReason={(value) => setReasonForBooking(item.booking_id, value)}
         onCancel={() => void requestCancel(item, '')} cancelBusy={actionBusy}/></div>}</article>; })}
@@ -193,9 +196,10 @@ export function VisitorPages(props: Props) {
   </section>;
 }
 
-function BookingRecord({ booking, token, onTicket, onConfirmation, cancellationReason, setCancellationReason, onCancel, cancelBusy }: {
+function BookingRecord({ booking, token, onTicket, onConfirmation, cancellationReason, setCancellationReason, onCancel, cancelBusy, showTicketAction = true }: {
   booking: Booking; token: string; onTicket: (booking: Booking, token: string) => void; onConfirmation: (reference: string) => void;
   cancellationReason: string; setCancellationReason: (value: string) => void; onCancel: () => void; cancelBusy: boolean;
+  showTicketAction?: boolean;
 }) {
   const canCancel = booking.booking_status === 'confirmed' && booking.cancellation_cutoff_at
     && new Date(booking.cancellation_cutoff_at).getTime() > Date.now();
@@ -208,7 +212,7 @@ function BookingRecord({ booking, token, onTicket, onConfirmation, cancellationR
         const row = (Array.isArray(data) ? data[0] : data) as TicketAttendance | null;
         if (row) setAttendance(row);
       }
-    });
+    }, () => {});
     return () => { active = false; };
   }, [booking.booking_id, booking.booking_status, booking.attendance]);
   return <article className="booking-detail-card">
@@ -221,14 +225,14 @@ function BookingRecord({ booking, token, onTicket, onConfirmation, cancellationR
       <span><small>CHECK-IN</small><b>{attendance?.entered_at ? timestampTimeLabel(attendance.entered_at) : 'Not recorded'}</b></span>
       <span><small>CHECK-OUT</small><b>{attendance?.exited_at ? timestampTimeLabel(attendance.exited_at) : 'Not recorded'}</b></span>
       <span><small>VISIT DURATION</small><b>{visitDurationLabel(attendance?.entered_at, attendance?.exited_at)}</b></span>
-      <p><BadgeCheck size={16}/><span><b>Visit Completed</b>Your check-out was recorded. This ticket is no longer valid for entry or exit.</span></p>
+      <p><BadgeCheck size={16}/><span><b>Visit Completed</b>Your check-out has been successfully recorded. This ticket is no longer valid for entry or exit.</span></p>
     </div>}
     {booking.payment_method === 'onsite' && booking.payment_status === 'pending' && <p className="config-note">Pay at the destination before entry. Your QR ticket will be available after staff record payment.</p>}
     {booking.payment_status === 'not_required' && <p className="config-note">Fees are estimates; no payment was collected.</p>}
     {booking.booking_status === 'awaiting_payment' && <p className="config-note"><Clock3 size={16}/> This reservation is not confirmed and will expire when its hold ends.</p>}
     <div className="booking-detail-actions">
-      {booking.payment_receipt_reference && booking.payment_status === 'paid' && <button className="btn btn-outline" onClick={() => onConfirmation(booking.booking_reference)}>View receipt</button>}
-      {canIssueVisitorTicket(booking) && <button className="btn btn-primary" onClick={() => onTicket(booking, token)}>Open ticket <TicketIcon size={16}/></button>}
+      {(booking.payment_status === 'paid' || booking.booking_status === 'completed') && <button className="btn btn-outline" onClick={() => onConfirmation(booking.booking_reference)}>View receipt</button>}
+      {showTicketAction && canIssueVisitorTicket(booking) && <button className="btn btn-primary" onClick={() => onTicket(booking, token)}>Open ticket <TicketIcon size={16}/></button>}
     </div>
     {canCancel && <div className="inline-action"><label>Cancellation reason<input value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} maxLength={1000} placeholder="Tell the destination team why you need to cancel"/></label>
       <button className="btn btn-outline" disabled={cancelBusy || !cancellationReason.trim()} onClick={onCancel}>Request cancellation</button></div>}
@@ -238,17 +242,23 @@ function BookingRecord({ booking, token, onTicket, onConfirmation, cancellationR
 type TicketAttendance = { visitor_count: number; entered_count: number; exited_count: number; active_count: number; entered_at: string | null; exited_at: string | null; booking_status: string };
 function TicketView({ booking, ticket, userId, configured, notify, onConfirmation }: { booking: Booking; ticket: Ticket; userId: string | null; configured: boolean; notify: (message: string) => void; onConfirmation: (reference: string) => void }) {
   const [attendance, setAttendance] = useState<TicketAttendance | null>(null);
+  const [attendanceLoaded, setAttendanceLoaded] = useState(false);
   useEffect(() => {
     if (!userId || !configured) return;
     let active = true;
     const refresh = async () => {
       const { data, error } = await db().rpc('visitor_booking_attendance', { p_booking_id: booking.booking_id });
-      if (!error && active) setAttendance((Array.isArray(data) ? data[0] : data) as TicketAttendance | null);
+      if (!active) return;
+      if (error) { setAttendance(null); setAttendanceLoaded(false); return; }
+      setAttendance((Array.isArray(data) ? data[0] : data) as TicketAttendance | null);
+      setAttendanceLoaded(true);
     };
     const channel = db().channel(`visitor-ticket-attendance-${booking.booking_id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (event) => {
         if ((event.new as { booking_id?: string | null }).booking_id === booking.booking_id) void refresh();
-      }).subscribe((status) => { if (status === 'SUBSCRIBED') void refresh(); });
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bookings', filter: `id=eq.${booking.booking_id}` }, () => void refresh())
+      .subscribe((status) => { if (status === 'SUBSCRIBED') void refresh(); });
     void refresh();
     window.addEventListener('focus', refresh);
     window.addEventListener('online', refresh);
@@ -256,6 +266,7 @@ function TicketView({ booking, ticket, userId, configured, notify, onConfirmatio
   }, [booking.booking_id, configured, userId]);
   const attendanceState = attendance ? ticketAttendanceLabel(attendance) : null;
   const isCompleted = booking.booking_status === 'completed' || attendance?.booking_status === 'completed';
+  const isTicketUnavailable = attendanceLoaded && attendance?.booking_status !== 'confirmed';
   const isExitOnly = Boolean(attendance?.active_count && attendance.entered_count >= attendance.visitor_count);
   const download = () => {
     const svg = document.querySelector('.ticket-qr svg');
@@ -289,7 +300,7 @@ function TicketView({ booking, ticket, userId, configured, notify, onConfirmatio
       text('I', 97, 110, '800 31px Arial, sans-serif', '#006f93');
       text('ILIGUIDE', 146, 91, '800 15px Arial, sans-serif', '#d7f2ee');
       text('VISITOR RESERVATION TICKET', 146, 126, '700 26px Arial, sans-serif', '#ffffff');
-      const status = isExitOnly ? 'CHECKED IN · EXIT ONLY' : booking.payment_status === 'not_required' ? 'CONFIRMED' : booking.manual_payment_mode === 'demo' ? 'DEMO PAID · CONFIRMED' : 'PAID · CONFIRMED';
+      const status = isExitOnly ? 'CHECKED IN' : booking.payment_status === 'not_required' ? 'CONFIRMED' : booking.manual_payment_mode === 'demo' ? 'DEMO PAID · CONFIRMED' : 'PAID · CONFIRMED';
       roundRect(866, 84, 238, 42, 21, '#ffffff');
       text(status, 887, 111, '700 14px Arial, sans-serif', '#006f93');
       text('DESTINATION', 84, 248, '700 13px Arial, sans-serif', '#006f93');
@@ -340,18 +351,24 @@ function TicketView({ booking, ticket, userId, configured, notify, onConfirmatio
       <span><small>CHECK-IN</small><b>{attendance?.entered_at ? timestampTimeLabel(attendance.entered_at) : 'Not recorded'}</b></span>
       <span><small>CHECK-OUT</small><b>{attendance?.exited_at ? timestampTimeLabel(attendance.exited_at) : 'Not recorded'}</b></span>
       <span className="completed-duration"><small>VISIT DURATION</small><b>{visitDurationLabel(attendance?.entered_at, attendance?.exited_at)}</b></span></div>
-    <div className="completed-ticket-notice"><BadgeCheck size={19}/><span><b>Visit Completed</b><small>Your check-out was successfully recorded. This ticket is no longer valid for entry or exit.</small></span></div>
-    {booking.payment_status === 'paid' && booking.payment_receipt_reference && <button className="btn btn-outline completed-receipt" onClick={() => onConfirmation(booking.booking_reference)}><ArrowDownToLine size={15}/> View receipt</button>}
+    <div className="completed-ticket-notice"><BadgeCheck size={19}/><span><b>Visit Completed</b><small>Your check-out has been successfully recorded. This ticket is no longer valid for entry or exit.</small></span></div>
+    <button className="btn btn-outline completed-receipt" onClick={() => onConfirmation(booking.booking_reference)}><ArrowDownToLine size={15}/> View receipt</button>
   </article>;
-  return <article className="ticket-card ticket-card-live"><div className="ticket-left"><span className={isExitOnly ? 'status-tag paid' : booking.payment_status === 'paid' ? 'status-tag paid' : 'status-tag'}>{isExitOnly ? 'CHECKED IN · EXIT ONLY' : booking.payment_status === 'not_required' ? 'CONFIRMED' : booking.manual_payment_mode === 'demo' ? 'DEMO PAID · CONFIRMED' : 'PAID · CONFIRMED'}</span><h2>{booking.site_name}</h2>
-    <p>{isExitOnly ? 'Ticket purpose: Exit only. Present this QR code when leaving.' : 'Present this QR code to the gatekeeper when you arrive.'}</p><div className="ticket-divider"/>
+  if (isTicketUnavailable) return <article className="ticket-card ticket-card-completed ticket-card-unavailable" aria-live="polite">
+    <div className="completed-ticket-head"><div><span className="eyebrow"><span className="eyebrow-line"/> BOOKING {booking.booking_reference}</span><h2>{booking.site_name}</h2><p>{dateLabel(booking.slot_date)}</p></div>
+      <span className="status-tag">{bookingStatusLabel(attendance?.booking_status ?? booking.booking_status, booking.payment_method, booking.manual_payment_status)}</span></div>
+    <p>This ticket is no longer valid for entry or exit.</p>
+    {(booking.payment_status === 'paid' || booking.booking_status === 'completed') && <button className="btn btn-outline completed-receipt" onClick={() => onConfirmation(booking.booking_reference)}><ArrowDownToLine size={15}/> View receipt</button>}
+  </article>;
+  return <article className="ticket-card ticket-card-live"><div className="ticket-left"><span className={isExitOnly ? 'status-tag paid' : booking.payment_status === 'paid' ? 'status-tag paid' : 'status-tag'}>{isExitOnly ? 'CHECKED IN' : booking.payment_status === 'not_required' ? 'CONFIRMED' : booking.manual_payment_mode === 'demo' ? 'DEMO PAID · CONFIRMED' : 'PAID · CONFIRMED'}</span><h2>{booking.site_name}</h2>
+    <p>{isExitOnly ? 'Ticket purpose: Exit only. Your entry has been successfully recorded. Present this ticket to the gatekeeper when leaving the destination.' : 'Present this QR code to the gatekeeper when you arrive.'}</p><div className="ticket-divider"/>
     {attendanceState && <section className={`ticket-attendance ticket-attendance-${attendanceState.tone}`} aria-live="polite"><b>{attendanceState.label}</b><span>{attendance?.entered_count} admitted · {attendance?.active_count} inside · {Math.max(0, (attendance?.visitor_count ?? 0) - (attendance?.entered_count ?? 0))} awaiting entry · {attendance?.exited_count} exited</span>{attendance?.entered_at && <small>First entry · {timestampTimeLabel(attendance.entered_at)}</small>}{attendance?.exited_at && <small>Latest exit · {timestampTimeLabel(attendance.exited_at)}</small>}</section>}
     <div className="ticket-data"><span>BOOKING REFERENCE<b>{booking.booking_reference}</b></span><span>VISITOR NAME<b>{ticket.booking.visitor_name}</b></span>
       <span>VISITOR COUNT<b>{ticket.booking.visitor_count}</b></span><span>VISIT DATE<b>{dateLabel(ticket.booking.slot_date)}</b></span>
       <span>{booking.payment_status === 'not_required' ? 'ESTIMATED FEE' : 'ADMISSION'}<b>{money(ticket.booking.total_amount)}</b></span></div></div>
-    <div className="ticket-qr"><QRCodeSVG value={ticket.token} size={188} level="H" includeMargin aria-label="Secure Iliguide entry ticket QR code"/>
-    <small>{isExitOnly ? 'This ticket is valid for check-out only.' : 'This private QR code contains an opaque signed ticket token, not visitor contact information.'}</small>
-      <button className="btn btn-outline" onClick={download}><ArrowDownToLine size={15}/> Export booking</button></div></article>;
+    <div className="ticket-qr">{!attendanceLoaded ? <p role="status">Verifying ticket status…</p> : <><QRCodeSVG value={ticket.token} size={188} level="H" includeMargin aria-label="Secure Iliguide entry ticket QR code"/>
+      <small>{isExitOnly ? 'This ticket is valid for check-out only.' : 'This private QR code contains an opaque signed ticket token, not visitor contact information.'}</small>
+      <button className="btn btn-outline" onClick={download}><ArrowDownToLine size={15}/> Export booking</button></>}</div></article>;
 }
 
 function ticketAttendanceLabel(state: TicketAttendance) {
@@ -397,9 +414,16 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
   const [travelerPhone, setTravelerPhone] = useState('');
   const [editingTravelerId, setEditingTravelerId] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+  const [photoDraft, setPhotoDraft] = useState<{ file: File; previewUrl: string; contentType: string } | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [removeAvatarOpen, setRemoveAvatarOpen] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
   const [busy, setBusy] = useState(false);
   const [emailBusy, setEmailBusy] = useState(false);
   const [accountBusy, setAccountBusy] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const profileFormRef = useRef<HTMLElement>(null);
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
   const upcomingCount = props.bookings.filter((item) => item.booking_status === 'confirmed' && item.slot_date >= today).length;
   const pendingCount = props.bookings.filter((item) => ['awaiting_payment', 'needs_resolution'].includes(item.booking_status)).length;
@@ -412,12 +436,23 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
     { id: 'security', label: 'Password and security' },
   ] as const;
   useEffect(() => {
+    if (editingProfile) return;
     const [given = '', ...family] = (props.profile?.full_name ?? '').trim().split(/\s+/);
     setFirstName(given);
     setLastName(family.join(' '));
     setPhone(props.profile?.phone ?? '');
     setEmail(props.user?.email ?? '');
-  }, [props.profile?.id, props.profile?.full_name, props.profile?.phone, props.user?.email]);
+  }, [editingProfile, props.profile?.id, props.profile?.full_name, props.profile?.phone, props.user?.email]);
+  useEffect(() => () => { if (photoDraft?.previewUrl) URL.revokeObjectURL(photoDraft.previewUrl); }, [photoDraft?.previewUrl]);
+  useEffect(() => {
+    const path = props.profile?.avatar_path;
+    if (!props.user || !props.configured || !path) { setAvatarUrl(''); return; }
+    let active = true;
+    void db().storage.from('visitor-avatars').createSignedUrl(path, 3600)
+      .then(({ data }) => { if (active) setAvatarUrl(data?.signedUrl ?? ''); })
+      .catch(() => { if (active) setAvatarUrl(''); });
+    return () => { active = false; };
+  }, [props.user?.id, props.profile?.avatar_path, props.configured]);
   useEffect(() => {
     if (!props.user || !props.configured) { setNotices([]); return; }
     let active = true;
@@ -444,13 +479,6 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
           setSupportRequests((supportResult.data ?? []) as SupportRequest[]);
           setMarketingOptIn(preferenceResult.data?.promotional_announcements ?? false);
         }
-        const path = props.profile?.avatar_path;
-        if (path) {
-          const result = await db().storage.from('visitor-avatars').createSignedUrl(path, 3600);
-          if (active && result.data?.signedUrl) setAvatarUrl(result.data.signedUrl);
-        } else if (active) {
-          setAvatarUrl('');
-        }
       } catch (error) { if (active) props.notify(error instanceof Error ? error.message : 'Could not load account activity.'); }
     })();
     return () => { active = false; void db().removeChannel(channel); };
@@ -462,8 +490,9 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
     if (!isValidOptionalPhone(phone)) { props.notify('Enter a valid phone number (7–15 digits) or leave it blank.'); return; }
     setBusy(true);
     try {
-      const { error } = await db().from('profiles').update({ full_name: fullName, phone: phone.trim() || null }).eq('id', props.user.id);
+      const { error } = await db().from('profiles').update({ full_name: fullName, phone: phone.trim() || null }).eq('id', props.user.id).select('id').single();
       if (error) throw error;
+      setEditingProfile(false);
       props.reloadUser();
       props.notify('Profile saved.');
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not save profile.'); }
@@ -482,23 +511,75 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
   const uploadAvatar = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !props.user) return;
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) {
-      props.notify('Choose a JPEG, PNG, or WebP image under 2 MiB.'); return;
-    }
-    setBusy(true);
+    event.target.value = '';
     try {
-      const extension = file.type.split('/')[1].replace('jpeg', 'jpg');
-      const path = props.user.id + '/' + crypto.randomUUID() + '.' + extension;
-      const { error: uploadError } = await db().storage.from('visitor-avatars').upload(path, file, { contentType: file.type, upsert: false });
+      if (file.size > 2 * 1024 * 1024) throw new Error('Choose a JPEG, PNG, or WebP image under 2 MiB.');
+      const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+      const detectedType = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? 'image/jpeg'
+        : bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 ? 'image/png'
+          : String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP' ? 'image/webp' : '';
+      if (!detectedType || (file.type && file.type !== detectedType)) throw new Error('Choose a valid JPEG, PNG, or WebP image under 2 MiB.');
+      setPhotoDraft({ file, previewUrl: URL.createObjectURL(file), contentType: detectedType });
+      setAvatarMenuOpen(false);
+    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not read the selected image.'); }
+  };
+  const saveAvatar = async () => {
+    if (!props.user || !photoDraft) return;
+    setPhotoBusy(true);
+    const previousPath = props.profile?.avatar_path ?? null;
+    const extension = photoDraft.contentType === 'image/jpeg' ? 'jpg' : photoDraft.contentType.split('/')[1];
+    const path = `${props.user.id}/${crypto.randomUUID()}.${extension}`;
+    let uploaded = false;
+    try {
+      const { error: uploadError } = await db().storage.from('visitor-avatars').upload(path, photoDraft.file, { contentType: photoDraft.contentType, upsert: false });
       if (uploadError) throw uploadError;
-      const { error } = await db().from('profiles').update({ avatar_path: path }).eq('id', props.user.id);
+      uploaded = true;
+      const signed = await db().storage.from('visitor-avatars').createSignedUrl(path, 3600);
+      if (signed.error || !signed.data?.signedUrl) throw signed.error ?? new Error('Could not preview the saved photo.');
+      const { error } = await db().from('profiles').update({ avatar_path: path }).eq('id', props.user.id).select('id').single();
       if (error) throw error;
-      const result = await db().storage.from('visitor-avatars').createSignedUrl(path, 3600);
-      setAvatarUrl(result.data?.signedUrl ?? '');
+      setAvatarUrl(signed.data.signedUrl);
+      setPhotoDraft(null);
       props.reloadUser();
-      props.notify('Profile photo updated.');
-    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not upload the profile photo.'); }
-    finally { setBusy(false); event.target.value = ''; }
+      if (previousPath) {
+        const { error: cleanupError } = await db().storage.from('visitor-avatars').remove([previousPath]);
+        if (cleanupError) props.notify('Profile photo saved. Previous photo cleanup failed.');
+        else props.notify('Profile photo updated.');
+      } else props.notify('Profile photo updated.');
+    } catch (error) {
+      let cleanupFailed = false;
+      if (uploaded) {
+        try { cleanupFailed = Boolean((await db().storage.from('visitor-avatars').remove([path])).error); }
+        catch { cleanupFailed = true; }
+      }
+      props.notify(cleanupFailed ? 'Photo was not saved. Temporary upload cleanup failed.' : error instanceof Error ? error.message : 'Could not save the profile photo.');
+    } finally { setPhotoBusy(false); }
+  };
+  const removeAvatar = async () => {
+    if (!props.user || !props.profile?.avatar_path) return;
+    setPhotoBusy(true);
+    const previousPath = props.profile.avatar_path;
+    try {
+      const { error } = await db().from('profiles').update({ avatar_path: null }).eq('id', props.user.id).select('id').single();
+      if (error) throw error;
+      setAvatarUrl('');
+      setRemoveAvatarOpen(false);
+      props.reloadUser();
+      let cleanupFailed = false;
+      try { cleanupFailed = Boolean((await db().storage.from('visitor-avatars').remove([previousPath])).error); }
+      catch { cleanupFailed = true; }
+      props.notify(cleanupFailed ? 'Photo removed from your account. Stored file cleanup failed.' : 'Profile photo removed.');
+    } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not remove the profile photo.'); }
+    finally { setPhotoBusy(false); }
+  };
+  const editProfile = () => {
+    setEditingProfile(true);
+    setAccountTab('profile');
+    window.setTimeout(() => profileFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  };
+  const cancelProfileEdit = () => {
+    const [given = '', ...family] = (props.profile?.full_name ?? '').trim().split(/\s+/);
+    setFirstName(given); setLastName(family.join(' ')); setPhone(props.profile?.phone ?? ''); setEmail(props.user?.email ?? ''); setEditingProfile(false);
   };
   const markRead = async (notice: Notice) => {
     if (notice.read_at) return;
@@ -576,20 +657,22 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
       <span className="account-quick-stat"><b>{props.bookingsLoading ? '…' : upcomingCount}</b> upcoming</span><span className="account-quick-stat"><b>{props.bookingsLoading ? '…' : completedCount}</b> completed</span><span className="account-quick-stat"><b>{props.bookingsLoading ? '…' : pendingCount}</b> pending</span></div>
     <div className="profile-workspace">
       <aside className="profile-management-panel"><div className="profile-panel-heading"><span>ACCOUNT MANAGEMENT</span><ShieldCheck size={16}/></div>
-        <div className="profile-photo-preview">{avatarUrl ? <img src={avatarUrl} alt="Profile photo"/> : <UserRound size={42}/>}</div>
-        <div className="profile-identity"><b>{props.profile?.full_name || props.user.email}</b><small>{props.user.email}</small><span className={props.user.email_confirmed_at ? 'verified-label' : 'verification-pending'}><BadgeCheck size={13}/>{props.user.email_confirmed_at ? 'Email verified' : 'Verification pending'}</span></div>
-        <label className="profile-upload-control"><span>Upload profile photo</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void uploadAvatar(event)}/><small>JPEG, PNG, WebP · up to 2 MiB</small></label>
+        <div className="profile-photo-wrap"><div className="profile-photo-preview">{avatarUrl ? <img src={avatarUrl} alt="Profile photo"/> : <UserRound size={34}/>}</div><button className="profile-photo-action" aria-label="Manage profile photo" aria-expanded={avatarMenuOpen} onClick={() => setAvatarMenuOpen((open) => !open)}><Camera size={14}/></button>
+          <input ref={avatarInputRef} className="profile-photo-input" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void uploadAvatar(event)}/>
+          {avatarMenuOpen && <><button className="profile-menu-backdrop" aria-label="Close photo menu" onClick={() => setAvatarMenuOpen(false)}/><div className="profile-photo-menu" role="menu"><b>Profile photo</b><button role="menuitem" onClick={() => avatarInputRef.current?.click()}>{avatarUrl ? 'Change photo' : 'Upload photo'}</button>{avatarUrl && <button role="menuitem" className="profile-photo-remove" onClick={() => { setAvatarMenuOpen(false); setRemoveAvatarOpen(true); }}><Trash2 size={14}/> Remove photo</button>}<small>JPEG, PNG, WebP · up to 2 MiB</small></div></>}
+        </div>
+        <div className="profile-identity"><b>{props.profile?.full_name || props.user.email}</b><small>{props.user.email}</small><span className={props.user.email_confirmed_at ? 'verified-label' : 'verification-pending'}><BadgeCheck size={13}/>{props.user.email_confirmed_at ? 'Email verified' : 'Verification pending'}</span><button className="btn btn-outline profile-edit-button" onClick={editProfile}><Pencil size={14}/> Edit profile</button></div>
         <button className="btn btn-outline profile-logout" onClick={props.onSignOut}><LogOut size={15}/> Log out</button>
       </aside>
       <div className="profile-content-panel">
         <nav className="account-section-tabs" aria-label="Visitor account sections">{accountTabs.map((tab) => <button key={tab.id} className={accountTab === tab.id ? 'active' : ''} aria-pressed={accountTab === tab.id} onClick={() => setAccountTab(tab.id)}>{tab.label}{tab.id === 'saved' && <span>{savedSites.length}</span>}{tab.id === 'travelers' && <span>{props.travelers.length}</span>}{tab.id === 'notifications' && <span>{notices.filter((item) => !item.read_at).length}</span>}</button>)}</nav>
         <div className="account-tab-panel">
-          {accountTab === 'profile' && <section className="profile-tab-content"><div className="profile-tab-heading"><div><span className="eyebrow"><span className="eyebrow-line"/> PERSONAL INFORMATION</span><h2>Profile information</h2><p>Keep your visitor contact details current for reservations and account updates.</p></div><span className={props.user.email_confirmed_at ? 'verified-label' : 'verification-pending'}><BadgeCheck size={14}/>{props.user.email_confirmed_at ? 'Verified' : 'Needs verification'}</span></div>
-            <div className="profile-form-grid"><label>First name<input value={firstName} onChange={(event) => setFirstName(event.target.value)} maxLength={60} autoComplete="given-name" required/></label><label>Last name<input value={lastName} onChange={(event) => setLastName(event.target.value)} maxLength={60} autoComplete="family-name" required/></label>
-              <label className="profile-form-wide">Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={254} autoComplete="email"/><small>Changing this address requires email confirmation.</small></label>
-              {email.trim().toLowerCase() !== props.user.email?.toLowerCase() && <button className="btn btn-outline profile-form-wide profile-email-update" disabled={emailBusy || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())} onClick={() => void updateEmail()}>{emailBusy ? 'Sending…' : 'Send confirmation link'}</button>}
-              <label className="profile-form-wide">Phone number<input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={40} autoComplete="tel"/><small>Used for booking contact when needed.</small></label>
-            </div><div className="profile-form-actions"><button className="btn btn-primary" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save changes'} <ArrowRight size={15}/></button></div>
+          {accountTab === 'profile' && <section className="profile-tab-content" ref={profileFormRef}><div className="profile-tab-heading"><div><span className="eyebrow"><span className="eyebrow-line"/> PERSONAL INFORMATION</span><h2>Profile information</h2><p>Keep your visitor contact details current for reservations and account updates.</p></div><span className={props.user.email_confirmed_at ? 'verified-label' : 'verification-pending'}><BadgeCheck size={14}/>{props.user.email_confirmed_at ? 'Verified' : 'Needs verification'}</span></div>
+            <div className="profile-form-grid"><label>First name<input value={firstName} onChange={(event) => setFirstName(event.target.value)} maxLength={60} autoComplete="given-name" required disabled={!editingProfile}/></label><label>Last name<input value={lastName} onChange={(event) => setLastName(event.target.value)} maxLength={60} autoComplete="family-name" required disabled={!editingProfile}/></label>
+              <label className="profile-form-wide">Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={254} autoComplete="email" disabled={!editingProfile}/>{editingProfile && <small>Changing this address requires email confirmation.</small>}</label>
+              {editingProfile && email.trim().toLowerCase() !== props.user.email?.toLowerCase() && <button className="btn btn-outline profile-form-wide profile-email-update" disabled={emailBusy || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())} onClick={() => void updateEmail()}>{emailBusy ? 'Sending…' : 'Send confirmation link'}</button>}
+              <label className="profile-form-wide">Phone number<input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={40} autoComplete="tel" disabled={!editingProfile}/><small>{editingProfile ? 'Used for booking contact when needed.' : ''}</small></label>
+            </div>{editingProfile && <div className="profile-form-actions"><button className="btn btn-outline" disabled={busy} onClick={cancelProfileEdit}>Cancel</button><button className="btn btn-primary" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save changes'} <ArrowRight size={15}/></button></div>}
           </section>}
           {accountTab === 'travelers' && <section className="profile-tab-content"><div className="profile-tab-heading"><div><span className="eyebrow"><span className="eyebrow-line"/> BOOKING DETAILS</span><h2>Traveler profiles</h2><p>Save contact details for people you book for. Only your account can access them.</p></div></div>
             <div className="traveler-form"><label>Full name<input value={travelerName} onChange={(event) => setTravelerName(event.target.value)} maxLength={120} autoComplete="name"/></label><label>Email<input type="email" value={travelerEmail} onChange={(event) => setTravelerEmail(event.target.value)} maxLength={254} autoComplete="email"/></label><label>Phone<input type="tel" value={travelerPhone} onChange={(event) => setTravelerPhone(event.target.value)} maxLength={40} autoComplete="tel"/></label><button className="btn btn-primary" disabled={accountBusy || !travelerName.trim()} onClick={() => void saveTraveler()}>{editingTravelerId ? 'Update traveler' : 'Save traveler'}</button>{editingTravelerId && <button className="link-btn" onClick={() => { setEditingTravelerId(''); setTravelerName(''); setTravelerEmail(''); setTravelerPhone(''); }}>Cancel edit</button>}</div>
@@ -614,5 +697,7 @@ function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: bool
         </div>
       </div>
     </div>
+    {photoDraft && <div className="profile-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !photoBusy) setPhotoDraft(null); }}><section className="profile-photo-dialog" role="dialog" aria-modal="true" aria-labelledby="photo-preview-title"><button className="profile-dialog-close" aria-label="Cancel photo change" disabled={photoBusy} onClick={() => setPhotoDraft(null)}><X size={18}/></button><span className="eyebrow"><span className="eyebrow-line"/> PROFILE PHOTO</span><h2 id="photo-preview-title">Preview your photo</h2><p>Center your image in the circle. It will be cropped to fit your account picture.</p><div className="profile-photo-draft"><img src={photoDraft.previewUrl} alt="Selected profile photo preview"/></div><div className="profile-dialog-actions"><button className="btn btn-outline" disabled={photoBusy} onClick={() => setPhotoDraft(null)}>Cancel</button><button className="btn btn-primary" disabled={photoBusy} onClick={() => void saveAvatar()}>{photoBusy ? 'Saving…' : 'Save photo'}</button></div></section></div>}
+    {removeAvatarOpen && <div className="profile-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !photoBusy) setRemoveAvatarOpen(false); }}><section className="profile-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-photo-title" aria-describedby="remove-photo-description"><span className="profile-confirm-icon"><Trash2 size={20}/></span><h2 id="remove-photo-title">Remove profile photo?</h2><p id="remove-photo-description">Your current profile photo will be removed and replaced with the default account avatar.</p><div className="profile-dialog-actions"><button className="btn btn-outline" disabled={photoBusy} onClick={() => setRemoveAvatarOpen(false)}>Cancel</button><button className="btn btn-danger" disabled={photoBusy} onClick={() => void removeAvatar()}>{photoBusy ? 'Removing…' : 'Remove photo'}</button></div></section></div>}
   </section>;
 }

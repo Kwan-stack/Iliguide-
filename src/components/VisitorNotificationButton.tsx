@@ -3,9 +3,9 @@ import { Bell, RefreshCw } from 'lucide-react';
 import { db } from '../lib/iliguide';
 import './VisitorNotificationButton.css';
 
-type Notice = { id: string; title: string; message: string; notification_type: string; created_at: string; read_at: string | null };
+type Notice = { id: string; booking_id: string | null; title: string; message: string; notification_type: string; created_at: string; read_at: string | null };
 
-export function VisitorNotificationButton({ userId, configured, notify, onOpenBookings }: { userId: string; configured: boolean; notify: (message: string) => void; onOpenBookings: () => void }) {
+export function VisitorNotificationButton({ userId, configured, notify, onOpenBookings }: { userId: string; configured: boolean; notify: (message: string) => void; onOpenBookings: (bookingId?: string) => void }) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(configured);
@@ -22,7 +22,7 @@ export function VisitorNotificationButton({ userId, configured, notify, onOpenBo
     setNotices([]); setLoading(true); setError(false); setLiveError(false);
     const load = async () => {
       try {
-        const { data, error: queryError } = await db().from('notifications').select('id,title,message,notification_type,created_at,read_at')
+        const { data, error: queryError } = await db().from('notifications').select('id,booking_id,title,message,notification_type,created_at,read_at')
           .eq('user_id', userId).order('created_at', { ascending: false }).limit(30);
         if (queryError) throw queryError;
         if (active) {
@@ -90,7 +90,7 @@ export function VisitorNotificationButton({ userId, configured, notify, onOpenBo
       {!loading && error && <p className="notification-panel-state" role="alert">Could not load notifications.<button type="button" onClick={() => setReload((value) => value + 1)}><RefreshCw size={14}/> Retry</button></p>}
       {!loading && liveError && <p className="notification-live-error" role="status">Live connection paused. Checking for updates every minute.<button type="button" onClick={() => setReload((value) => value + 1)}><RefreshCw size={13}/> Reconnect</button></p>}
       {!loading && !error && !notices.length && <p className="notification-panel-state">No notifications yet.</p>}
-      {!loading && notices.length > 0 && <div className="visitor-notification-list">{notices.map((notice) => <button type="button" key={notice.id} className={notice.read_at ? 'visitor-notification-row' : 'visitor-notification-row unread'} onClick={() => { void markRead(notice); setOpen(false); if (notice.notification_type === 'review_request') onOpenBookings(); }}>
+      {!loading && notices.length > 0 && <div className="visitor-notification-list">{notices.map((notice) => <button type="button" key={notice.id} className={notice.read_at ? 'visitor-notification-row' : 'visitor-notification-row unread'} onClick={() => { void markRead(notice); setOpen(false); if (notice.notification_type === 'review_request' || notice.notification_type === 'visit_completed') onOpenBookings(notice.booking_id ?? undefined); }}>
         <span><b>{notice.title}</b><small>{notice.message}</small><time>{new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(notice.created_at))}</time></span>{!notice.read_at && <i aria-label="Unread"/>}
       </button>)}</div>}
     </section>}
