@@ -19,6 +19,7 @@ export function staffPageForRole(role: AccountRole, page: AppPage): AppPage {
     return ['Overview', 'Reservations', 'Visitor Management', 'Scan and exit', 'Walk-in registration', 'Visitor Logbook', 'Capacity map', 'Duty details', 'Reports', 'Payment verification', 'Change password'].includes(page) ? page : 'Overview';
   }
   if (role === 'tourism_office' && page === 'Payment verification') return 'Overview';
+  if (role === 'site_admin' && page === 'Activity') return 'Overview';
   if (role === 'tourism_office' && ['Slots and closures', 'Duty roster'].includes(page)) return 'Schedule & Operations';
   if (!staffPages.includes(page)) return 'Overview';
   if (['Scan and exit', 'Walk-in registration', 'Visitor Management', 'Duty details'].includes(page)) return 'Overview';

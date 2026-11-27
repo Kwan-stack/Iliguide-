@@ -12,6 +12,7 @@ import { AuthDialog, type AuthMode } from './components/AuthDialog';
 import { VisitorNotificationButton } from './components/VisitorNotificationButton';
 import { StaffWorkspaceShell } from './components/StaffWorkspaceShell';
 import './components/DestinationMap.css';
+import './components/VisitorGuide.css';
 import { gatekeeperPath, isGatekeeperPath, parseGatekeeperRoute, type GatekeeperPage } from './lib/gatekeeperRoutes';
 import { staffPageForRole, type AppPage } from './lib/actorRoutes';
 import { announcementIdFromPath, authSuccessPath, canShowVisitorAuthModal, destinationSlugFromPath, isAnnouncementPath, isAuthPath, isKnownAppPath, isPasswordRecoveryRequest, isWorkspacePath, pageFromPath, passwordRecoveryTarget, staffLoginUrl, staffPortalPath, staffReturnPath, visitorAuthDismissPath, visitorLoginUrl, visitorReturnPath, visitorRoutePaths, STAFF_LOGIN_PATH, VISITOR_LOGIN_PATH } from './lib/appRoutes';
@@ -883,7 +884,7 @@ export default function App() {
       {page === 'Booking' && activeSite && (!user || profile?.account_status !== 'active' || profile.role !== 'visitor') && <section className="content-page section-wrap"><div className="empty-card"><h3>Visitor account required</h3><p>Sign in to reserve this destination.</p><button className="btn btn-primary" onClick={() => navigate(visitorLoginUrl(`/destinations/${activeSite.slug}/book`))}>Sign in <ArrowRight size={15}/></button></div></section>}
       {page === 'Payment' && <Suspense fallback={<section className="section-wrap loading-screen">Loading payment…</section>}><VisitorManualPaymentPage reference={decodeURIComponent(location.pathname.split('/').pop() ?? '')} notify={notify} onBack={() => go('Bookings')} onConfirmed={() => { const reference = decodeURIComponent(location.pathname.split('/').pop() ?? ''); navigate(`/booking-confirmation/${encodeURIComponent(reference)}`); setPage('Booking confirmation'); }}/></Suspense>}
       {page === 'Booking confirmation' && <Suspense fallback={<section className="section-wrap loading-screen">Loading confirmation…</section>}><BookingConfirmationPage reference={decodeURIComponent(location.pathname.split('/').pop() ?? '')} onBookings={() => go('Bookings')}/></Suspense>}
-      {page === 'How it works' && <HowPage/>}
+      {page === 'How it works' && <HowPage onGo={go} visitorActive={Boolean(user)}/>}
       {(page === 'Bookings' || page === 'Tickets' || page === 'Account') && <VisitorPages key={user?.id ?? 'visitor'}
         page={page} reviewOnly={page === 'Bookings' && new URLSearchParams(location.search).get('view') === 'reviews'} user={user} profile={profile} booking={activeBooking} ticket={activeTicket} guestAccessToken={activeGuestCode}
         onTicket={(booking, code) => void makeTicket(booking, code)} notify={notify} reloadUser={() => { if (user) void applyUser(user); }}
@@ -1027,15 +1028,46 @@ function PhotoCredit({ slug }: { slug: string }) {
   return <small className="destination-photo-credit">Photo: <a href={photo.source} target="_blank" rel="noopener noreferrer">{photo.author}</a> · <a href={photo.licenseUrl} target="_blank" rel="noopener noreferrer">{photo.license}</a></small>;
 }
 
-function HowPage() {
-  return <section className="content-page section-wrap"><span className="eyebrow"><span className="eyebrow-line"/> A SIMPLE WAY TO VISIT</span><h1>Plan less.<br/><em>Be there more.</em></h1>
-    <p className="page-intro">Choose a published destination and reserve a visit date. No online payment is collected.</p>
-    <div className="how-page-grid">{[
-      ['01', 'Choose a destination', 'Review destination details, admission fees, published hours, and daily capacity.'],
-      ['02', 'Reserve a visit date', 'The booking service checks capacity and records your reservation. No payment is collected.'],
-      ['03', 'View your ticket', 'Present the QR reservation at the destination so gate staff can validate it.'],
-    ].map(([number, title, text]) => <article key={number}><span>{number}</span><h3>{title}</h3><p>{text}</p></article>)}</div>
-    <div className="config-note"><ShieldCheck size={16}/> Sign in to view reservations and tickets linked to your visitor account.</div>
+const visitorGuideTasks: Array<{ id: string; title: string; text: string; target: Page; action: string; icon: typeof Compass; account?: boolean }> = [
+  { id: 'destinations', title: 'Explore destinations', text: 'Browse places, fees, operating hours, and visitor information.', target: 'Destinations', action: 'Open destinations', icon: Compass },
+  { id: 'map', title: 'Check the capacity map', text: 'Compare recorded occupancy and planned-date availability.', target: 'Destination map', action: 'Open map', icon: MapPin },
+  { id: 'booking', title: 'Try the booking flow', text: 'Choose a destination and visit date to review available booking steps.', target: 'Destinations', action: 'Browse and book', icon: CalendarDays },
+  { id: 'bookings', title: 'Find your reservations', text: 'Review visit dates, booking status, and payment details.', target: 'Bookings', action: 'Open bookings', icon: CalendarDays, account: true },
+  { id: 'tickets', title: 'Open your QR tickets', text: 'Find confirmed tickets to present at the destination gate.', target: 'Tickets', action: 'Open tickets', icon: TicketIcon, account: true },
+  { id: 'account', title: 'Review your account', text: 'Check your visitor profile and notification preferences.', target: 'Account', action: 'Open account', icon: UserRound, account: true },
+];
+const visitorGuideProgressKey = 'iliguide:visitor-guide:v1';
+
+function HowPage({ onGo, visitorActive }: { onGo: (page: Page) => void; visitorActive: boolean }) {
+  const [completed, setCompleted] = useState<string[]>(() => {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(visitorGuideProgressKey) || '[]');
+      return Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string' && visitorGuideTasks.some((task) => task.id === id)) : [];
+    } catch { return []; }
+  });
+  const toggleTask = (id: string) => setCompleted((current) => {
+    const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
+    try { localStorage.setItem(visitorGuideProgressKey, JSON.stringify(next)); } catch { /* browser storage may be unavailable */ }
+    return next;
+  });
+  const resetGuide = () => { setCompleted([]); try { localStorage.removeItem(visitorGuideProgressKey); } catch { /* browser storage may be unavailable */ } };
+  return <section className="content-page section-wrap visitor-guide-page"><span className="eyebrow"><span className="eyebrow-line"/> VISITOR DASHBOARD GUIDE</span>
+    <h1>Explore at <em>your pace.</em></h1><p className="page-intro">Open a section, return here, then mark the task done. Progress saves on this device.</p>
+    <section className="visitor-guide-progress" aria-label={`${completed.length} of ${visitorGuideTasks.length} guide tasks completed`}>
+      <div><b>Your guide</b><span>{completed.length} of {visitorGuideTasks.length} completed</span></div>
+      <progress value={completed.length} max={visitorGuideTasks.length}>{completed.length}/{visitorGuideTasks.length}</progress>
+      {completed.length > 0 && <button type="button" className="link-btn" onClick={resetGuide}>Start over</button>}
+    </section>
+    <div className="visitor-guide-grid">{visitorGuideTasks.map((task, index) => {
+      const Icon = task.icon;
+      const done = completed.includes(task.id);
+      return <article className={done ? 'visitor-guide-task is-complete' : 'visitor-guide-task'} key={task.id}>
+        <div className="visitor-guide-task-icon"><Icon size={19}/></div><div className="visitor-guide-task-copy"><small>STEP {String(index + 1).padStart(2, '0')}</small><h2>{task.title}</h2><p>{task.text}</p>{task.account && !visitorActive && <span className="visitor-guide-account-note">Sign in to see personal information.</span>}
+          <div className="visitor-guide-task-actions"><button type="button" className="btn btn-outline" onClick={() => onGo(task.target)}>{task.action}<ArrowRight size={14}/></button><label><input type="checkbox" checked={done} onChange={() => toggleTask(task.id)}/> Done</label></div>
+        </div>
+      </article>;
+    })}</div>
+    <div className="config-note"><ShieldCheck size={16}/>{visitorActive ? 'Your bookings and tickets stay linked to your visitor account.' : 'Bookings, tickets, and account details require sign-in.'}</div>
   </section>;
 }
 

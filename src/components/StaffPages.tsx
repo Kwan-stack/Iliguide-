@@ -23,6 +23,7 @@ import { capacityStatus, formatCapacityPercent } from '../lib/capacity';
 import { useLiveCapacity } from '../lib/useLiveCapacity';
 import { FeedbackManagementPage } from './ReviewPages';
 import { DestinationAnnouncementsPage } from './DestinationAnnouncements';
+import { ActivityAuditPage } from './ActivityAuditPage';
 
 type Role = Profile['role'];
 type Page = GatekeeperPage | 'Activity' | 'Slots and closures' | 'Schedule & Operations' | 'Staff and accounts' | 'Sites and staff' | 'Duty roster' | 'Payment verification' | 'Payment settings' | 'Feedback & Reviews' | 'Destination updates';
@@ -76,7 +77,7 @@ export function StaffPages(props: Props) {
   else if (props.page === 'Destination updates') content = props.role === 'tourism_office' || props.role === 'site_admin' ? <DestinationAnnouncementsPage role={props.role} sites={props.sites} user={props.user} notify={props.notify}/> : <AccessNotice/>;
   else if (props.page === 'Capacity map') content = <CapacityMapPage {...props}/>;
   else if (props.page === 'Visitor Logbook') content = props.role === 'site_admin' || props.role === 'tourism_office' ? <VisitorLogbookPage {...props}/> : <AccessNotice/>;
-  else if (props.page === 'Activity') content = props.role === 'tourism_office' || props.role === 'site_admin' ? <ActivityPage {...props}/> : <AccessNotice/>;
+  else if (props.page === 'Activity') content = props.role === 'tourism_office' ? <ActivityAuditPage sites={props.sites}/> : <AccessNotice/>;
   return <StaffConsole {...props}><Fragment key={staffScopeKey}>{content}</Fragment></StaffConsole>;
 }
 
@@ -86,16 +87,22 @@ function StaffConsole(props: Props & { children: ReactNode }) {
   const items: Array<[string, Page, LucideIcon]> = props.role === 'gatekeeper'
     ? [['Dashboard', 'Overview', LayoutDashboard], ['Reservations', 'Reservations', CalendarDays], ['Visitors', 'Visitor Management', Users], ['Check-in', 'Scan and exit', ScanLine], ['Walk-ins', 'Walk-in registration', TicketIcon], ['Payment verification', 'Payment verification', BadgeCheck], ['Daily logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Today’s duty', 'Duty details', CalendarClock]]
     : props.role === 'tourism_office' || props.role === 'site_admin'
-      ? [['Overview', 'Overview', LayoutDashboard], ['Schedule & Operations', 'Schedule & Operations', CalendarClock], ['Destinations & staff', 'Sites and staff', Building2], ['Staff & accounts', 'Staff and accounts', Users], ['Destination updates', 'Destination updates', Megaphone], ...(props.role === 'site_admin' ? [['Payment verification', 'Payment verification', BadgeCheck] as [string, Page, LucideIcon]] : []), ['Payment settings', 'Payment settings', CreditCard], ['Feedback & Reviews', 'Feedback & Reviews', MessageSquareText], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Activity', 'Activity', History]]
+      ? [['Overview', 'Overview', LayoutDashboard], ['Schedule & Operations', 'Schedule & Operations', CalendarClock], ['Destinations & staff', 'Sites and staff', Building2], ['Staff & accounts', 'Staff and accounts', Users], ['Destination updates', 'Destination updates', Megaphone], ...(props.role === 'site_admin' ? [['Payment verification', 'Payment verification', BadgeCheck] as [string, Page, LucideIcon]] : []), ['Payment settings', 'Payment settings', CreditCard], ['Feedback & Reviews', 'Feedback & Reviews', MessageSquareText], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ...(props.role === 'tourism_office' ? [['Activity & Audit Log', 'Activity', History] as [string, Page, LucideIcon]] : [])]
       : [];
   items.push(['Account & security', 'Change password', KeyRound]);
+  const tourismGroups: Array<[string, Array<[string, Page, LucideIcon]>]> = [
+    ['Operations', [['Overview', 'Overview', LayoutDashboard], ['Schedule & Operations', 'Schedule & Operations', CalendarClock], ['Visitor logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned]]],
+    ['Management', [['Destinations & staff', 'Sites and staff', Building2], ['Staff & accounts', 'Staff and accounts', Users], ['Destination updates', 'Destination updates', Megaphone], ['Payment settings', 'Payment settings', CreditCard], ['Feedback & Reviews', 'Feedback & Reviews', MessageSquareText]]],
+    ['Monitoring', [['Reports', 'Reports', ChartNoAxesCombined], ['Activity & Audit Log', 'Activity', History]]],
+    ['Settings', [['Account & security', 'Change password', KeyRound]]],
+  ];
   const roleName = props.role === 'tourism_office' ? 'Tourism Office' : props.role === 'site_admin' ? 'Site administrator' : 'Site gatekeeper';
   const userName = String(props.user?.user_metadata?.full_name ?? props.user?.email ?? 'Staff account');
   const paymentBadge = paymentVerificationPending > 0 ? <span className="staff-nav-count" aria-hidden="true">{paymentVerificationPending > 99 ? '99+' : paymentVerificationPending}</span> : null;
   const paymentLabel = paymentVerificationPending === 1 ? '1 payment waiting for verification' : `${paymentVerificationPending} payments waiting for verification`;
   return <div className={'staff-console staff-console-' + props.role}>
     <aside className="staff-sidebar"><div className="staff-sidebar-label"><span className="eyebrow"><span className="eyebrow-line"/> {roleName.toUpperCase()}</span><p>Operations workspace</p></div>
-      <nav className="staff-sidebar-nav" aria-label={`${roleName} navigation`}>{items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} aria-label={target === 'Payment verification' && paymentVerificationPending > 0 ? `${label}, ${paymentLabel}` : undefined} onClick={() => props.go(target)}><Icon size={17}/><span>{label}</span>{target === 'Payment verification' && paymentBadge}</button>)}</nav>
+      <nav className={'staff-sidebar-nav' + (props.role === 'tourism_office' ? ' staff-sidebar-nav-grouped' : '')} aria-label={`${roleName} navigation`}>{props.role === 'tourism_office' ? tourismGroups.map(([group, groupItems]) => <div className="staff-sidebar-group" key={group}><h2>{group}</h2>{groupItems.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} onClick={() => props.go(target)}><Icon size={17}/><span>{label}</span></button>)}</div>) : items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} aria-label={target === 'Payment verification' && paymentVerificationPending > 0 ? `${label}, ${paymentLabel}` : undefined} onClick={() => props.go(target)}><Icon size={17}/><span>{label}</span>{target === 'Payment verification' && paymentBadge}</button>)}</nav>
       <div className="staff-sidebar-account"><span className="staff-account-icon"><UserRound size={17}/></span><span><b>{userName}</b><small>{props.user?.email ?? roleName}</small></span></div>
     </aside>
     <div className="staff-console-main"><nav id="staff-mobile-navigation" className={mobileNavigation.open ? 'staff-mobile-nav open' : 'staff-mobile-nav'} aria-label={`${roleName} navigation`}>{items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} aria-label={target === 'Payment verification' && paymentVerificationPending > 0 ? `${label}, ${paymentLabel}` : undefined} onClick={() => { mobileNavigation.setOpen(false); props.go(target); }}><Icon size={15}/>{label}{target === 'Payment verification' && paymentBadge}</button>)}</nav>{props.children}</div>
@@ -1622,34 +1629,6 @@ function ReportsPage(props: Props) {
            : <><td>{dateLabel(row.report_date)}</td><td>{siteName(row.site_id)}</td><td>{row.visitor_count}</td><td>{row.online_count}</td><td>{row.walk_in_count}</td></>}</tr>)}</tbody></table></div>
     </div></div>
     <p className="report-note"><ShieldCheck size={15}/> Reports are scoped by row level security. A zero count means no matching rows were recorded.</p>
-  </section>;
-}
-
-function ActivityPage(props: Props) {
-  const [events, setEvents] = useState<Array<Record<string, any>>>([]);
-  const site = props.role === 'gatekeeper' ? assignedGatekeeperSite(props) : props.sites.find((item) => item.id === props.siteId);
-  const [loading, finishLoading] = useSilentLoad(`${props.user?.id ?? 'staff'}:${props.role}:${site?.id ?? 'unassigned'}`);
-  useEffect(() => {
-    let active = true;
-    if (!site) { setEvents([]); finishLoading(); return () => { active = false; }; }
-    void (async () => {
-      const { data, error } = await db().from('audit_logs').select('id,action,entity_type,entity_id,created_at')
-        .eq('site_id', site.id).order('created_at', { ascending: false }).limit(100);
-      if (error) throw error;
-      if (active) setEvents(data ?? []);
-    })().catch((error) => { if (active) props.notify(error instanceof Error ? error.message : 'Could not load destination activity.'); })
-      .finally(() => { if (active) finishLoading(); });
-    return () => { active = false; };
-  }, [finishLoading, props.notify, site?.id]);
-  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> {site?.name ?? 'DESTINATION'} · ACTIVITY</span>
-    <h1>Recorded <em>activity.</em></h1><p>Booking and check-in changes recorded for this destination.</p></div>
-    {props.role !== 'gatekeeper' && <div className="header-actions"><SiteSelector {...props}/></div>}</div>
-    {!site && <div className="empty-inline">{props.role === 'gatekeeper' ? 'No single destination assignment is available.' : 'Select a destination to view its recorded activity.'}</div>}
-    {loading && <div className="empty-inline">Loading activity…</div>}
-    {!loading && !events.length && <div className="empty-inline">No destination activity recorded yet.</div>}
-    <div className="activity-card">{!loading && events.map((event) => <div className="audit-row" key={event.id}><span><b>{String(event.action).replace(/_/g, ' ')}</b><small>{event.entity_type} · {String(event.entity_id).slice(0, 8)}</small></span>
-      <time>{new Date(event.created_at).toLocaleString()}</time></div>)}</div>
-    <p className="report-note"><ShieldCheck size={15}/> This feed uses the protected audit log. Gatekeepers cannot modify these records.</p>
   </section>;
 }
 

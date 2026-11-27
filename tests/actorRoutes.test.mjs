@@ -29,7 +29,7 @@ test('site administrators retain assigned-site routes and cannot enter unsupport
   assert.equal(staffPageForRole('site_admin', 'Payment settings'), 'Payment settings');
   assert.equal(staffPageForRole('site_admin', 'Payment verification'), 'Payment verification');
   assert.equal(staffPageForRole('site_admin', 'Sites and staff'), 'Sites and staff');
-  assert.equal(staffPageForRole('site_admin', 'Activity'), 'Activity');
+  assert.equal(staffPageForRole('site_admin', 'Activity'), 'Overview');
   assert.equal(staffPageForRole('site_admin', 'Walk-in registration'), 'Overview');
   assert.equal(staffPageForRole('site_admin', 'Destinations'), 'Overview');
 });

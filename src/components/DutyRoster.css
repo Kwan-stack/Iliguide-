@@ -88,6 +88,11 @@
 .staff-sidebar-nav button:hover, .staff-sidebar-nav button:focus-visible { color: var(--deep, #006f93); background: #eef8fa; outline: 2px solid transparent; }
 .staff-sidebar-nav button.active { color: var(--deep, #006f93); background: #e7f7f7; font-weight: 750; }
 .staff-sidebar-nav button svg { flex: 0 0 auto; }
+.staff-sidebar-group { display: grid; gap: .2rem; }
+.staff-sidebar-group h2 { margin: .75rem .65rem .25rem; color: #83949a; font-size: .62rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.staff-sidebar-nav-grouped { gap: .1rem; }
+.staff-sidebar-nav-grouped .staff-sidebar-group button { min-height: 38px; }
+@media(max-width:600px) { .staff-sidebar-group h2 { margin-top: .4rem; } }
 .staff-nav-count { display: inline-grid; flex: 0 0 auto; min-width: 18px; height: 18px; place-items: center; margin-left: auto; padding: 0 .28rem; border-radius: 99px; color: #fff; background: #df3342; font-size: .62rem; font-weight: 800; line-height: 1; }
 .staff-sidebar-account { display: flex; gap: .6rem; align-items: center; margin-top: auto; padding: .7rem .45rem 0; border-top: 1px solid var(--line, #dce5ea); min-width: 0; }
 .staff-account-icon { display: grid; flex: 0 0 34px; width: 34px; height: 34px; place-items: center; border-radius: 50%; color: var(--deep, #006f93); background: #e7f7f7; }
