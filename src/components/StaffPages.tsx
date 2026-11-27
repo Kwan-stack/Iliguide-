@@ -628,7 +628,7 @@ function ManualPaymentVerificationPage(props: Props) {
     } catch (error) { props.notify(error instanceof Error ? error.message : 'Could not review payment.'); }
     finally { setBusy(''); }
   };
-  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><h1>Demo payment <em>verification.</em></h1><p>Review fictional transaction references and generated sample proof. No real money is accepted.</p></div><button className="btn btn-outline" onClick={() => setRefreshKey((value) => value + 1)}><RefreshCw size={15}/> Refresh</button></div>
+  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><h1>Demo payment <em>verification.</em></h1><p>Review fictional transaction references and visitor-submitted proof. No real money is accepted.</p></div><button className="btn btn-outline" onClick={() => setRefreshKey((value) => value + 1)}><RefreshCw size={15}/> Refresh</button></div>
     {loading && <div className="empty-inline" role="status">Loading payment submissions…</div>}
     {!loading && !rows.length && <div className="empty-card"><BadgeCheck size={26}/><h3>No payments awaiting verification</h3><p>New proof submissions appear here.</p></div>}
     <div className="manual-payment-review-list">{rows.map((row) => { const booking = Array.isArray(row.booking) ? row.booking[0] : row.booking; const site = Array.isArray(booking?.tourism_sites) ? booking.tourism_sites[0] : booking?.tourism_sites; const slot = Array.isArray(booking?.site_slots) ? booking.site_slots[0] : booking?.site_slots; const isImageProof = /\.(jpe?g|png)$/i.test(row.proof_storage_path); const proofExpanded = Boolean(proofPreviews[row.id]); return <article className="manual-payment-review" key={row.id}>

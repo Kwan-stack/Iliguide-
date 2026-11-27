@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { ArrowLeft, ArrowRight, Check, Clock3, FileText, Upload, X } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { db, dateLabel, lookupBooking, money, type Booking } from '../lib/iliguide';
 import { isFreeRegistration, paymentStatusLabel } from '../lib/paymentStatus';
+import { validatePaymentProofPhoto } from '../lib/paymentProof';
 import type { ManualPaymentSettings } from './VisitorBookingFlow';
 import './VisitorPayment.css';
 
@@ -23,18 +24,6 @@ async function loadPayment(reference: string, manualOnly: boolean) {
   if (error) throw error;
   if (manualOnly && !data) throw new Error('Manual payment session not found for this booking.');
   return { booking, payment: data as Payment | null };
-}
-
-function demoProofFile(reference: string, amount: number): Promise<File> {
-  const canvas = document.createElement('canvas'); canvas.width = 720; canvas.height = 420;
-  const context = canvas.getContext('2d');
-  if (!context) return Promise.reject(new Error('Could not create demo proof.'));
-  context.fillStyle = '#ffffff'; context.fillRect(0, 0, 720, 420);
-  context.fillStyle = '#007e9d'; context.font = 'bold 32px Arial'; context.fillText('ILLIGUIDE · DEMO PAYMENT', 36, 64);
-  context.fillStyle = '#1b2935'; context.font = '22px Arial'; context.fillText('SIMULATED TRANSACTION — NO MONEY TRANSFERRED', 36, 120);
-  context.font = '20px Arial'; context.fillText(`Reference: ${reference}`, 36, 190); context.fillText(`Amount: PHP ${amount.toFixed(2)} · DEMO ONLY`, 36, 232);
-  context.fillStyle = '#c33'; context.font = 'bold 26px Arial'; context.fillText('NOT PROOF OF REAL PAYMENT', 36, 340);
-  return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(new File([blob], `${reference}.png`, { type: 'image/png' })) : reject(new Error('Could not create demo proof.')), 'image/png'));
 }
 
 function useBookingPayment(reference: string, manualOnly = true) {
@@ -79,18 +68,12 @@ export function VisitorManualPaymentPage({ reference, notify, onBack, onConfirme
   const { booking, payment, settings, fees, error, refresh } = useBookingPayment(reference);
   const [transactionReference, setTransactionReference] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [proofSource, setProofSource] = useState<'sample' | 'upload'>('sample');
-  const [proofPreview, setProofPreview] = useState<string | null>(null);
+  const [storedProofUrl, setStoredProofUrl] = useState<string | null>(null);
+  const [photoValidating, setPhotoValidating] = useState(false);
   const [resubmitReady, setResubmitReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
-  useEffect(() => {
-    if (!file?.type.startsWith('image/')) { setProofPreview(null); return; }
-    const url = URL.createObjectURL(file);
-    setProofPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
   useEffect(() => {
     if (!payment?.transaction_reference) return;
     if (payment.payment_status === 'rejected') {
@@ -98,8 +81,16 @@ export function VisitorManualPaymentPage({ reference, notify, onBack, onConfirme
       return;
     }
     setTransactionReference(payment.transaction_reference);
-    void demoProofFile(payment.transaction_reference, Number(booking?.total_amount)).then((sample) => { setFile(sample); setProofSource('sample'); }).catch(() => {});
-  }, [booking?.total_amount, payment?.payment_status, payment?.transaction_reference, resubmitReady]);
+  }, [payment?.payment_status, payment?.transaction_reference, resubmitReady]);
+  useEffect(() => {
+    const path = payment?.proof_storage_path;
+    let active = true;
+    if (!path) { setStoredProofUrl(null); return; }
+    void db().storage.from('manual-payment-proofs').createSignedUrl(path, 3600).then(({ data, error }) => {
+      if (active) setStoredProofUrl(error ? null : data?.signedUrl ?? null);
+    }).catch(() => { if (active) setStoredProofUrl(null); });
+    return () => { active = false; };
+  }, [payment?.proof_storage_path]);
   useEffect(() => { if (payment?.payment_status === 'paid') onConfirmed(); }, [onConfirmed, payment?.payment_status]);
   const app = payment?.payment_application === 'gcash' ? 'GCash' : 'Maya';
   const deadline = payment?.payment_deadline ? new Date(payment.payment_deadline).getTime() : 0;
@@ -113,8 +104,8 @@ export function VisitorManualPaymentPage({ reference, notify, onBack, onConfirme
       if (error) throw error;
       const reference = String(data);
       if (payment.payment_status === 'rejected') setResubmitReady(true);
-      setTransactionReference(reference); setFile(await demoProofFile(reference, Number(booking.total_amount))); setProofSource('sample');
-      notify('Demo transaction created. Attach a demo image or use the sample, then submit for staff review.');
+      setTransactionReference(reference); setFile(null);
+      notify('Demo transaction created. Choose a JPG or PNG photo, then submit for staff review.');
     } catch (cause) { notify(cause instanceof Error ? cause.message : 'Could not simulate demo payment.'); }
     finally { setBusy(false); }
   };
@@ -122,12 +113,12 @@ export function VisitorManualPaymentPage({ reference, notify, onBack, onConfirme
     event.preventDefault();
     if (!booking || !payment || !app || !file) return;
     if (!transactionReference.startsWith('DEMO-')) { notify('Complete the demo simulation before submitting proof.'); return; }
-    if (file.size > 10 * 1024 * 1024 || !['image/jpeg', 'image/png', 'application/pdf'].includes(file.type)) { notify('Upload a JPG, PNG, or PDF file up to 10 MiB.'); return; }
     setBusy(true);
-    const extension = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/png' ? 'png' : 'pdf';
-    const path = `${booking.booking_id}/${crypto.randomUUID()}.${extension}`;
     try {
-      const { error: uploadError } = await db().storage.from('manual-payment-proofs').upload(path, file, { contentType: file.type, upsert: false });
+      const photo = await validatePaymentProofPhoto(file);
+      const extension = photo.type === 'image/jpeg' ? 'jpg' : 'png';
+      const path = `${booking.booking_id}/${crypto.randomUUID()}.${extension}`;
+      const { error: uploadError } = await db().storage.from('manual-payment-proofs').upload(path, photo, { contentType: photo.type, upsert: false });
       if (uploadError) throw uploadError;
       const { error: submitError } = await db().rpc('submit_manual_payment_proof', {
         p_booking_id: booking.booking_id, p_payment_application: payment.payment_application,
@@ -144,7 +135,7 @@ export function VisitorManualPaymentPage({ reference, notify, onBack, onConfirme
   return <section className="visitor-payment-page section-wrap">
     <button className="back-link" onClick={onBack}><ArrowLeft size={15}/> My bookings</button><span className="eyebrow"><span className="eyebrow-line"/> BOOKING {booking.booking_reference}</span>
     <h1>{payment.payment_status === 'paid' ? 'Demo payment verified.' : 'Complete demo payment.'}</h1>
-    <p>{payment.payment_status === 'pending_verification' ? 'Your demo proof is awaiting verification by an authorized destination administrator.' : payment.payment_status === 'rejected' ? 'Review the rejection note and resubmit before the deadline.' : 'Create a fictional transaction reference, then attach a demo screenshot or use the sample image. No money moves.'}</p>
+    <p>{payment.payment_status === 'pending_verification' ? 'Your demo proof is awaiting verification by an authorized destination administrator.' : payment.payment_status === 'rejected' ? 'Review the rejection note and resubmit before the deadline.' : 'Create a fictional transaction reference, then attach a demo payment photo. No money moves.'}</p>
     <div className="visitor-payment-columns"><main className="visitor-payment-card">
       {payment.payment_status === 'pending_verification' && <div className="visitor-payment-status pending"><Clock3 size={20}/><span><b>Pending verification</b><small>Reservation capacity remains held while staff review your proof.</small></span></div>}
       {payment.payment_status === 'paid' && <div className="visitor-payment-status paid"><Check size={20}/><span><b>Payment verified</b><small>Your booking is confirmed.</small></span></div>}
@@ -159,27 +150,47 @@ export function VisitorManualPaymentPage({ reference, notify, onBack, onConfirme
         </div>
         <form className="visitor-proof-form" onSubmit={(event) => void submitProof(event)}><h2>Add demo proof</h2>
           <label>Transaction reference <span className="visitor-required-mark" aria-hidden="true">*</span><input value={transactionReference} readOnly required maxLength={120}/></label>
-          <label className="visitor-proof-upload"><span className="visitor-proof-upload-label"><Upload size={16} aria-hidden="true"/>Demo payment photo or screenshot <span className="visitor-required-mark" aria-hidden="true">*</span></span><input type="file" accept="image/jpeg,image/png,application/pdf" aria-required="true" aria-describedby="visitor-demo-proof-help" disabled={!transactionReference || busy} onChange={(event) => {
-            const selected = event.currentTarget.files?.[0] ?? null;
-            if (selected && (selected.size > 10 * 1024 * 1024 || !['image/jpeg', 'image/png', 'application/pdf'].includes(selected.type))) {
-              notify('Choose a JPG, PNG, or PDF file up to 10 MiB.'); event.currentTarget.value = ''; return;
-            }
-            if (selected) { setFile(selected); setProofSource('upload'); }
-          }}/><small id="visitor-demo-proof-help">Use a fictional demo screenshot only. JPG, PNG, or PDF up to 10 MiB. A sample image is ready; upload yours to replace it.</small></label>
-          {file && <div className="visitor-proof-preview" aria-live="polite">{proofPreview && <img src={proofPreview} alt="Preview of selected demo payment proof"/>}<span><b>{file.name}</b><small>{proofSource === 'sample' ? 'Generated sample · no real payment data' : 'Uploaded demo file · no real payment data'}</small></span></div>}
-          <button className="btn btn-primary" disabled={busy || remaining === 0 || !file}>{busy ? 'Submitting…' : 'Submit'} <ArrowRight size={15}/></button>
+          <ProofPhotoField file={file} onChange={setFile} onValidatingChange={setPhotoValidating} disabled={!transactionReference || busy} notify={notify} helpId="visitor-demo-proof-help"/>
+          <button className="btn btn-primary" disabled={busy || photoValidating || remaining === 0 || !file}>{busy ? 'Submitting…' : 'Submit'} <ArrowRight size={15}/></button>
         </form></>}
-      {payment.payment_status === 'rejected' && !expired && <form className="visitor-proof-form" onSubmit={(event) => void submitProof(event)}><h2>Resubmit demo proof</h2><p>Generate a new demo transaction before resubmitting.</p><button type="button" className="btn btn-outline" disabled={busy || remaining === 0 || resubmitReady} onClick={() => void simulatePayment()}>{resubmitReady ? 'New demo reference ready' : 'Generate demo transaction'}</button>{transactionReference && <><label>Demo transaction reference <span className="visitor-required-mark" aria-hidden="true">*</span><input value={transactionReference} readOnly required/></label><label className="visitor-proof-upload"><span className="visitor-proof-upload-label"><Upload size={16} aria-hidden="true"/>Demo payment photo or screenshot <span className="visitor-required-mark" aria-hidden="true">*</span></span><input type="file" accept="image/jpeg,image/png,application/pdf" aria-required="true" aria-describedby="visitor-demo-proof-help-retry" disabled={busy} onChange={(event) => {
-            const selected = event.currentTarget.files?.[0] ?? null;
-            if (selected && (selected.size > 10 * 1024 * 1024 || !['image/jpeg', 'image/png', 'application/pdf'].includes(selected.type))) {
-              notify('Choose a JPG, PNG, or PDF file up to 10 MiB.'); event.currentTarget.value = ''; return;
-            }
-            if (selected) { setFile(selected); setProofSource('upload'); }
-          }}/><small id="visitor-demo-proof-help-retry">Use a fictional demo screenshot only. JPG, PNG, or PDF up to 10 MiB.</small></label>{file && <div className="visitor-proof-preview">{proofPreview && <img src={proofPreview} alt="Preview of selected demo payment proof"/>}<span><b>{file.name}</b><small>{proofSource === 'sample' ? 'Generated sample · no real payment data' : 'Uploaded demo file · no real payment data'}</small></span></div>}<button className="btn btn-primary" disabled={busy || remaining === 0 || !file}>{busy ? 'Submitting…' : 'Submit'}</button></>}</form>}
+      {payment.payment_status === 'rejected' && !expired && <form className="visitor-proof-form" onSubmit={(event) => void submitProof(event)}><h2>Resubmit demo proof</h2><p>Generate a new demo transaction before resubmitting.</p><button type="button" className="btn btn-outline" disabled={busy || remaining === 0 || resubmitReady} onClick={() => void simulatePayment()}>{resubmitReady ? 'New demo reference ready' : 'Generate demo transaction'}</button>{transactionReference && <><label>Demo transaction reference <span className="visitor-required-mark" aria-hidden="true">*</span><input value={transactionReference} readOnly required/></label><ProofPhotoField file={file} onChange={setFile} onValidatingChange={setPhotoValidating} disabled={busy} notify={notify} helpId="visitor-demo-proof-help-retry"/><button className="btn btn-primary" disabled={busy || photoValidating || remaining === 0 || !file}>{busy ? 'Submitting…' : 'Submit'}</button></>}</form>}
+      {!file && storedProofUrl && <div className="visitor-proof-stored"><b>Submitted payment photo</b><img src={storedProofUrl} alt={`Submitted payment photo for booking ${booking.booking_reference}`}/><a href={storedProofUrl} target="_blank" rel="noreferrer">Open photo</a></div>}
       {payment.payment_status === 'paid' && <Receipt booking={booking} payment={payment}/>}
       {payment.proof_submitted_at && <small className="visitor-proof-submitted">Proof submitted {new Date(payment.proof_submitted_at).toLocaleString()} · {payment.transaction_reference}</small>}
     </main><aside className="visitor-payment-summary"><h2>Booking summary</h2><b>{booking.site_name}</b><span>{dateLabel(booking.slot_date)}</span><span>{booking.visitor_count} visitors</span><span>Reference · {booking.booking_reference}</span><strong>Total · {money(Number(booking.total_amount))}</strong><small>{paymentStatusLabel(payment.payment_status, Number(booking.total_amount))}</small></aside></div>
   </section>;
+}
+
+function ProofPhotoField({ file, onChange, onValidatingChange, disabled, notify, helpId }: {
+  file: File | null; onChange: (file: File | null) => void; onValidatingChange: (validating: boolean) => void;
+  disabled: boolean; notify: (message: string) => void; helpId: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
+  useEffect(() => {
+    if (!file) { setPreviewUrl(null); if (inputRef.current) inputRef.current.value = ''; return; }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  const selectPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const selected = input.files?.[0];
+    if (!selected) return;
+    setValidating(true); onValidatingChange(true);
+    try { onChange(await validatePaymentProofPhoto(selected)); }
+    catch (cause) { input.value = ''; notify(cause instanceof Error ? cause.message : 'Could not read that photo. Choose another JPG or PNG.'); }
+    finally { setValidating(false); onValidatingChange(false); }
+  };
+  return <div className="visitor-proof-photo-field">
+    <label className="visitor-proof-upload"><span className="visitor-proof-upload-label"><Upload size={16} aria-hidden="true"/>Demo payment photo or screenshot <span className="visitor-required-mark" aria-hidden="true">*</span></span>
+      <input ref={inputRef} type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" required={!file} aria-required="true" aria-describedby={helpId} disabled={disabled || validating} onChange={(event) => void selectPhoto(event)}/>
+      <small id={helpId}>Choose an existing JPG, JPEG, or PNG photo from your device. Maximum 10 MiB.</small>
+    </label>
+    {validating && <small role="status">Checking photo…</small>}
+    {file && <div className="visitor-proof-preview" aria-live="polite">{previewUrl && <img src={previewUrl} alt="Preview of selected demo payment photo"/>}<span><b>{file.name}</b><small>Selected photo · no real payment data</small></span><button type="button" className="btn btn-outline" disabled={disabled} onClick={() => { if (inputRef.current) inputRef.current.value = ''; onChange(null); }}>Remove photo</button></div>}
+  </div>;
 }
 
 export function BookingConfirmationPage({ reference, onBookings }: { reference: string; onBookings: () => void }) {
