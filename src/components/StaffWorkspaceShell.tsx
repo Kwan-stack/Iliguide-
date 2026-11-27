@@ -176,7 +176,7 @@ function GatekeeperNotifications({ userId, siteId, siteSlug, setPaymentVerificat
       <Bell size={18}/>{unread > 0 && <span className="office-notifications-count">{unread > 99 ? '99+' : unread}</span>}
     </button>
     {open && <section className="office-notifications-panel" id="office-notifications-panel" aria-label="Notifications" aria-live="polite">
-      <header><div><b>Notifications</b><small>{unread} unread</small></div><div className="office-notifications-header-actions"><button type="button" className="office-notifications-mark-read" disabled={busy || unread === 0} onClick={() => void markAllRead()}>{busy ? 'Marking…' : 'Mark all as read'}</button><button type="button" aria-label="Close notifications" onClick={() => setOpen(false)}><X size={16}/></button></div></header>
+      <header><div><b>Notifications</b><small>{unread} unread</small></div><div className="office-notifications-header-actions"><button type="button" className="office-notifications-mark-read" disabled={busy || unread === 0} onClick={() => void markAllRead()}>{busy ? 'Marking…' : 'Mark all as read'}</button></div></header>
       {error && <p className="office-notifications-error" role="status">{error}</p>}
       {!notices.length ? <p className="office-notifications-empty">No notifications yet.</p> : <ul>{notices.map((notice) => <li key={notice.id}>
         <button type="button" className={notice.read_at ? 'is-read' : ''} onClick={() => openNotice(notice)}>
