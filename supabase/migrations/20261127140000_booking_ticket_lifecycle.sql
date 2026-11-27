@@ -31,7 +31,7 @@ returns table (
   booking_id uuid, booking_reference text, visitor_name text, visitor_count integer,
   visitor_email text, visitor_phone text, adult_count integer, child_count integer,
   pwd_count integer, total_amount numeric, currency char(3),
-  payment_status public.payment_status, booking_status public.booking_status,
+  payment_status public.payment_status, payment_method text, booking_status public.booking_status,
   booking_source text, site_id uuid, site_name text, slot_date date,
   starts_at time, ends_at time, cancellation_cutoff_at timestamptz,
   hold_expires_at timestamptz
@@ -42,7 +42,7 @@ begin
   return query
   select b.id, b.booking_reference, b.visitor_name, b.visitor_count,
     b.visitor_email, b.visitor_phone, b.adult_count, b.child_count,
-    b.pwd_count, b.total_amount, b.currency, b.payment_status,
+    b.pwd_count, b.total_amount, b.currency, b.payment_status, b.payment_method,
     b.booking_status, b.booking_source, b.site_id, b.site_name_snapshot,
     sl.slot_date, sl.starts_at, sl.ends_at,
     b.cancellation_cutoff_at, b.hold_expires_at
