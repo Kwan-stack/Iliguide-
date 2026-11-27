@@ -748,7 +748,7 @@ export default function App() {
     const staffPage = isStaffPage(page) ? page : 'Overview';
     const staffHomePath = staffRole === 'gatekeeper' && assignedGatekeeperSite
       ? gatekeeperPath(assignedGatekeeperSite.slug, 'Overview') : staffPortalPath(staffRole, 'Overview');
-    return <StaffWorkspaceShell role={staffRole} homePath={staffHomePath} userId={user.id} siteSlug={staffRole === 'gatekeeper' ? assignedGatekeeperSite?.slug : undefined} dataError={dataError}
+    return <StaffWorkspaceShell role={staffRole} homePath={staffHomePath} userId={user.id} siteSlug={staffRole === 'gatekeeper' ? assignedGatekeeperSite?.slug : undefined} siteId={staffRole === 'gatekeeper' ? assignedGatekeeperSite?.id : undefined} dataError={dataError}
       onRetry={() => { setDataError(''); void reloadSites(role, assignments); }} toast={toast}
       onSignOut={() => { void signOut(); }}>
       <Suspense fallback={<section className="section-wrap loading-screen">Loading workspace…</section>}>

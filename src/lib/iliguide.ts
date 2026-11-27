@@ -156,6 +156,14 @@ export function db() {
   return supabase;
 }
 
+export function pendingManualPaymentQuery(columns: string, siteId?: string, count = false) {
+  let query = db().from('payments').select(columns, count ? { count: 'exact', head: true } : undefined)
+    .eq('provider', 'manual').eq('payment_mode', 'demo').eq('payment_status', 'pending_verification')
+    .not('proof_submitted_at', 'is', null).eq('booking.booking_status', 'awaiting_payment');
+  if (siteId) query = query.eq('booking.site_id', siteId);
+  return query;
+}
+
 export function message(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;

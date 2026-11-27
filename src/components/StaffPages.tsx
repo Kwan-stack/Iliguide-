@@ -2,7 +2,7 @@ import { Fragment, useCallback, useContext, useEffect, useRef, useState, type Ch
 import { QRCodeSVG } from 'qrcode.react';
 import { Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BadgeCheck, BookOpen, Building2, CalendarClock, CalendarDays, Camera, ChartNoAxesCombined, Check, ChevronLeft, ChevronRight, Clock3, CreditCard, FileText, History, Image as ImageIcon, ImagePlus, KeyRound, LayoutDashboard, MapPin, MapPinned, Megaphone, MessageSquareText, Pencil, Plus, Printer, RefreshCw, ScanLine, ShieldCheck, Ticket as TicketIcon, Users, UserRound, X, type LucideIcon } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
-import { calculateBookingTotal, db, dateLabel, exportCsv, invokeFunction, loadMyActiveGatekeeperDuty, loadSlots, money, monthDateRange, timeLabel, timestampTimeLabel, type GatekeeperDuty, type Profile, type Site, type Slot, type StaffAssignment } from '../lib/iliguide';
+import { calculateBookingTotal, db, dateLabel, exportCsv, invokeFunction, loadMyActiveGatekeeperDuty, loadSlots, money, monthDateRange, pendingManualPaymentQuery, timeLabel, timestampTimeLabel, type GatekeeperDuty, type Profile, type Site, type Slot, type StaffAssignment } from '../lib/iliguide';
 import { emptyVisitorInformation, requiredVisitorFields, resizeVisitorInformation, visitorInformationComplete, visitorInformationPayload } from '../lib/visitorInformation';
 import { bookingContactError } from '../lib/bookingValidation';
 import { applyOperatingHoursTemplate } from '../lib/operatingHours';
@@ -82,7 +82,7 @@ export function StaffPages(props: Props) {
 
 function StaffConsole(props: Props & { children: ReactNode }) {
   const mobileNavigation = useContext(OfficeMobileNavigation);
-  const { paymentVerificationUnread } = useContext(OfficeNotificationCounts);
+  const { paymentVerificationPending } = useContext(OfficeNotificationCounts);
   const items: Array<[string, Page, LucideIcon]> = props.role === 'gatekeeper'
     ? [['Dashboard', 'Overview', LayoutDashboard], ['Reservations', 'Reservations', CalendarDays], ['Visitors', 'Visitor Management', Users], ['Check-in', 'Scan and exit', ScanLine], ['Walk-ins', 'Walk-in registration', TicketIcon], ['Payment verification', 'Payment verification', BadgeCheck], ['Daily logbook', 'Visitor Logbook', BookOpen], ['Capacity map', 'Capacity map', MapPinned], ['Reports', 'Reports', ChartNoAxesCombined], ['Today’s duty', 'Duty details', CalendarClock]]
     : props.role === 'tourism_office' || props.role === 'site_admin'
@@ -91,14 +91,14 @@ function StaffConsole(props: Props & { children: ReactNode }) {
   items.push(['Account & security', 'Change password', KeyRound]);
   const roleName = props.role === 'tourism_office' ? 'Tourism Office' : props.role === 'site_admin' ? 'Site administrator' : 'Site gatekeeper';
   const userName = String(props.user?.user_metadata?.full_name ?? props.user?.email ?? 'Staff account');
-  const paymentBadge = paymentVerificationUnread > 0 ? <span className="staff-nav-count" aria-hidden="true">{paymentVerificationUnread > 99 ? '99+' : paymentVerificationUnread}</span> : null;
-  const paymentLabel = paymentVerificationUnread === 1 ? '1 new payment waiting for verification' : `${paymentVerificationUnread} new payments waiting for verification`;
+  const paymentBadge = paymentVerificationPending > 0 ? <span className="staff-nav-count" aria-hidden="true">{paymentVerificationPending > 99 ? '99+' : paymentVerificationPending}</span> : null;
+  const paymentLabel = paymentVerificationPending === 1 ? '1 payment waiting for verification' : `${paymentVerificationPending} payments waiting for verification`;
   return <div className={'staff-console staff-console-' + props.role}>
     <aside className="staff-sidebar"><div className="staff-sidebar-label"><span className="eyebrow"><span className="eyebrow-line"/> {roleName.toUpperCase()}</span><p>Operations workspace</p></div>
-      <nav className="staff-sidebar-nav" aria-label={`${roleName} navigation`}>{items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} aria-label={target === 'Payment verification' && paymentVerificationUnread > 0 ? `${label}, ${paymentLabel}` : undefined} onClick={() => props.go(target)}><Icon size={17}/><span>{label}</span>{target === 'Payment verification' && paymentBadge}</button>)}</nav>
+      <nav className="staff-sidebar-nav" aria-label={`${roleName} navigation`}>{items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} aria-label={target === 'Payment verification' && paymentVerificationPending > 0 ? `${label}, ${paymentLabel}` : undefined} onClick={() => props.go(target)}><Icon size={17}/><span>{label}</span>{target === 'Payment verification' && paymentBadge}</button>)}</nav>
       <div className="staff-sidebar-account"><span className="staff-account-icon"><UserRound size={17}/></span><span><b>{userName}</b><small>{props.user?.email ?? roleName}</small></span></div>
     </aside>
-    <div className="staff-console-main"><nav className={mobileNavigation.open ? 'staff-mobile-nav open' : 'staff-mobile-nav'} aria-label={`${roleName} navigation`}>{items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} aria-label={target === 'Payment verification' && paymentVerificationUnread > 0 ? `${label}, ${paymentLabel}` : undefined} onClick={() => { mobileNavigation.setOpen(false); props.go(target); }}><Icon size={15}/>{label}{target === 'Payment verification' && paymentBadge}</button>)}</nav>{props.children}</div>
+    <div className="staff-console-main"><nav id="staff-mobile-navigation" className={mobileNavigation.open ? 'staff-mobile-nav open' : 'staff-mobile-nav'} aria-label={`${roleName} navigation`}>{items.map(([label, target, Icon]) => <button key={target} className={props.page === target ? 'active' : ''} aria-current={props.page === target ? 'page' : undefined} aria-label={target === 'Payment verification' && paymentVerificationPending > 0 ? `${label}, ${paymentLabel}` : undefined} onClick={() => { mobileNavigation.setOpen(false); props.go(target); }}><Icon size={15}/>{label}{target === 'Payment verification' && paymentBadge}</button>)}</nav>{props.children}</div>
   </div>;
 }
 
@@ -595,9 +595,8 @@ function ManualPaymentVerificationPage(props: Props) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [proofPreviews, setProofPreviews] = useState<Record<string, boolean>>({});
   const refresh = useCallback(async () => {
-    let query = db().from('payments').select('id,booking_id,payment_mode,payment_application,amount,currency,payment_status,transaction_reference,proof_storage_path,proof_submitted_at,booking:bookings!payments_booking_id_fkey(booking_reference,visitor_name,visitor_email,visitor_phone,site_id,total_amount,tourism_sites(name),site_slots(slot_date,starts_at))')
-      .eq('provider', 'manual').eq('payment_mode', 'demo').eq('payment_status', 'pending_verification');
-    if ((props.role === 'site_admin' || props.role === 'gatekeeper') && props.siteId) query = query.eq('booking.site_id', props.siteId);
+    const query = pendingManualPaymentQuery('id,booking_id,payment_mode,payment_application,amount,currency,payment_status,transaction_reference,proof_storage_path,proof_submitted_at,booking:bookings!payments_booking_id_fkey!inner(booking_reference,visitor_name,visitor_email,visitor_phone,site_id,booking_status,total_amount,tourism_sites(name),site_slots(slot_date,starts_at))',
+      (props.role === 'site_admin' || props.role === 'gatekeeper') ? props.siteId : undefined);
     const { data, error } = await query.order('proof_submitted_at', { ascending: true });
     if (error) throw error;
     const signed = await Promise.all((data ?? []).map(async (item: any) => {

@@ -11,6 +11,7 @@ export function VisitorNotificationButton({ userId, configured, notify, onOpenBo
   const [loading, setLoading] = useState(configured);
   const [error, setError] = useState(false);
   const [liveError, setLiveError] = useState(false);
+  const [markingAll, setMarkingAll] = useState(false);
   const [reload, setReload] = useState(0);
   const root = useRef<HTMLDivElement>(null);
   const unread = notices.filter((notice) => !notice.read_at).length;
@@ -25,7 +26,7 @@ export function VisitorNotificationButton({ userId, configured, notify, onOpenBo
           .eq('user_id', userId).order('created_at', { ascending: false }).limit(30);
         if (queryError) throw queryError;
         if (active) {
-          setNotices((current) => [...current, ...(data ?? []) as Notice[]]
+          setNotices((current) => [...(data ?? []) as Notice[], ...current]
             .filter((notice, index, all) => all.findIndex((item) => item.id === notice.id) === index)
             .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).slice(0, 30));
           setError(false);
@@ -61,16 +62,22 @@ export function VisitorNotificationButton({ userId, configured, notify, onOpenBo
 
   const markRead = async (notice: Notice) => {
     if (notice.read_at) return;
-    const readAt = new Date().toISOString();
-    const { error: updateError } = await db().from('notifications').update({ read_at: readAt }).eq('user_id', userId).eq('id', notice.id);
-    if (updateError) { notify('Could not mark notification as read.'); return; }
-    setNotices((current) => current.map((item) => item.id === notice.id ? { ...item, read_at: readAt } : item));
+    try {
+      const { error: updateError } = await db().from('notifications').update({ read_at: new Date().toISOString() }).eq('user_id', userId).eq('id', notice.id).is('read_at', null);
+      if (updateError) { notify('Could not mark notification as read.'); return; }
+      setReload((value) => value + 1);
+    } catch { notify('Could not mark notification as read.'); }
   };
   const markAllRead = async () => {
+    if (markingAll || unread === 0) return;
+    setMarkingAll(true);
     const readAt = new Date().toISOString();
-    const { error: updateError } = await db().from('notifications').update({ read_at: readAt }).eq('user_id', userId).is('read_at', null);
-    if (updateError) { notify('Could not mark notifications as read.'); return; }
-    setNotices((current) => current.map((item) => item.read_at ? item : { ...item, read_at: readAt }));
+    try {
+      const { error: updateError } = await db().from('notifications').update({ read_at: readAt }).eq('user_id', userId).is('read_at', null);
+      if (updateError) { notify('Could not mark notifications as read.'); return; }
+      setReload((value) => value + 1);
+    } catch { notify('Could not mark notifications as read.'); }
+    finally { setMarkingAll(false); }
   };
 
   return <div className="visitor-notification-menu" ref={root}>
@@ -78,7 +85,7 @@ export function VisitorNotificationButton({ userId, configured, notify, onOpenBo
       <span className="profile-nav-icon"><Bell size={18}/>{unread > 0 && <span className="notification-count">{unread > 9 ? '9+' : unread}</span>}</span>
     </button>
     {open && <section id="visitor-notification-panel" className="visitor-notification-panel" aria-label="Notifications">
-      <header><span><b>Notifications</b><small>{unread ? `${unread} unread` : 'You’re all caught up'}</small></span>{unread > 0 && <button type="button" onClick={() => void markAllRead()}>Mark all read</button>}</header>
+      <header><span><b>Notifications</b><small>{unread ? `${unread} unread` : 'You’re all caught up'}</small></span><button type="button" disabled={markingAll || unread === 0} onClick={() => void markAllRead()}>{markingAll ? 'Marking…' : 'Mark all read'}</button></header>
       {loading && <p className="notification-panel-state" role="status">Loading notifications…</p>}
       {!loading && error && <p className="notification-panel-state" role="alert">Could not load notifications.<button type="button" onClick={() => setReload((value) => value + 1)}><RefreshCw size={14}/> Retry</button></p>}
       {!loading && liveError && <p className="notification-live-error" role="status">Live connection paused. Checking for updates every minute.<button type="button" onClick={() => setReload((value) => value + 1)}><RefreshCw size={13}/> Reconnect</button></p>}
