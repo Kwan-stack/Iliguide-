@@ -772,7 +772,7 @@ export default function App() {
         ? passwordRecovery ? null : <Link className="link-btn" to="/">Explore Iligan</Link>
         : role === 'visitor'
         ? user
-          ? <><VisitorNotificationButton key={user.id} userId={user.id} configured={supabaseConfigured} notify={notify} onOpenBookings={() => go('Bookings')}/><button className={page === 'Account' ? 'profile-nav-btn active' : 'profile-nav-btn'} aria-label="Open profile" title="Profile" aria-current={page === 'Account' ? 'page' : undefined} onClick={() => go('Account')}><span className="profile-nav-icon"><UserRound size={18}/></span></button><button className="link-btn" onClick={() => void signOut()}>Log out</button></>
+          ? <><VisitorNotificationButton key={user.id} userId={user.id} configured={supabaseConfigured} notify={notify} onOpenBookings={() => go('Bookings')}/><button className={page === 'Account' ? 'profile-nav-btn active' : 'profile-nav-btn'} aria-label="Open profile" title="Profile" aria-current={page === 'Account' ? 'page' : undefined} onClick={() => go('Account')}><span className="profile-nav-icon"><UserRound size={18}/></span></button></>
           : <><button className="link-btn" onClick={() => setAuthMode('signup')}>Sign up</button><Link className="btn btn-primary btn-sm header-auth-login" to={visitorLoginUrl(page === 'Discover' ? '/discover' : location.pathname)}>Log in</Link></>
         : <><span className="role-pill"><span className="status-dot"/>{role.replace('_', ' ')}</span><button className="link-btn" onClick={signOut}>Log out</button></>}
       </div>
