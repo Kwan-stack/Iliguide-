@@ -29,7 +29,7 @@ const roleLabel: Record<StaffRole, string> = {
   tourism_office: 'Tourism Office', site_admin: 'Site administrator', gatekeeper: 'Gatekeeper',
 };
 
-export function StaffWorkspaceShell({ role, homePath, userId, siteSlug, toast, dataError, onRetry, onSignOut, children }: Props) {
+export function StaffWorkspaceShell({ role, homePath, userId, siteSlug, siteId, toast, dataError, onRetry, onSignOut, children }: Props) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [paymentVerificationPending, setPaymentVerificationPending] = useState(0);
   useEffect(() => { if (role !== 'gatekeeper' || !siteId || !siteSlug) setPaymentVerificationPending(0); }, [role, siteId, siteSlug]);
