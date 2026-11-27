@@ -1,5 +1,5 @@
 begin;
-select plan(96);
+select plan(100);
 
 insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at)
 values
@@ -22,7 +22,8 @@ update public.tourism_sites set status = 'published' where id = '82000000-0000-4
 insert into public.site_settings (site_id, adult_fee, child_fee, daily_capacity, max_per_booking)
 values ('82000000-0000-4000-8000-000000000001', 50, 50, 20, 20);
 insert into public.site_operating_hours (site_id, weekday, opens_at, closes_at)
-values ('82000000-0000-4000-8000-000000000001', extract(dow from (now() at time zone 'Asia/Manila')::date)::smallint, '00:00', '23:59:59.999999');
+select '82000000-0000-4000-8000-000000000001', weekday::smallint, '00:00', '23:59:59.999999'
+from generate_series(0, 6) as weekdays(weekday);
 insert into public.staff_assignments (profile_id, site_id, staff_role)
 values
   ('81000000-0000-4000-8000-000000000002', '82000000-0000-4000-8000-000000000001', 'gatekeeper'),
@@ -35,10 +36,10 @@ values
   ('83000000-0000-4000-8000-000000000004', '82000000-0000-4000-8000-000000000001', (now() at time zone 'Asia/Manila')::date + 5, '00:00', '23:59:59.999999', 20, 'open'),
   ('83000000-0000-4000-8000-000000000005', '82000000-0000-4000-8000-000000000002', (now() at time zone 'Asia/Manila')::date, '00:00', '23:59:59.999999', 20, 'open');
 insert into public.bookings (
-  id, booking_reference, site_id, slot_id, visitor_name, visitor_email,
+  id, booking_reference, visitor_id, site_id, slot_id, visitor_name, visitor_email,
   adult_count, child_count, pwd_count, total_amount, payment_status, booking_status, qr_token_hash
 ) values (
-  '84000000-0000-4000-8000-000000000001', 'ILG-ATTENDANCE-ONLINE',
+  '84000000-0000-4000-8000-000000000001', 'ILG-ATTENDANCE-ONLINE', '81000000-0000-4000-8000-000000000003',
   '82000000-0000-4000-8000-000000000001', '83000000-0000-4000-8000-000000000001',
   'Test Visitor', 'qr-visitor@example.invalid', 4, 0, 2, 200, 'paid', 'confirmed',
   extensions.digest(convert_to('attendance-ticket', 'UTF8'), 'sha256')
@@ -51,37 +52,37 @@ values
   ('84100000-0000-4000-8000-000000000004', '84000000-0000-4000-8000-000000000001', 4, 'adult', 'Visitor Four', 'Test address');
 insert into public.bookings (
   id, booking_reference, site_id, slot_id, visitor_name, visitor_email,
-  adult_count, child_count, total_amount, payment_status, booking_status, qr_token_hash
+  adult_count, child_count, total_amount, payment_status, booking_status, qr_token_hash, hold_expires_at
 ) values (
   '84000000-0000-4000-8000-000000000002', 'ILG-ATTENDANCE-OVERNIGHT',
   '82000000-0000-4000-8000-000000000001', '83000000-0000-4000-8000-000000000002',
   'Overnight Test Visitor', 'qr-visitor@example.invalid', 1, 0, 50, 'paid', 'confirmed',
-  extensions.digest(convert_to('overnight-ticket', 'UTF8'), 'sha256')
+  extensions.digest(convert_to('overnight-ticket', 'UTF8'), 'sha256'), null
 ), (
   '84000000-0000-4000-8000-000000000003', 'ILG-ATTENDANCE-CANCELLED',
   '82000000-0000-4000-8000-000000000001', '83000000-0000-4000-8000-000000000001',
   'Cancelled Test Visitor', 'qr-visitor@example.invalid', 1, 0, 50, 'paid', 'cancelled',
-  extensions.digest(convert_to('cancelled-ticket', 'UTF8'), 'sha256')
+  extensions.digest(convert_to('cancelled-ticket', 'UTF8'), 'sha256'), null
 ), (
   '84000000-0000-4000-8000-000000000004', 'ILG-ATTENDANCE-PENDING',
   '82000000-0000-4000-8000-000000000001', '83000000-0000-4000-8000-000000000001',
   'Pending Test Visitor', 'qr-visitor@example.invalid', 1, 0, 50, 'pending', 'awaiting_payment',
-  extensions.digest(convert_to('pending-ticket', 'UTF8'), 'sha256')
+  extensions.digest(convert_to('pending-ticket', 'UTF8'), 'sha256'), now() + interval '15 minutes'
 ), (
   '84000000-0000-4000-8000-000000000005', 'ILG-ATTENDANCE-TOMORROW',
   '82000000-0000-4000-8000-000000000001', '83000000-0000-4000-8000-000000000003',
   'Tomorrow Test Visitor', 'qr-visitor@example.invalid', 1, 0, 50, 'paid', 'confirmed',
-  extensions.digest(convert_to('tomorrow-ticket', 'UTF8'), 'sha256')
+  extensions.digest(convert_to('tomorrow-ticket', 'UTF8'), 'sha256'), null
 ), (
   '84000000-0000-4000-8000-000000000006', 'ILG-ATTENDANCE-FUTURE',
   '82000000-0000-4000-8000-000000000001', '83000000-0000-4000-8000-000000000004',
   'Future Test Visitor', 'qr-visitor@example.invalid', 1, 0, 50, 'paid', 'confirmed',
-  extensions.digest(convert_to('future-ticket', 'UTF8'), 'sha256')
+  extensions.digest(convert_to('future-ticket', 'UTF8'), 'sha256'), null
 ), (
   '84000000-0000-4000-8000-000000000007', 'ILG-ATTENDANCE-WRONG-SITE',
   '82000000-0000-4000-8000-000000000002', '83000000-0000-4000-8000-000000000005',
   'Wrong Destination Test Visitor', 'qr-visitor@example.invalid', 1, 0, 50, 'paid', 'confirmed',
-  extensions.digest(convert_to('wrong-site-ticket', 'UTF8'), 'sha256')
+  extensions.digest(convert_to('wrong-site-ticket', 'UTF8'), 'sha256'), null
 );
 
 set local role authenticated;
@@ -194,6 +195,15 @@ select lives_ok($$select * from public.confirm_ticket_attendance(
   '82000000-0000-4000-8000-000000000001', 'entry', 2, '85000000-0000-4000-8000-000000000002', '{}'::jsonb,
   array['84100000-0000-4000-8000-000000000001'::uuid, '84100000-0000-4000-8000-000000000002'::uuid])$$,
   'Two actual arrivals are recorded for the four-person booking');
+select is((select count(*)::integer from public.notifications where user_id = '81000000-0000-4000-8000-000000000003'
+  and booking_id = '84000000-0000-4000-8000-000000000001' and notification_type = 'attendance_entry'), 1,
+  'Visitor receives one live notification for the confirmed entry');
+select set_config('request.jwt.claim.sub', '81000000-0000-4000-8000-000000000003', true);
+select is((select active_count from public.visitor_booking_attendance('84000000-0000-4000-8000-000000000001')), 2,
+  'Visitor ticket state reports authoritative occupancy for their booking');
+select set_config('request.jwt.claim.sub', '81000000-0000-4000-8000-000000000002', true);
+select throws_ok($$select * from public.visitor_booking_attendance('84000000-0000-4000-8000-000000000001')$$,
+  'P0001', 'Visitor access denied', 'Gatekeeper cannot read visitor-only ticket state');
 select is((select count(*)::integer from public.reservation_visitors where booking_id = '84000000-0000-4000-8000-000000000001' and check_in_status = 'checked_in'), 2, 'Only selected participants become checked in');
 select throws_ok($$select * from public.confirm_ticket_attendance(
   '84000000-0000-4000-8000-000000000001', extensions.digest(convert_to('attendance-ticket', 'UTF8'), 'sha256'),
@@ -248,6 +258,9 @@ select lives_ok($$select * from public.confirm_ticket_attendance(
   '82000000-0000-4000-8000-000000000001', 'exit', 1, '85000000-0000-4000-8000-000000000005', '{}'::jsonb,
   array['84100000-0000-4000-8000-000000000001'::uuid])$$,
   'Partial group checkout records one departure');
+select is((select count(*)::integer from public.notifications where user_id = '81000000-0000-4000-8000-000000000003'
+  and booking_id = '84000000-0000-4000-8000-000000000001' and notification_type = 'attendance_exit'), 1,
+  'Visitor receives one live notification for the confirmed exit');
 select is((select check_in_status from public.reservation_visitors where id = '84100000-0000-4000-8000-000000000001'), 'checked_out', 'Checkout marks only the selected participant as departed');
 select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'current_visitor_count')::bigint, 3::bigint, 'Partial checkout reduces occupancy by one');
 select is((public.site_capacity_snapshot('82000000-0000-4000-8000-000000000001')->>'departures_today')::bigint, 1::bigint, 'Departures today counts the confirmed exit');

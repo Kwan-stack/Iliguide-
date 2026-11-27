@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { QRCodeSVG } from 'qrcode.react';
 import { ArrowDownToLine, ArrowRight, CalendarDays, Clock3, Heart, LogOut, Search, ShieldCheck, Ticket as TicketIcon, UserRound, BadgeCheck } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
-import { db, dateLabel, invokeFunction, isValidOptionalPhone, loadOwnBookings, money, timeLabel, type Booking, type Profile, type Site, type Ticket, type TravelerProfile } from '../lib/iliguide';
+import { db, dateLabel, invokeFunction, isValidOptionalPhone, loadOwnBookings, money, timeLabel, timestampTimeLabel, type Booking, type Profile, type Site, type Ticket, type TravelerProfile } from '../lib/iliguide';
 import { supabase } from '../lib/supabase';
 import { ChangePasswordForm } from './ChangePasswordForm';
 import { filterVisitorBookings, matchesBookingTab, type BookingTab } from '../lib/visitorBookingFilters';
@@ -70,6 +70,16 @@ export function VisitorPages(props: Props) {
       .finally(() => { if (active) finishLoading(); });
     return () => { active = false; };
   }, [bookingScope, props.user?.id, props.configured, props.booking?.booking_status, bookingsReloadKey, finishLoading]);
+
+  useEffect(() => {
+    if (!props.user || !props.configured) return;
+    const userId = props.user.id;
+    const channel = db().channel(`visitor-booking-attendance-${userId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (event) => {
+        if ((event.new as { booking_id?: string | null }).booking_id) setBookingsReloadKey((key) => key + 1);
+      }).subscribe();
+    return () => { void db().removeChannel(channel); };
+  }, [props.user?.id, props.configured]);
 
   const setReasonForBooking = (bookingId: string, value: string) => {
     setCancellationReasons((current) => ({ ...current, [bookingId]: value }));
@@ -141,7 +151,7 @@ export function VisitorPages(props: Props) {
       cancellationReason={cancellationReasons[props.booking.booking_id] ?? ''}
       setCancellationReason={(value) => setReasonForBooking(props.booking!.booking_id, value)}
       onCancel={() => void requestCancel(props.booking, props.guestAccessToken)} cancelBusy={actionBusy}/>}
-    {props.page === 'Tickets' && props.ticket && props.booking && <TicketView booking={props.booking} ticket={props.ticket} notify={props.notify}/>}
+    {props.page === 'Tickets' && props.ticket && props.booking && <TicketView booking={props.booking} ticket={props.ticket} userId={props.user?.id ?? null} configured={props.configured} notify={props.notify}/>}
     <div className="bookings-list-heading"><h2>{props.reviewOnly ? 'Completed visits' : 'My bookings'}</h2><span>{loading ? 'Loading…' : props.reviewOnly ? reviewBookings.length + ' visits' : bookings.length + ' records'}</span></div>
     {!props.user && <div className="empty-card"><UserRound size={30}/><h3>{props.reviewOnly ? 'Sign in to review completed visits' : 'Sign in to see your bookings'}</h3><p>Reservations are linked to your visitor account.</p><button className="btn btn-primary" onClick={props.onLogin}>Sign in <ArrowRight size={15}/></button></div>}
     {props.user && !bookings.length && !loading && <div className="empty-card"><CalendarDays size={30}/><h3>{props.reviewOnly ? 'No completed visits to review yet' : 'No bookings on this account'}</h3><p>{props.reviewOnly ? 'After a destination records your visit as completed, it will appear here.' : 'When you book while signed in, the current reservation will appear here.'}</p></div>}
@@ -195,7 +205,26 @@ function BookingRecord({ booking, token, onTicket, onConfirmation, cancellationR
   </article>;
 }
 
-function TicketView({ booking, ticket, notify }: { booking: Booking; ticket: Ticket; notify: (message: string) => void }) {
+type TicketAttendance = { visitor_count: number; entered_count: number; exited_count: number; active_count: number; entered_at: string | null; exited_at: string | null; booking_status: string };
+function TicketView({ booking, ticket, userId, configured, notify }: { booking: Booking; ticket: Ticket; userId: string | null; configured: boolean; notify: (message: string) => void }) {
+  const [attendance, setAttendance] = useState<TicketAttendance | null>(null);
+  useEffect(() => {
+    if (!userId || !configured) return;
+    let active = true;
+    const refresh = async () => {
+      const { data, error } = await db().rpc('visitor_booking_attendance', { p_booking_id: booking.booking_id });
+      if (!error && active) setAttendance((Array.isArray(data) ? data[0] : data) as TicketAttendance | null);
+    };
+    const channel = db().channel(`visitor-ticket-attendance-${booking.booking_id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (event) => {
+        if ((event.new as { booking_id?: string | null }).booking_id === booking.booking_id) void refresh();
+      }).subscribe((status) => { if (status === 'SUBSCRIBED') void refresh(); });
+    void refresh();
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
+    return () => { active = false; window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); void db().removeChannel(channel); };
+  }, [booking.booking_id, configured, userId]);
+  const attendanceState = attendance ? ticketAttendanceLabel(attendance) : null;
   const download = () => {
     const svg = document.querySelector('.ticket-qr svg');
     if (!svg) return;
@@ -272,12 +301,22 @@ function TicketView({ booking, ticket, notify }: { booking: Booking; ticket: Tic
   };
   return <article className="ticket-card ticket-card-live"><div className="ticket-left"><span className={booking.payment_status === 'paid' ? 'status-tag paid' : 'status-tag'}>{booking.payment_status === 'not_required' ? 'CONFIRMED' : booking.manual_payment_mode === 'demo' ? 'DEMO PAID · CONFIRMED' : 'PAID · CONFIRMED'}</span><h2>{booking.site_name}</h2>
     <p>Present this QR code to the gatekeeper when you arrive.</p><div className="ticket-divider"/>
+    {attendanceState && <section className={`ticket-attendance ticket-attendance-${attendanceState.tone}`} aria-live="polite"><b>{attendanceState.label}</b><span>{attendance?.entered_count} admitted · {attendance?.active_count} inside · {Math.max(0, (attendance?.visitor_count ?? 0) - (attendance?.entered_count ?? 0))} awaiting entry · {attendance?.exited_count} exited</span>{attendance?.entered_at && <small>First entry · {timestampTimeLabel(attendance.entered_at)}</small>}{attendance?.exited_at && <small>Latest exit · {timestampTimeLabel(attendance.exited_at)}</small>}</section>}
     <div className="ticket-data"><span>BOOKING REFERENCE<b>{booking.booking_reference}</b></span><span>VISITOR NAME<b>{ticket.booking.visitor_name}</b></span>
       <span>VISITOR COUNT<b>{ticket.booking.visitor_count}</b></span><span>VISIT DATE<b>{dateLabel(ticket.booking.slot_date)}</b></span>
       <span>{booking.payment_status === 'not_required' ? 'ESTIMATED FEE' : 'ADMISSION'}<b>{money(ticket.booking.total_amount)}</b></span></div></div>
     <div className="ticket-qr"><QRCodeSVG value={ticket.token} size={188} level="H" includeMargin aria-label="Secure Iliguide entry ticket QR code"/>
       <small>This private QR code contains an opaque signed ticket token, not visitor contact information.</small>
       <button className="btn btn-outline" onClick={download}><ArrowDownToLine size={15}/> Export booking</button></div></article>;
+}
+
+function ticketAttendanceLabel(state: TicketAttendance) {
+  if (state.booking_status === 'completed') return { label: 'Visit completed · Ticket inactive', tone: 'complete' };
+  if (state.active_count > 0 && state.exited_count > 0) return { label: 'Partially checked out', tone: 'active' };
+  if (state.active_count > 0 && state.entered_count < state.visitor_count) return { label: 'Partially checked in', tone: 'active' };
+  if (state.active_count > 0) return { label: 'Checked in · Ticket ready for exit scan', tone: 'active' };
+  if (state.entered_count > 0) return { label: 'Some visitors checked in · Others may still arrive', tone: 'pending' };
+  return { label: 'Awaiting check-in', tone: 'pending' };
 }
 
 function AccountPage(props: Props & { bookings: Booking[]; bookingsLoading: boolean }) {

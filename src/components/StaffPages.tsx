@@ -672,7 +672,7 @@ function ScannerPage(props: Props) {
   const [ticketToken, setTicketToken] = useState('');
   const [manualReference, setManualReference] = useState('');
   const [reconciliationReason, setReconciliationReason] = useState('');
-  const [lastAttendance, setLastAttendance] = useState<{ action: 'entry' | 'exit'; count: number; reference: string; at: string | null } | null>(null);
+  const [lastAttendance, setLastAttendance] = useState<{ action: 'entry' | 'exit'; count: number; reference: string; at: string | null; visitors: string[] } | null>(null);
   const [scanError, setScanError] = useState('');
   const [scanBusy, setScanBusy] = useState(false);
   const site = props.sites.find((item) => item.id === props.siteId);
@@ -744,6 +744,7 @@ function ScannerPage(props: Props) {
     }
   };
   const stopCamera = () => { controlsRef.current?.stop(); controlsRef.current = null; setCameraOn(false); };
+  const resetScan = () => { setResult(null); setScanError(''); setManual(''); setTicketToken(''); setManualReference(''); setPendingEventKey(''); setReconciliationReason(''); setLastAttendance(null); setParticipants([]); setSelectedVisitorIds([]); };
   useEffect(() => () => { controlsRef.current?.stop(); }, []);
   const manualLookup = async (event: FormEvent) => {
     event.preventDefault();
@@ -809,15 +810,16 @@ function ScannerPage(props: Props) {
         if (error) throw error;
         confirmed = (Array.isArray(data) ? data[0] : data) as ScanResult;
       }
+      const checkedVisitorNames = participants.filter((visitor) => selectedVisitorIds.includes(visitor.visitor_id)).map((visitor) => visitor.full_name);
       await showResult(confirmed);
       if (confirmed.result === 'entry_recorded') {
-        const at = confirmed.entered_count === count ? confirmed.entered_at : null;
-        setLastAttendance({ action, count, reference: confirmed.booking_reference ?? manualReference, at });
+        const at = confirmed.entered_at;
+        setLastAttendance({ action, count, reference: confirmed.booking_reference ?? manualReference, at, visitors: checkedVisitorNames });
         props.notify(`Check-in Successful · ${confirmed.booking_reference ?? manualReference} · ${site?.name ?? 'Destination'} · ${count} visitor${count === 1 ? '' : 's'}${at ? ` · ${attendanceDateTime(at)}` : ''}`);
         props.refresh();
       } else if (confirmed.result === 'exit_recorded') {
         const at = confirmed.exited_at;
-        setLastAttendance({ action, count, reference: confirmed.booking_reference ?? manualReference, at });
+        setLastAttendance({ action, count, reference: confirmed.booking_reference ?? manualReference, at, visitors: checkedVisitorNames });
         props.notify(`Check-out Successful · ${confirmed.booking_reference ?? manualReference} · ${site?.name ?? 'Destination'} · ${count} visitor${count === 1 ? '' : 's'}${at ? ` · ${attendanceDateTime(at)}` : ''}`);
         props.refresh();
       }
@@ -830,7 +832,7 @@ function ScannerPage(props: Props) {
   const attendanceMax = result ? attendanceLimit(result, attendanceAction) : 0;
   const attendanceEligibleParticipants = participants.filter((visitor) => visitor.check_in_status === (attendanceAction === 'entry' ? 'not_checked_in' : 'checked_in'));
 
-  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> {site?.name ?? 'GATEKEEPER'} · SCAN & EXIT</span><h1>One scan at a <em>time.</em></h1><p>Scans validate tickets. Confirm the actual visitor count to record entry or checkout.</p></div></div>
+  return <section className="dashboard-page section-wrap"><div className="dash-header"><div><span className="eyebrow"><span className="eyebrow-line"/> {site?.name ?? 'GATEKEEPER'} · SCAN & EXIT</span><h1>One scan at a <em>time.</em></h1><p>Scan each ticket, then confirm who is entering or leaving.</p></div></div>
     {!props.siteId && <div className="empty-card"><ShieldCheck size={30}/><h3>No site assignment</h3><p>Ask the Tourism Office to assign your gatekeeper account.</p></div>}
     {!!props.siteId && <div className="scan-layout"><article className="scan-card"><div className="scan-mode"><button type="button" className={scanMode === 'camera' ? 'selected' : ''} aria-pressed={scanMode === 'camera'} onClick={() => { setScanMode('camera'); setManual(''); setScanError(''); }}>Camera</button><button type="button" className={scanMode === 'manual' ? 'selected' : ''} aria-pressed={scanMode === 'manual'} onClick={() => { stopCamera(); setScanMode('manual'); setScanError(''); }}>Manual reference</button></div>
       {scanMode === 'camera' && <>
@@ -846,9 +848,22 @@ function ScannerPage(props: Props) {
       {result && <div className="scan-result"><span className={result.result.includes('recorded') ? 'scan-result-icon success' : 'scan-result-icon'}>{result.result.includes('recorded') ? <Check size={23}/> : <ShieldCheck size={23}/>}</span>
         <strong>{scanLabel(result.result)}</strong><p>{result.visitor_name || 'Ticket details unavailable'}</p>
         {result.booking_reference && <small>{result.booking_reference} · {result.visitor_count} booked · {result.entered_count} admitted · {result.active_count} inside</small>}
-        {lastAttendance && lastAttendance.reference === result.booking_reference && <p className="scan-confirm-hint" role="status">
-          {lastAttendance.action === 'entry' ? 'Check-in Successful' : 'Check-out Successful'} · {site?.name ?? 'Destination'} · {lastAttendance.count} visitor{lastAttendance.count === 1 ? '' : 's'}{lastAttendance.at ? ` · ${attendanceDateTime(lastAttendance.at)}` : ''}
-        </p>}
+        {lastAttendance && lastAttendance.reference === result.booking_reference && <section className="scan-attendance-success" role="status" aria-live="polite">
+          <span className="scan-result-icon success"><Check size={23}/></span>
+          <strong>{lastAttendance.action === 'entry' ? 'Check-in successful' : 'Check-out successful'}</strong>
+          <p>{lastAttendance.action === 'entry' ? 'Visitor entry has been confirmed and recorded.' : 'Visitor exit has been confirmed and recorded.'}</p>
+          <dl><div><dt>Destination</dt><dd>{site?.name ?? 'Destination'}</dd></div><div><dt>Booking</dt><dd>{lastAttendance.reference}</dd></div>
+            <div><dt>Visitors {lastAttendance.action === 'entry' ? 'admitted' : 'checked out'}</dt><dd>{lastAttendance.count}</dd></div>
+            {lastAttendance.visitors.length > 0 && <div><dt>Visitor names</dt><dd>{lastAttendance.visitors.join(', ')}</dd></div>}
+            {result.entered_at && <div><dt>First check-in</dt><dd>{attendanceDateTime(result.entered_at)}</dd></div>}
+            {result.exited_at && <div><dt>Latest check-out</dt><dd>{attendanceDateTime(result.exited_at)}</dd></div>}
+            <div><dt>Current status</dt><dd>{result.active_count} inside · {Math.max(0, result.visitor_count - result.entered_count)} awaiting entry · {result.exited_count} exited</dd></div></dl>
+          {result.entered_count >= result.visitor_count && result.active_count === 0
+            ? <p className="scan-confirm-hint">This visit has been completed. This QR ticket can no longer be used for entry or exit.</p>
+            : lastAttendance.action === 'entry' && result.entered_count >= result.visitor_count
+              ? <p className="scan-confirm-hint">This ticket has already been checked in. The next valid scan will be for check-out only.</p>
+              : result.active_count > 0 && <p className="scan-confirm-hint">{result.active_count} visitor{result.active_count === 1 ? '' : 's'} remain inside.</p>}
+        </section>}
         {scanNotice(result.result) && <p className="scan-confirm-hint">{scanNotice(result.result)}</p>}
         {canConfirmAttendance && <p className="scan-confirm-hint">{result.result === 'overdue_checkout_required'
           ? 'QR ticket expired. Use this manual checkout only for visitors still inside, and record why.'
@@ -892,7 +907,7 @@ function ScannerPage(props: Props) {
           </label>}
           <button className="btn btn-primary" type="submit" disabled={scanBusy || participantsLoading || participantsFailed || (participants.length > 0 && selectedVisitorIds.length === 0)}>{scanBusy ? 'Saving…' : result.result === 'overdue_checkout_required' ? 'Confirm overdue check-out' : attendanceAction === 'entry' ? 'Check in' : 'Confirm check-out'} <Check size={15}/></button>
         </form>}
-        <button type="button" className="btn btn-outline" onClick={() => { setResult(null); setScanError(''); setTicketToken(''); setManualReference(''); setPendingEventKey(''); setReconciliationReason(''); setLastAttendance(null); }}>{canConfirmAttendance ? 'Cancel' : 'Scan another ticket'}</button></div>}
+        <button type="button" className="btn btn-outline" onClick={resetScan}>{lastAttendance ? 'Scan next ticket' : canConfirmAttendance ? 'Cancel' : 'Scan another ticket'}</button></div>}
     </article></div>}
   </section>;
 }
