@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowDownToLine, ArrowRight, BadgeCheck, CalendarDays, Camera, Clock3, Heart, LogOut, Pencil, Search, ShieldCheck, Ticket as TicketIcon, Trash2, UserRound, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowRight, BadgeCheck, CalendarDays, Camera, Clock3, Heart, LogOut, Pencil, Receipt, Search, ShieldCheck, Ticket as TicketIcon, Trash2, UserRound, X } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { db, dateLabel, invokeFunction, isValidOptionalPhone, loadOwnBookings, money, timeLabel, timestampTimeLabel, type Booking, type Profile, type Site, type Ticket, type TravelerProfile } from '../lib/iliguide';
 import { supabase } from '../lib/supabase';
@@ -162,7 +162,7 @@ export function VisitorPages(props: Props) {
       <p>{props.page === 'Tickets' ? 'A ticket is available after your reservation is confirmed.' : props.reviewOnly ? 'Choose a completed visit to review your experience.' : 'Review reservations made with your visitor account.'}</p>
     </div></div>
     <p className="config-note">Reservations and tickets here do not grant admission at the destination.</p>
-    {displayBooking && <BookingRecord booking={displayBooking} token={props.guestAccessToken} onTicket={props.onTicket} onConfirmation={props.onConfirmation} showTicketAction={props.page !== 'Tickets' && props.ticket?.booking.booking_id !== displayBooking.booking_id}
+    {displayBooking && <BookingRecord booking={displayBooking} token={props.guestAccessToken} onTicket={props.onTicket} onConfirmation={props.onConfirmation} showTicketAction={props.page !== 'Tickets' && props.ticket?.booking.booking_id !== displayBooking.booking_id} showCompletedStatus={props.page !== 'Tickets'}
       cancellationReason={cancellationReasons[displayBooking.booking_id] ?? ''}
       setCancellationReason={(value) => setReasonForBooking(displayBooking.booking_id, value)}
       onCancel={() => void requestCancel(displayBooking, props.guestAccessToken)} cancelBusy={actionBusy}/>}
@@ -185,7 +185,7 @@ export function VisitorPages(props: Props) {
         <button className="link-btn" aria-expanded={expandedBooking === item.booking_id} onClick={() => setExpandedBooking(expandedBooking === item.booking_id ? '' : item.booking_id)}>{expandedBooking === item.booking_id ? 'Hide details' : 'View details'}</button>
         {item.booking_status === 'completed' && props.profile?.role === 'visitor' && props.profile.account_status === 'active' && <button className="btn btn-outline" onClick={() => setReviewBooking({ booking: item, review })}>{review ? 'View my review' : 'Write a review'}</button>}
       </div><div className="booking-record-statuses"><span className={`status-tag ${item.booking_status === 'confirmed' || item.booking_status === 'completed' ? 'paid' : ''}`}>{visitorBookingStatus(item)}</span>{review && <span className={`review-status-tag review-status-${review.review_status}`}>{review.review_status === 'pending' ? 'Review pending' : review.review_status}</span>}</div></div>
-      {expandedBooking === item.booking_id && <div className="booking-record-expanded"><BookingRecord booking={item} token="" onTicket={props.onTicket} onConfirmation={props.onConfirmation} showTicketAction={props.page !== 'Tickets' && props.ticket?.booking.booking_id !== item.booking_id}
+      {expandedBooking === item.booking_id && <div className="booking-record-expanded"><BookingRecord booking={item} token="" onTicket={props.onTicket} onConfirmation={props.onConfirmation} showTicketAction={props.page !== 'Tickets' && props.ticket?.booking.booking_id !== item.booking_id} showCompletedStatus={props.page !== 'Tickets'}
         cancellationReason={cancellationReasons[item.booking_id] ?? ''}
         setCancellationReason={(value) => setReasonForBooking(item.booking_id, value)}
         onCancel={() => void requestCancel(item, '')} cancelBusy={actionBusy}/></div>}</article>; })}
@@ -196,10 +196,10 @@ export function VisitorPages(props: Props) {
   </section>;
 }
 
-function BookingRecord({ booking, token, onTicket, onConfirmation, cancellationReason, setCancellationReason, onCancel, cancelBusy, showTicketAction = true }: {
+function BookingRecord({ booking, token, onTicket, onConfirmation, cancellationReason, setCancellationReason, onCancel, cancelBusy, showTicketAction = true, showCompletedStatus = true }: {
   booking: Booking; token: string; onTicket: (booking: Booking, token: string) => void; onConfirmation: (reference: string) => void;
   cancellationReason: string; setCancellationReason: (value: string) => void; onCancel: () => void; cancelBusy: boolean;
-  showTicketAction?: boolean;
+  showTicketAction?: boolean; showCompletedStatus?: boolean;
 }) {
   const canCancel = booking.booking_status === 'confirmed' && booking.cancellation_cutoff_at
     && new Date(booking.cancellation_cutoff_at).getTime() > Date.now();
@@ -215,23 +215,27 @@ function BookingRecord({ booking, token, onTicket, onConfirmation, cancellationR
     }, () => {});
     return () => { active = false; };
   }, [booking.booking_id, booking.booking_status, booking.attendance]);
-  return <article className="booking-detail-card">
+  return <article className={booking.booking_status === 'completed' ? 'booking-detail-card booking-detail-card-completed' : 'booking-detail-card'}>
     <div className="booking-detail-head"><div><span className="eyebrow"><span className="eyebrow-line"/> BOOKING {booking.booking_reference}</span><h2>{booking.site_name}</h2>
       <p>{dateLabel(booking.slot_date)}</p></div>
-      <span className={booking.payment_status === 'paid' ? 'status-tag paid' : 'status-tag'}>{bookingStatusLabel(booking.booking_status, booking.payment_method, booking.manual_payment_status)} · {booking.manual_payment_mode === 'demo' && booking.payment_status === 'paid' ? 'Demo paid' : paymentStatusLabel(booking.payment_status, booking.total_amount)}</span></div>
-    <div className="booking-detail-facts"><span><small>VISITORS</small><b>{booking.adult_count} adults, {booking.child_count} children{booking.pwd_count ? `, ${booking.pwd_count} PWD` : ''}</b></span><span><small>PAYMENT METHOD</small><b>{booking.payment_method === 'onsite' ? 'Pay onsite' : 'Online'}</b></span>
+      {booking.booking_status === 'completed' ? <div className="booking-detail-status">{showCompletedStatus && <span className="status-tag paid">{bookingStatusLabel(booking.booking_status, booking.payment_method, booking.manual_payment_status)}</span>}<small className="completed-payment-status">{booking.manual_payment_mode === 'demo' && booking.payment_status === 'paid' ? 'Demo paid' : paymentStatusLabel(booking.payment_status, booking.total_amount)}</small></div>
+        : <span className={booking.payment_status === 'paid' ? 'status-tag paid' : 'status-tag'}>{bookingStatusLabel(booking.booking_status, booking.payment_method, booking.manual_payment_status)} · {booking.manual_payment_mode === 'demo' && booking.payment_status === 'paid' ? 'Demo paid' : paymentStatusLabel(booking.payment_status, booking.total_amount)}</span>}</div>
+    <div className="booking-detail-facts"><span><small>VISITORS</small><b>{booking.adult_count} adult{booking.adult_count === 1 ? '' : 's'}, {booking.child_count} child{booking.child_count === 1 ? '' : 'ren'}{booking.pwd_count ? `, ${booking.pwd_count} PWD` : ''}</b></span><span><small>PAYMENT METHOD</small><b>{booking.payment_method === 'onsite' ? 'Pay onsite' : 'Online'}</b></span>
       <span><small>{booking.payment_status === 'not_required' ? 'ESTIMATED FEES' : 'TOTAL'}</small><b>{money(booking.total_amount)}</b></span><span><small>REFERENCE</small><b>{booking.booking_reference}</b></span></div>
-    {booking.booking_status === 'completed' && <div className="completed-visit-details">
-      <span><small>CHECK-IN</small><b>{attendance?.entered_at ? timestampTimeLabel(attendance.entered_at) : 'Not recorded'}</b></span>
-      <span><small>CHECK-OUT</small><b>{attendance?.exited_at ? timestampTimeLabel(attendance.exited_at) : 'Not recorded'}</b></span>
-      <span><small>VISIT DURATION</small><b>{visitDurationLabel(attendance?.entered_at, attendance?.exited_at)}</b></span>
-      <p><BadgeCheck size={16}/><span><b>Visit Completed</b>Your check-out has been successfully recorded. This ticket is no longer valid for entry or exit.</span></p>
-    </div>}
+    {booking.booking_status === 'completed' && <section className="completed-visit-details" aria-labelledby={`visit-details-${booking.booking_id}`}>
+      <h3 id={`visit-details-${booking.booking_id}`}>Visit details</h3>
+      <dl className="completed-visit-grid">
+        <div><dt>Check-in</dt><dd>{attendance?.entered_at ? timestampTimeLabel(attendance.entered_at) : 'Not recorded'}</dd></div>
+        <div><dt>Check-out</dt><dd>{attendance?.exited_at ? timestampTimeLabel(attendance.exited_at) : 'Not recorded'}</dd></div>
+        <div className="completed-visit-duration"><dt>Visit duration</dt><dd>{visitDurationLabel(attendance?.entered_at, attendance?.exited_at)}</dd></div>
+      </dl>
+      <div className="completed-visit-notice" role="status"><BadgeCheck size={17} aria-hidden="true"/><div><b>Visit completed</b><p>Your visit has ended. This ticket is no longer valid for entry or exit.</p></div></div>
+    </section>}
     {booking.payment_method === 'onsite' && booking.payment_status === 'pending' && <p className="config-note">Pay at the destination before entry. Your QR ticket will be available after staff record payment.</p>}
     {booking.payment_status === 'not_required' && <p className="config-note">Fees are estimates; no payment was collected.</p>}
     {booking.booking_status === 'awaiting_payment' && <p className="config-note"><Clock3 size={16}/> This reservation is not confirmed and will expire when its hold ends.</p>}
     <div className="booking-detail-actions">
-      {(booking.payment_status === 'paid' || booking.booking_status === 'completed') && <button className="btn btn-outline" onClick={() => onConfirmation(booking.booking_reference)}>View receipt</button>}
+      {(booking.payment_status === 'paid' || booking.booking_status === 'completed') && <button className={`btn btn-outline${booking.booking_status === 'completed' ? ' booking-completed-receipt' : ''}`} onClick={() => onConfirmation(booking.booking_reference)}><Receipt size={15}/> View receipt</button>}
       {showTicketAction && canIssueVisitorTicket(booking) && <button className="btn btn-primary" onClick={() => onTicket(booking, token)}>Open ticket <TicketIcon size={16}/></button>}
     </div>
     {canCancel && <div className="inline-action"><label>Cancellation reason<input value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} maxLength={1000} placeholder="Tell the destination team why you need to cancel"/></label>
@@ -352,13 +356,13 @@ function TicketView({ booking, ticket, userId, configured, notify, onConfirmatio
       <span><small>CHECK-OUT</small><b>{attendance?.exited_at ? timestampTimeLabel(attendance.exited_at) : 'Not recorded'}</b></span>
       <span className="completed-duration"><small>VISIT DURATION</small><b>{visitDurationLabel(attendance?.entered_at, attendance?.exited_at)}</b></span></div>
     <div className="completed-ticket-notice"><BadgeCheck size={19}/><span><b>Visit Completed</b><small>Your check-out has been successfully recorded. This ticket is no longer valid for entry or exit.</small></span></div>
-    <button className="btn btn-outline completed-receipt" onClick={() => onConfirmation(booking.booking_reference)}><ArrowDownToLine size={15}/> View receipt</button>
+    <button className="btn btn-outline completed-receipt" onClick={() => onConfirmation(booking.booking_reference)}><Receipt size={15}/> View receipt</button>
   </article>;
   if (isTicketUnavailable) return <article className="ticket-card ticket-card-completed ticket-card-unavailable" aria-live="polite">
     <div className="completed-ticket-head"><div><span className="eyebrow"><span className="eyebrow-line"/> BOOKING {booking.booking_reference}</span><h2>{booking.site_name}</h2><p>{dateLabel(booking.slot_date)}</p></div>
       <span className="status-tag">{bookingStatusLabel(attendance?.booking_status ?? booking.booking_status, booking.payment_method, booking.manual_payment_status)}</span></div>
     <p>This ticket is no longer valid for entry or exit.</p>
-    {(booking.payment_status === 'paid' || booking.booking_status === 'completed') && <button className="btn btn-outline completed-receipt" onClick={() => onConfirmation(booking.booking_reference)}><ArrowDownToLine size={15}/> View receipt</button>}
+    {(booking.payment_status === 'paid' || booking.booking_status === 'completed') && <button className="btn btn-outline completed-receipt" onClick={() => onConfirmation(booking.booking_reference)}><Receipt size={15}/> View receipt</button>}
   </article>;
   return <article className="ticket-card ticket-card-live"><div className="ticket-left"><span className={isExitOnly ? 'status-tag paid' : booking.payment_status === 'paid' ? 'status-tag paid' : 'status-tag'}>{isExitOnly ? 'CHECKED IN' : booking.payment_status === 'not_required' ? 'CONFIRMED' : booking.manual_payment_mode === 'demo' ? 'DEMO PAID · CONFIRMED' : 'PAID · CONFIRMED'}</span><h2>{booking.site_name}</h2>
     <p>{isExitOnly ? 'Ticket purpose: Exit only. Your entry has been successfully recorded. Present this ticket to the gatekeeper when leaving the destination.' : 'Present this QR code to the gatekeeper when you arrive.'}</p><div className="ticket-divider"/>
