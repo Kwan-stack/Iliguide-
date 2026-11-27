@@ -1,0 +1,2 @@
+-- Historical temporary upload-scope migration. Its effect is not needed in the
+-- current schema; retain this no-op to match the applied remote version history.

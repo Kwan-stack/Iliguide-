@@ -1,0 +1,12 @@
+IliGuide QA preview — accessibility-tree evidence
+Target: http://127.0.0.1:4173/
+Build: qa/app/dist; Supabase VITE variables blank.
+
+Home: Iliguide — Discover. Book. Explore.
+Banner: Add Supabase URL and publishable key to connect live data.
+Headline: Explore the city of majestic waterfalls.
+
+After clicking Explore now, URL changed to /discover.
+Discover view showed the same missing-config banner and “Loading workspace…”.
+
+No login, API call, booking, or database action. Snapshot captured through CUA; no screenshot path available. Browser activity ended; preview process stopped after capture.

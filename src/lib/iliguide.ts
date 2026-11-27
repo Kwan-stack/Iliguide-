@@ -98,6 +98,13 @@ export type GatekeeperDuty = {
   primary_gatekeeper_name: string;
   effective_status: string;
 };
+export type BookingAttendance = {
+  entered_count: number;
+  exited_count: number;
+  active_count: number;
+  entered_at: string | null;
+  exited_at: string | null;
+};
 export type Booking = {
   booking_id: string;
   booking_reference: string;
@@ -126,6 +133,7 @@ export type Booking = {
   manual_payment_status?: string | null;
   manual_payment_mode?: string | null;
   payment_receipt_reference?: string | null;
+  attendance?: BookingAttendance;
 };
 export type CreatedHold = {
   booking_id: string;
@@ -337,11 +345,17 @@ export async function loadOwnBookings(): Promise<Booking[]> {
     .select(
       'id, booking_reference, visitor_name, visitor_email, visitor_phone, visitor_count,' +
       ' adult_count, child_count, pwd_count, total_amount, currency, payment_status, payment_method, booking_status,' +
-      ' booking_source, site_id, cancellation_cutoff_at, hold_expires_at, created_at,' +
+      ' booking_source, site_id, site_name_snapshot, cancellation_cutoff_at, hold_expires_at, created_at,' +
       ' tourism_sites(name), site_slots(slot_date, starts_at, ends_at), payments!payments_booking_id_fkey(id,provider,payment_mode,payment_status,payment_deadline,receipt_reference,verified_at,amount,payment_application)',
     )
     .order('created_at', { ascending: false });
   if (error) throw error;
+  const { data: attendanceRows, error: attendanceError } = await db().rpc('visitor_booking_attendance');
+  if (attendanceError) throw attendanceError;
+  const attendanceByBooking = new Map((attendanceRows ?? []).map((row: any) => [row.booking_id, {
+    entered_count: Number(row.entered_count), exited_count: Number(row.exited_count), active_count: Number(row.active_count),
+    entered_at: row.entered_at, exited_at: row.exited_at,
+  }]));
   return (data ?? []).map((row: any) => {
     const manualPayment = (row.payments ?? []).find((payment: Record<string, string>) => payment.provider === 'manual');
     const paidPayment = (row.payments ?? []).find((payment: Record<string, string>) => payment.payment_status === 'paid');
@@ -362,7 +376,7 @@ export async function loadOwnBookings(): Promise<Booking[]> {
     booking_status: row.booking_status,
     booking_source: row.booking_source,
     site_id: row.site_id,
-    site_name: row.tourism_sites?.name ?? 'Destination',
+    site_name: row.site_name_snapshot ?? row.tourism_sites?.name ?? 'Destination',
     slot_date: row.site_slots?.slot_date,
     starts_at: row.site_slots?.starts_at,
     ends_at: row.site_slots?.ends_at,
@@ -373,6 +387,7 @@ export async function loadOwnBookings(): Promise<Booking[]> {
     manual_payment_status: manualPayment?.payment_status ?? null,
     manual_payment_mode: (row.payments ?? []).find((payment: Record<string, string>) => payment.payment_mode === 'demo')?.payment_mode ?? null,
     payment_receipt_reference: paidPayment?.receipt_reference ?? null,
+    attendance: attendanceByBooking.get(row.id),
   });
   }) as Booking[];
 }

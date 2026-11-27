@@ -22,14 +22,14 @@ test('gatekeepers can use operational pages only', () => {
   assert.equal(staffPageForRole('gatekeeper', 'Tickets'), 'Overview');
 });
 
-test('site administrators can manage scoped demo payments but cannot enter office-only pages', () => {
+test('site administrators retain assigned-site routes and cannot enter unsupported pages', () => {
   assert.equal(staffPageForRole('site_admin', 'Change password'), 'Change password');
   assert.equal(staffPageForRole('site_admin', 'Schedule & Operations'), 'Schedule & Operations');
   assert.equal(staffPageForRole('site_admin', 'Staff and accounts'), 'Staff and accounts');
   assert.equal(staffPageForRole('site_admin', 'Payment settings'), 'Payment settings');
   assert.equal(staffPageForRole('site_admin', 'Payment verification'), 'Payment verification');
-  assert.equal(staffPageForRole('site_admin', 'Sites and staff'), 'Overview');
-  assert.equal(staffPageForRole('site_admin', 'Activity'), 'Overview');
+  assert.equal(staffPageForRole('site_admin', 'Sites and staff'), 'Sites and staff');
+  assert.equal(staffPageForRole('site_admin', 'Activity'), 'Activity');
   assert.equal(staffPageForRole('site_admin', 'Walk-in registration'), 'Overview');
   assert.equal(staffPageForRole('site_admin', 'Destinations'), 'Overview');
 });
@@ -61,7 +61,6 @@ test('destination updates are restricted to Tourism Office and assigned Site Adm
 test('legacy schedule pages remain available to Site Admin and Gatekeeper roles stay blocked', () => {
   assert.equal(staffPageForRole('site_admin', 'Duty roster'), 'Duty roster');
   assert.equal(staffPageForRole('site_admin', 'Slots and closures'), 'Slots and closures');
-  assert.equal(staffPageForRole('site_admin', 'Sites and staff'), 'Overview');
   assert.equal(staffPageForRole('gatekeeper', 'Schedule & Operations'), 'Overview');
 });
 

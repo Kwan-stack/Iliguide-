@@ -1,0 +1,495 @@
+{
+  "overallVerdict": "FAIL",
+  "verdictBasis": "One static failure remains (S4/R6); local runtime scenarios are blocked because Podman CLI has no WSL/Hyper-V machine. R3 remediation authored but unverified; production untouched.",
+  "environment": {
+    "commit": "e250e214b26c1aa3b8d8def5a3cc007d31902b44",
+    "date": "2026-11-27",
+    "timezone": "Asia/Manila",
+    "target": "QA-local project iliguide-qa-local-20261127; not started",
+    "node": "v24.22.3",
+    "supabaseCli": "3.2.0",
+    "vite": "6.4.5",
+    "containerRuntime": "Podman CLI 6.2.1 installed per-user; podman machine init blocked because WSL 2.5.1+ is required and WSL is absent. Isolated supabase start cannot connect to Podman socket. Docker Desktop needs administrator-enabled Virtual Machine Platform. UAC request to enable WSL/Virtual Machine Platform was canceled; no OS feature change or reboot.",
+    "productionTouched": false,
+    "thirdPartyCalls": false,
+    "seedExecuted": false
+  },
+  "scenarios": [
+    {
+      "id": "S1",
+      "scenario": "Visitor happy path",
+      "rule": "R9",
+      "expected": "QA_Tinago, 2 adults + 1 child, server total PHP 275, booking and ticket",
+      "actual": "Not run; local Supabase unavailable",
+      "verdict": "BLOCKED",
+      "severity": "Critical criterion: core flow incomplete",
+      "evidence": [
+        "qa/evidence/supabase-start.log",
+        "qa/seed/seed.mjs"
+      ]
+    },
+    {
+      "id": "S2",
+      "scenario": "PWD booking and document scope",
+      "rule": "R10",
+      "expected": "Independent discount, required document when enabled, authorized-only read",
+      "actual": "Not run; Auth/Storage unavailable",
+      "verdict": "BLOCKED",
+      "severity": "N/A",
+      "evidence": [
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "S3",
+      "scenario": "Mimbalot free booking",
+      "rule": "R6",
+      "expected": "Zero fee and ticket",
+      "actual": "Not run; database unavailable",
+      "verdict": "BLOCKED",
+      "severity": "N/A",
+      "evidence": [
+        "qa/evidence/supabase-start.log",
+        "qa/seed/seed.mjs"
+      ]
+    },
+    {
+      "id": "S4",
+      "scenario": "Sikyop entrance and guide fees",
+      "rule": "R6",
+      "expected": "Separate entrance and guide fees",
+      "actual": "Static failure: adult/child entrance fees and PWD discount only; no separate guide-fee field. Supplied workbook lacks approved guide-fee amount and billing basis.",
+      "verdict": "FAIL",
+      "severity": "High",
+      "evidence": [
+        "qa/evidence/static-followup-review.log"
+      ]
+    },
+    {
+      "id": "S5",
+      "scenario": "Demo payment",
+      "rule": "R7",
+      "expected": "Demo label; no real provider, receipt, refund or verification",
+      "actual": "Static review: handlers return HTTP 410; README/setup now describe demo-only behavior. Runtime not run.",
+      "verdict": "BLOCKED",
+      "severity": "N/A",
+      "evidence": [
+        "qa/evidence/static-followup-review.log",
+        "qa/evidence/supabase-start-after-podman.log"
+      ]
+    },
+    {
+      "id": "S6",
+      "scenario": "Slot exhaustion and concurrency",
+      "rule": "R9",
+      "expected": "No overbooking; invalid counts and dates rejected; one concurrent last-seat success",
+      "actual": "Not run; database unavailable",
+      "verdict": "BLOCKED",
+      "severity": "N/A",
+      "evidence": [
+        "qa/evidence/supabase-start.log",
+        "qa/seed/seed.mjs"
+      ]
+    },
+    {
+      "id": "S7",
+      "scenario": "Booking hold",
+      "rule": "R9",
+      "expected": "Expired hold releases capacity; verify configured windows",
+      "actual": "Not run. Static: base 10 minutes; manual payment 15-minute default, configurable 5–120, extends hold",
+      "verdict": "BLOCKED",
+      "severity": "N/A",
+      "evidence": [
+        "qa/01-discovery.md",
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "S8",
+      "scenario": "Check-in and partial group",
+      "rule": "R1",
+      "expected": "Gatekeeper confirmation required; partial entry updates occupancy",
+      "actual": "Not run; database unavailable",
+      "verdict": "BLOCKED",
+      "severity": "Critical criterion: core flow incomplete",
+      "evidence": [
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "S9",
+      "scenario": "Checkout",
+      "rule": "R2",
+      "expected": "Gatekeeper confirms exit; no duplicate or negative occupancy",
+      "actual": "Not run; database unavailable",
+      "verdict": "BLOCKED",
+      "severity": "Critical criterion: core flow incomplete",
+      "evidence": [
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "S10",
+      "scenario": "Walk-in",
+      "rule": "R3",
+      "expected": "No count change until QR scan and confirmed check-in",
+      "actual": "Not run; isolated supabase start cannot connect to Podman Linux socket; no local VM.",
+      "verdict": "BLOCKED",
+      "severity": "Critical criterion: core flow incomplete",
+      "evidence": [
+        "qa/evidence/supabase-start-after-podman.log",
+        "qa/evidence/podman-install-attempt.md"
+      ]
+    },
+    {
+      "id": "S11",
+      "scenario": "Manual lookup",
+      "rule": "R3",
+      "expected": "Manual lookup cannot confirm attendance without required QR validation",
+      "actual": "Static review: local migration adds a guard rejecting walk-in manual confirmation; pgTAP regression authored but not run because Podman machine could not start.",
+      "verdict": "BLOCKED",
+      "severity": "N/A",
+      "evidence": [
+        "qa/evidence/static-followup-review.log",
+        "qa/evidence/supabase-start-after-podman.log"
+      ]
+    },
+    {
+      "id": "S12",
+      "scenario": "Cross-site and tampered QR",
+      "rule": "R8",
+      "expected": "Reject foreign site, invalid, expired, cancelled and replayed tokens",
+      "actual": "Not run; database unavailable",
+      "verdict": "BLOCKED",
+      "severity": "N/A",
+      "evidence": [
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "S13",
+      "scenario": "Asia/Manila boundary",
+      "rule": "R4",
+      "expected": "Daily counts use local date boundaries",
+      "actual": "Not run; database unavailable",
+      "verdict": "BLOCKED",
+      "severity": "N/A",
+      "evidence": [
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "S14",
+      "scenario": "Cancellation",
+      "rule": "R8/R9",
+      "expected": "Owner request, authorized decision, capacity release; reject non-owner",
+      "actual": "Not run; database unavailable",
+      "verdict": "BLOCKED",
+      "severity": "N/A",
+      "evidence": [
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "S15",
+      "scenario": "Capacity",
+      "rule": "R5",
+      "expected": "Distinct slot limit, expected visitors, occupancy and estimates; approval scoped/audited",
+      "actual": "Not run. Static migrations separate estimate and approved limit",
+      "verdict": "BLOCKED",
+      "severity": "N/A",
+      "evidence": [
+        "qa/01-discovery.md",
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "S16",
+      "scenario": "Staff administration",
+      "rule": "R8",
+      "expected": "Site Admin site scope; Tourism Office cross-site; invitations and role escalation controlled",
+      "actual": "API scope not run; updated assigned-Site-Admin route tests pass",
+      "verdict": "BLOCKED",
+      "severity": "N/A",
+      "evidence": [
+        "qa/evidence/actor-route-test-fixed.log",
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "S17",
+      "scenario": "Reviews and announcements",
+      "rule": "R8/R10",
+      "expected": "Review eligibility, moderation, site scope and harmless XSS rendering",
+      "actual": "Not run; database unavailable",
+      "verdict": "BLOCKED",
+      "severity": "N/A",
+      "evidence": [
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "S18",
+      "scenario": "Reports and CSV",
+      "rule": "R8",
+      "expected": "Independent totals, scope and formula-injection neutralization",
+      "actual": "Not run. Existing CSV escaping unit test passes",
+      "verdict": "BLOCKED",
+      "severity": "N/A",
+      "evidence": [
+        "qa/evidence/unit-tests.log",
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "S19",
+      "scenario": "Network, camera and offline failures",
+      "rule": "R10",
+      "expected": "Clear errors/retries; app shell only; manual fallback",
+      "actual": "Not run. Local home/discover shell rendered without Supabase",
+      "verdict": "BLOCKED",
+      "severity": "N/A",
+      "evidence": [
+        "qa/evidence/ui-preview.txt",
+        "qa/evidence/supabase-start.log"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "R1",
+      "status": "Unverifiable",
+      "evidence": [
+        "qa/01-discovery.md",
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "R2",
+      "status": "Unverifiable",
+      "evidence": [
+        "qa/01-discovery.md",
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "R3",
+      "status": "Unverifiable; local fix authored, pgTAP not run",
+      "evidence": [
+        "qa/evidence/static-followup-review.log",
+        "qa/evidence/supabase-start-after-podman.log"
+      ]
+    },
+    {
+      "id": "R4",
+      "status": "Unverifiable",
+      "evidence": [
+        "qa/01-discovery.md",
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "R5",
+      "status": "Unverifiable",
+      "evidence": [
+        "qa/01-discovery.md",
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "R6",
+      "status": "Violated",
+      "evidence": [
+        "qa/evidence/static-followup-review.log"
+      ]
+    },
+    {
+      "id": "R7",
+      "status": "Satisfied by static review; runtime unverified",
+      "evidence": [
+        "qa/evidence/static-followup-review.log"
+      ]
+    },
+    {
+      "id": "R8",
+      "status": "Unverifiable",
+      "evidence": [
+        "qa/security-matrix.csv"
+      ]
+    },
+    {
+      "id": "R9",
+      "status": "Unverifiable",
+      "evidence": [
+        "qa/01-discovery.md",
+        "qa/evidence/supabase-start.log"
+      ]
+    },
+    {
+      "id": "R10",
+      "status": "Unverifiable",
+      "evidence": [
+        "qa/evidence/secret-scan.log",
+        "qa/evidence/bundle-scan.log",
+        "qa/security-matrix.csv"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "severity": "Critical",
+      "id": "ENV-CORE",
+      "title": "Core flows not completed",
+      "rootCause": "Podman CLI installed, but Windows has no WSL/Hyper-V machine; local Supabase cannot connect to the Podman socket",
+      "evidence": [
+        "qa/evidence/podman-install-attempt.md",
+        "qa/evidence/supabase-start-after-podman.log"
+      ],
+      "recommendation": "Have an administrator enable a supported local provider and restart Windows; then start only the isolated QA stack and execute blocked scenarios."
+    },
+    {
+      "severity": "High",
+      "id": "R3-MANUAL-QR",
+      "title": "R3 remediation authored but unverified",
+      "rootCause": "Original manual wrapper allowed a null token; local migration now rejects walk-in manual confirmation",
+      "evidence": [
+        "supabase/migrations/20261126224632_walkin_attendance_requires_qr.sql",
+        "supabase/tests/qr_attendance_and_live_occupancy.test.sql",
+        "qa/evidence/supabase-start-after-podman.log"
+      ],
+      "recommendation": "Run pgTAP regression on isolated local Supabase before treating this fix as verified or deploying it."
+    },
+    {
+      "severity": "High",
+      "id": "R6-GUIDE-FEE",
+      "title": "Sikyop guide fee cannot be represented",
+      "rootCause": "Schema and editor expose adult_fee, child_fee, PWD discount only",
+      "evidence": [
+        "qa/evidence/static-findings-rerun.log"
+      ],
+      "recommendation": "Model guide fee separately and include it in server calculation and visitor display."
+    },
+    {
+      "severity": "Low",
+      "id": "DOC-HOLD-WINDOW",
+      "title": "README omits longer manual payment window",
+      "rootCause": "10-minute base hold becomes configurable 15-minute payment hold after payment begins",
+      "evidence": [
+        "qa/01-discovery.md"
+      ],
+      "recommendation": "Document base hold and payment window as separate phases."
+    }
+  ],
+  "coverage": {
+    "scenarioCount": 19,
+    "runtimePassed": 0,
+    "staticFailures": 1,
+    "blocked": 18,
+    "unitTests": {
+      "passed": 65,
+      "failed": 0,
+      "total": 65,
+      "failedTests": [],
+      "rerunStable": true
+    },
+    "typescriptBuild": "PASS",
+    "viteBuild": "PASS",
+    "secretScan": {
+      "worktreeTextFiles": 444,
+      "historyCommits": 52,
+      "redactedMatches": 0
+    },
+    "bundleScan": {
+      "files": 70,
+      "redactedMatches": 0
+    },
+    "accessMatrixRows": 56,
+    "axe": "NOT_MEASURED",
+    "lighthouse": "NOT_MEASURED",
+    "mobileViewport": "NOT_MEASURED",
+    "desktopViewport": "NOT_MEASURED"
+  },
+  "evidence": [
+    "qa/01-discovery.md",
+    "qa/02-baseline.md",
+    "qa/security-matrix.csv",
+    "qa/evidence/supabase-start.log",
+    "qa/evidence/unit-tests.log",
+    "qa/evidence/actor-routes-rerun.log",
+    "qa/evidence/build.log",
+    "qa/evidence/secret-scan.log",
+    "qa/evidence/bundle-scan.log",
+    "qa/evidence/static-findings-rerun.log",
+    "qa/evidence/security-static.log",
+    "qa/evidence/ui-preview.txt",
+    "qa/evidence/remote-access-check.md",
+    "qa/evidence/responsive-smoke.md",
+    "qa/07-self-review.md",
+    "qa/evidence/local-tooling.log",
+    "qa/evidence/test-rerun.log",
+    "qa/evidence/test-fixed.log",
+    "qa/evidence/actor-route-test-fixed.log",
+    "qa/evidence/docker-install-attempt.md",
+    "qa/evidence/typecheck-rerun.log",
+    "qa/evidence/build-rerun.log",
+    "qa/evidence/static-followup-review.log",
+    "qa/evidence/podman-install-attempt.md",
+    "qa/evidence/supabase-start-after-podman.log",
+    "supabase/migrations/20261126224632_walkin_attendance_requires_qr.sql",
+    "supabase/tests/qr_attendance_and_live_occupancy.test.sql",
+    "qa/evidence/docx-render-attempt.log",
+    "qa/evidence/final-evidence-audit.log"
+  ],
+  "remoteAccessCheck": {
+    "supabaseProject": "Ecotrack",
+    "supabaseProjectType": "PRODUCTION",
+    "vercelDeploymentEnvironment": "Production",
+    "previewSupabaseTarget": "unverified",
+    "remoteChangesMade": false,
+    "supabaseProjectBranchStatus": "No branches",
+    "databaseQueried": false,
+    "productionAppOpened": false
+  },
+  "qualityChecks": {
+    "scope": "local public home shell",
+    "backendConnected": false,
+    "axe": "NOT_RUN",
+    "lighthouse": "NOT_RUN",
+    "mobile": {
+      "viewport": "390x844",
+      "document": "375x881",
+      "horizontalOverflow": false
+    },
+    "desktop": {
+      "viewport": "1280x800",
+      "document": "1265x839",
+      "horizontalOverflow": false
+    }
+  },
+  "latestRerun": {
+    "tests": {
+      "total": 65,
+      "passed": 65,
+      "failed": 0
+    },
+    "typecheck": "PASS",
+    "viteBuild": "PASS",
+    "worktreeSecretScan": {
+      "files": 532,
+      "commits": 52,
+      "matches": 0
+    },
+    "bundleScan": {
+      "files": 70,
+      "matches": 0
+    },
+    "productionTouched": false,
+    "actorRouteTests": {
+      "total": 8,
+      "passed": 8,
+      "failed": 0
+    },
+    "podmanCli": "6.2.1 installed; machine unavailable (WSL required)",
+    "localSupabase": "BLOCKED: Podman socket unavailable"
+  }
+}

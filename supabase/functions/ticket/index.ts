@@ -23,8 +23,8 @@ Deno.serve(async (req) => {
     });
     const booking = Array.isArray(rows) ? rows[0] : null;
     if (error || !booking) return json({ error: 'Booking not found or access could not be verified' }, 404);
-    if (!['paid', 'not_required'].includes(booking.payment_status) || !['confirmed', 'completed'].includes(booking.booking_status)) {
-      return json({ error: 'A confirmed booking is required for a ticket' }, 409);
+    if (!['paid', 'not_required'].includes(booking.payment_status) || booking.booking_status !== 'confirmed') {
+      return json({ error: booking.booking_status === 'completed' ? 'This visit is complete. Its ticket is no longer active.' : 'A confirmed booking is required for a ticket' }, 409);
     }
 
     const signature = await hmacSha256(signingSecret, booking.booking_id);

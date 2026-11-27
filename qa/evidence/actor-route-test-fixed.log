@@ -1,0 +1,16 @@
+✔ visitors stay on visitor pages and leave staff routes (3.5491ms)
+✔ gatekeepers can use operational pages only (0.2858ms)
+✔ site administrators retain assigned-site routes and cannot enter unsupported pages (0.2463ms)
+✔ Tourism Office gets office pages and no visitor account pages (0.2063ms)
+✔ destination feedback stays out of Gatekeeper access (0.1952ms)
+✔ destination updates are restricted to Tourism Office and assigned Site Admin routes (0.1806ms)
+✔ legacy schedule pages remain available to Site Admin and Gatekeeper roles stay blocked (0.1462ms)
+✔ visitors cannot enter the staff password page (0.1582ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1102.0578

@@ -1,0 +1,141 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+import ts from 'typescript';
+
+const gatekeeperSource = await readFile(new URL('../src/lib/gatekeeperRoutes.ts', import.meta.url), 'utf8');
+const gatekeeperCompiled = ts.transpileModule(gatekeeperSource, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+}).outputText;
+const gatekeeperUrl = `data:text/javascript;base64,${Buffer.from(gatekeeperCompiled).toString('base64')}`;
+const source = (await readFile(new URL('../src/lib/appRoutes.ts', import.meta.url), 'utf8'))
+  .replace("from './gatekeeperRoutes'", `from '${gatekeeperUrl}'`);
+const compiled = ts.transpileModule(source, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+}).outputText;
+const routes = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+
+test('visitor and staff sign-in have distinct entry routes', () => {
+  assert.equal(routes.pageFromPath('/login'), 'Visitor login');
+  assert.equal(routes.pageFromPath('/staff/login'), 'Staff login');
+  assert.equal(routes.visitorLoginUrl('/destinations/tinago-falls'), '/login?next=%2Fdestinations%2Ftinago-falls');
+  assert.equal(routes.visitorLoginUrl('/discover'), '/login?next=%2Fdiscover');
+  assert.equal(routes.visitorLoginUrl('/'), '/login?next=%2F');
+  assert.equal(routes.visitorLoginUrl('/destinations'), '/login?next=%2Fdestinations');
+  assert.equal(routes.visitorLoginUrl(), '/login');
+  assert.equal(routes.staffLoginUrl('/workspace/reservations'), '/staff/login?next=%2Fworkspace%2Freservations');
+});
+
+test('sign-in return routes allow only local routes for the matching audience', () => {
+  assert.equal(routes.visitorReturnPath('/bookings'), '/bookings');
+  assert.equal(routes.visitorReturnPath('/workspace'), '/');
+  assert.equal(routes.visitorReturnPath('https://example.com'), '/');
+  assert.equal(routes.visitorReturnPath('//example.com'), '/');
+  assert.equal(routes.visitorReturnPath('/discover'), '/discover');
+  assert.equal(routes.visitorReturnPath('/destinations'), '/destinations');
+  assert.equal(routes.visitorAuthDismissPath(null), '/discover');
+  assert.equal(routes.visitorAuthDismissPath('/'), '/');
+  assert.equal(routes.visitorAuthDismissPath('/destinations'), '/destinations');
+  assert.equal(routes.visitorAuthDismissPath('/workspace'), '/discover');
+  assert.equal(routes.visitorAuthDismissPath('https://example.com'), '/discover');
+  assert.equal(routes.pageFromPath(routes.visitorAuthDismissPath(null)), 'Discover');
+  assert.equal(routes.pageFromPath(routes.visitorAuthDismissPath('/')), 'Landing');
+  assert.equal(routes.staffReturnPath('/workspace/team'), '/workspace/team');
+  assert.equal(routes.staffReturnPath('/gatekeeper/tinago-falls/check-in'), '/gatekeeper/tinago-falls/check-in');
+  assert.equal(routes.staffReturnPath('/account'), '');
+});
+
+test('successful staff sign-in returns to its workspace, never the visitor home', () => {
+  assert.equal(routes.authSuccessPath('staff', '/workspace/team'), '/workspace/team');
+  assert.equal(routes.authSuccessPath('staff', '/'), '/workspace');
+  assert.equal(routes.authSuccessPath('staff', 'https://example.com'), '/workspace');
+  assert.equal(routes.authSuccessPath('visitor', '/bookings'), '/bookings');
+  assert.equal(routes.authSuccessPath('visitor'), '/discover');
+  assert.equal(routes.authSuccessPath('visitor', '/workspace'), '/');
+});
+
+test('Site Admin has distinct protected portal routes while Tourism Office keeps office routes', () => {
+  assert.equal(routes.staffPortalPath('site_admin', 'Overview'), '/site-admin');
+  assert.equal(routes.staffPortalPath('site_admin', 'Staff and accounts'), '/site-admin/team');
+  assert.equal(routes.staffPortalPath('site_admin', 'Schedule & Operations'), '/site-admin/schedule-operations');
+  assert.equal(routes.staffPortalPath('tourism_office', 'Overview'), '/workspace');
+  assert.equal(routes.staffPortalPath('tourism_office', 'Schedule & Operations'), '/workspace/schedule-operations');
+  assert.equal(routes.pageFromPath('/site-admin'), 'Overview');
+  assert.equal(routes.pageFromPath('/site-admin/team'), 'Staff and accounts');
+  assert.equal(routes.pageFromPath('/site-admin/schedule-operations'), 'Schedule & Operations');
+  assert.equal(routes.isWorkspacePath('/site-admin/reports'), true);
+  assert.equal(routes.staffReturnPath('/site-admin/team'), '/site-admin/team');
+  assert.equal(routes.canShowVisitorAuthModal('/site-admin'), false);
+  assert.equal(routes.isKnownAppPath('/site-admin'), true);
+});
+
+test('password recovery returns to the matching account portal', () => {
+  assert.equal(routes.passwordRecoveryPath('visitor'), '/login?mode=reset');
+  assert.equal(routes.passwordRecoveryPath('gatekeeper'), '/staff/login?mode=reset');
+  assert.equal(routes.passwordRecoveryPath('site_admin'), '/staff/login?mode=reset');
+  assert.equal(routes.passwordRecoveryPath('tourism_office'), '/staff/login?mode=reset');
+});
+
+test('detects supported recovery callback forms without treating ordinary PKCE codes as resets', () => {
+  assert.equal(routes.isPasswordRecoveryRequest('?mode=reset', ''), true);
+  assert.equal(routes.isPasswordRecoveryRequest('?token_hash=one-time&type=recovery', ''), true);
+  assert.equal(routes.isPasswordRecoveryRequest('', '#access_token=secret&type=recovery'), true);
+  assert.equal(routes.isPasswordRecoveryRequest('?code=ordinary-signup-code', ''), false);
+});
+
+test('recovery callback target keeps proof params, removes provider errors, and stays local', () => {
+  assert.equal(
+    routes.passwordRecoveryTarget('visitor', '?code=one-time&error_code=otp_expired&error_description=expired', ''),
+    '/login?code=one-time&mode=reset',
+  );
+  assert.equal(
+    routes.passwordRecoveryTarget('gatekeeper', '?token_hash=proof&type=recovery', '#type=recovery'),
+    '/staff/login?token_hash=proof&type=recovery&mode=reset#type=recovery',
+  );
+});
+
+test('visitor auth modal never opens over staff sign-in or workspace routes', () => {
+  assert.equal(routes.canShowVisitorAuthModal('/'), true);
+  assert.equal(routes.canShowVisitorAuthModal('/login'), true);
+  assert.equal(routes.canShowVisitorAuthModal('/staff/login'), false);
+  assert.equal(routes.canShowVisitorAuthModal('/workspace/reservations'), false);
+  assert.equal(routes.canShowVisitorAuthModal('/gatekeeper/tinago-falls/check-in'), false);
+});
+
+test('route matching resolves workspace and destination pages', () => {
+  assert.equal(routes.visitorRoutePaths.Discover, '/discover');
+  assert.equal(routes.visitorRoutePaths.Destinations, '/destinations');
+  assert.equal(routes.pageFromPath('/workspace/reservations'), 'Reservations');
+  assert.equal(routes.pageFromPath('/workspace/schedule-operations'), 'Schedule & Operations');
+  assert.equal(routes.pageFromPath('/workspace/schedule'), 'Slots and closures');
+  assert.equal(routes.pageFromPath('/workspace/duty-roster'), 'Duty roster');
+  assert.equal(routes.pageFromPath('/workspace/account/password'), 'Change password');
+  assert.equal(routes.pageFromPath('/workspace/feedback'), 'Feedback & Reviews');
+  assert.equal(routes.staffPortalPath('tourism_office', 'Destination updates'), '/workspace/updates');
+  assert.equal(routes.staffPortalPath('site_admin', 'Destination updates'), '/site-admin/updates');
+  assert.equal(routes.pageFromPath('/workspace/updates'), 'Destination updates');
+  assert.equal(routes.pageFromPath('/site-admin/updates'), 'Destination updates');
+  assert.equal(routes.pageFromPath('/gatekeeper/tinago-falls/updates'), 'Overview');
+  assert.equal(routes.isKnownAppPath('/site-admin/updates'), true);
+  assert.equal(routes.pageFromPath('/site-admin/feedback'), 'Feedback & Reviews');
+  assert.equal(routes.isKnownAppPath('/site-admin/feedback'), true);
+  assert.equal(routes.pageFromPath('/workspace/unrecognized'), 'Overview');
+  assert.equal(routes.pageFromPath('/discover'), 'Discover');
+  assert.equal(routes.pageFromPath('/destinations'), 'Destinations');
+  assert.equal(routes.pageFromPath('/destinations/tinago-falls'), 'Destination');
+  assert.equal(routes.destinationSlugFromPath('/destinations/tinago-falls'), 'tinago-falls');
+  assert.equal(routes.isKnownAppPath('/destinations/tinago-falls'), true);
+  assert.equal(routes.isKnownAppPath('/not-a-route'), false);
+});
+
+test('visitor announcement list and detail routes stay public and return safely', () => {
+  assert.equal(routes.isAnnouncementPath('/announcements'), true);
+  assert.equal(routes.isAnnouncementPath('/announcements/abc-123'), true);
+  assert.equal(routes.isAnnouncementPath('/announcements/abc-123/extra'), false);
+  assert.equal(routes.announcementIdFromPath('/announcements/abc-123'), 'abc-123');
+  assert.equal(routes.announcementIdFromPath('/announcements'), '');
+  assert.equal(routes.isKnownAppPath('/announcements'), true);
+  assert.equal(routes.isKnownAppPath('/announcements/abc-123'), true);
+  assert.equal(routes.pageFromPath('/announcements/abc-123'), 'Discover');
+  assert.equal(routes.visitorReturnPath('/announcements/abc-123'), '/announcements/abc-123');
+});

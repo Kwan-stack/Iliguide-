@@ -17,5 +17,5 @@ export function nextUpcomingBooking(bookings: Booking[], today: string, nowTime:
 
 export function canIssueVisitorTicket(booking: Booking): boolean {
   return ['paid', 'not_required'].includes(booking.payment_status)
-    && ['confirmed', 'completed'].includes(booking.booking_status);
+    && booking.booking_status === 'confirmed';
 }

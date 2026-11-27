@@ -13,11 +13,15 @@ const booking = (overrides = {}) => ({
   booking_reference: 'ILG-123', created_at: '2026-11-10T00:00:00Z', ...overrides,
 });
 
-test('groups upcoming, pending, completed, cancelled, and expired bookings', () => {
+test('groups upcoming, checked-in, pending, completed, cancelled, and expired bookings', () => {
   const today = '2026-11-17';
   assert.equal(matchesBookingTab(booking(), 'upcoming', today), true);
   assert.equal(matchesBookingTab(booking({ slot_date: today }), 'upcoming', today), true);
   assert.equal(matchesBookingTab(booking({ slot_date: '2026-11-16' }), 'upcoming', today), false);
+  const inside = booking({ attendance: { active_count: 1 } });
+  assert.equal(matchesBookingTab(inside, 'checked_in', today), true);
+  assert.equal(matchesBookingTab(inside, 'upcoming', today), false);
+  assert.equal(matchesBookingTab(booking({ booking_status: 'completed', attendance: { active_count: 0 } }), 'checked_in', today), false);
   assert.equal(matchesBookingTab(booking({ booking_status: 'awaiting_payment' }), 'pending', today), true);
   assert.equal(matchesBookingTab(booking({ booking_status: 'needs_resolution' }), 'pending', today), true);
   assert.equal(matchesBookingTab(booking({ booking_status: 'completed' }), 'completed', today), true);

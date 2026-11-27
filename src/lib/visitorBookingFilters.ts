@@ -1,11 +1,12 @@
 import type { Booking } from './iliguide';
 
-export type BookingTab = 'all' | 'upcoming' | 'pending' | 'completed' | 'cancelled';
+export type BookingTab = 'all' | 'upcoming' | 'checked_in' | 'pending' | 'completed' | 'cancelled';
 type BookingFilter = { tab: BookingTab; query: string; dateFrom: string; dateTo?: string; sortOrder: 'newest' | 'oldest'; today: string };
 
 export function matchesBookingTab(booking: Booking, tab: BookingTab, today: string): boolean {
   if (tab === 'all') return true;
-  if (tab === 'upcoming') return booking.booking_status === 'confirmed' && booking.slot_date >= today;
+  if (tab === 'upcoming') return booking.booking_status === 'confirmed' && !booking.attendance?.active_count && booking.slot_date >= today;
+  if (tab === 'checked_in') return booking.booking_status !== 'completed' && Boolean(booking.attendance?.active_count);
   if (tab === 'pending') return ['awaiting_payment', 'needs_resolution'].includes(booking.booking_status);
   if (tab === 'completed') return booking.booking_status === 'completed';
   return ['cancelled', 'expired'].includes(booking.booking_status);

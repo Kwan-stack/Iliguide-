@@ -1,0 +1,9 @@
+QA static follow-up: 2026-11-27 (Asia/Manila)
+R3 guard: present in supabase\migrations\20261126224632_walkin_attendance_requires_qr.sql; rejects manual confirmation for booking_source=walk_in.
+R3 regression assertions: present; pgTAP plan 91, assertion count 91; not executed (local Supabase blocked).
+R7 docs: README.md and ILIGUIDE_SETUP.md state demo-only behavior and disabled HTTP 410 handlers; stale live-PayMongo setup claims absent.
+R7 handlers remain disabled; source review only, no provider call made.
+R6 separate guide-fee field: absent from app source and migrations; static failure remains.
+QA-local copy synchronized with the new attendance migrations and pgTAP file.
+R7 source: paymongo-checkout/index.ts:6, paymongo-webhook/index.ts:6, process-refund/index.ts:6 return HTTP 410.
+QA-local migration and pgTAP copies match root SHA-256 for all three synchronized files.

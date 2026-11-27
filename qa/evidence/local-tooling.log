@@ -1,0 +1,6 @@
+Runtime: Node v24.22.3; Supabase CLI 3.2.0.
+`package.json` scripts: `dev`, `build`, `preview`, `test`; no `lint` script.
+`npm` command: not found on PATH.
+Installed QA dependencies: `playwright`, `@axe-core`, `lighthouse` not present in `node_modules`.
+Container runtime: Docker and Podman unavailable. Docker Desktop 4.100.1 per-user installation attempted; installer blocked because Virtual Machine Platform is disabled, WSL is absent, and administrator rights are required. See `qa/evidence/docker-install-attempt.md` and `qa/evidence/supabase-start.log`.
+Standalone PostgreSQL 18 Windows service was already running; it was not queried or changed and is not the Supabase local stack.

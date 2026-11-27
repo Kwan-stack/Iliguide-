@@ -1,7 +1,7 @@
 .office-app-shell{min-height:100vh;overflow-x:hidden;background:#f5f8fa;color:var(--ink,#1b2935)}
 .office-app-topbar{height:76px;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:0 max(4vw,24px) 0 10px;border-bottom:1px solid #e5ecef;background:#fff;position:sticky;top:0;z-index:30}
 .office-app-menu{display:none}
-@media(max-width:920px){.office-app-menu{display:grid;flex:none;width:40px;height:40px;place-items:center;padding:0;border:1px solid var(--line,#dce5ea);border-radius:10px;background:#f3f8f8;color:var(--deep,#006f93)}.office-app-menu:focus-visible{outline:2px solid var(--blue,#007da4);outline-offset:2px}}
+@media(max-width:920px){.office-app-menu{display:grid;flex:none;width:44px;height:44px;place-items:center;padding:0;border:1px solid var(--line,#dce5ea);border-radius:10px;background:#f3f8f8;color:var(--deep,#006f93)}.office-app-menu:focus-visible{outline:2px solid var(--blue,#007da4);outline-offset:2px}}
 .office-app-brand{display:flex;align-items:center;min-width:0;color:var(--ink,#1b2935)}
 .office-app-brand-lockup{display:flex;flex-direction:column;align-items:center;width:max-content;gap:0;line-height:1}
 .office-app-brand-lockup img{display:block;width:128px;height:48px;object-fit:contain}
@@ -42,7 +42,8 @@
 .office-app-spinner{width:28px;height:28px;border:3px solid #d3e5e3;border-top-color:var(--deep,#006f93);border-radius:50%;animation:office-spin .8s linear infinite}
 @keyframes office-spin{to{transform:rotate(1turn)}}
 .office-app-account-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:5px}
-@media(max-width:760px){.office-app-topbar{height:66px;justify-content:flex-start;gap:10px;padding:0 12px}.office-app-brand{flex:1}.office-app-actions{gap:8px}.office-app-main{min-height:calc(100vh - 66px)}.office-app-role{padding:7px 9px;font-size:10px}.office-app-signout{min-height:36px;padding:0 9px;font-size:10px}.office-app-error{align-items:flex-start;padding:10px 16px;font-size:10px}.office-notifications-panel{top:60px;right:10px;width:min(370px,calc(100vw - 20px))}}
-@media(max-width:420px){.office-app-role{max-width:125px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.office-app-brand-lockup img{width:112px;height:42px}.office-app-mark{width:34px;height:34px}}
+@media(max-width:760px){.office-app-topbar{height:66px;display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:8px;padding:0 12px}.office-app-brand{min-width:0}.office-app-brand-lockup img{width:112px;height:42px}.office-app-actions{min-width:0;gap:6px}.office-app-main{min-height:calc(100vh - 66px)}.office-app-role{padding:7px 9px;font-size:10px}.office-app-signout{min-height:36px;padding:0 9px;font-size:10px;white-space:nowrap}.office-app-error{align-items:flex-start;padding:10px 16px;font-size:10px}.office-notifications-panel{top:60px;right:10px;width:min(370px,calc(100vw - 20px))}}
+@media(max-width:420px){.office-app-role{width:36px;height:36px;justify-content:center;gap:0;padding:0;font-size:0}.office-app-role svg{flex:none}.office-app-brand-lockup img{width:104px;height:42px}.office-app-mark{width:34px;height:34px}}
+@media(max-width:360px){.office-app-topbar{gap:6px;padding-inline:8px}.office-app-brand-lockup img{width:88px}.office-app-actions{gap:5px}.office-app-signout{width:36px;min-height:36px;gap:0;padding:0;font-size:0}.office-app-signout svg{flex:none}}
 @media(prefers-reduced-motion:reduce){.office-app-spinner{animation:none}}
 @media(prefers-reduced-motion:reduce){.office-notifications-trigger,.office-notifications-panel li>button{transition:none}.office-notifications-panel{animation:none}}

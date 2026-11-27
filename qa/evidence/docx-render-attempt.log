@@ -1,0 +1,1 @@
+DOCX render attempted with bundled render_docx.py. Failed: LibreOffice soffice.exe not found on PATH. Word showed a Microsoft 365 subscription-expired dialog. Document structure and 124 case statuses were checked with python-docx; visual layout after latest update not verified.

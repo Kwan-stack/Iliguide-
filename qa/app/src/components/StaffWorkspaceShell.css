@@ -1,0 +1,48 @@
+.office-app-shell{min-height:100vh;overflow-x:hidden;background:#f5f8fa;color:var(--ink,#1b2935)}
+.office-app-topbar{height:76px;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:0 max(4vw,24px) 0 10px;border-bottom:1px solid #e5ecef;background:#fff;position:sticky;top:0;z-index:30}
+.office-app-menu{display:none}
+@media(max-width:920px){.office-app-menu{display:grid;flex:none;width:44px;height:44px;place-items:center;padding:0;border:1px solid var(--line,#dce5ea);border-radius:10px;background:#f3f8f8;color:var(--deep,#006f93)}.office-app-menu:focus-visible{outline:2px solid var(--blue,#007da4);outline-offset:2px}}
+.office-app-brand{display:flex;align-items:center;min-width:0;color:var(--ink,#1b2935)}
+.office-app-brand-lockup{display:flex;flex-direction:column;align-items:center;width:max-content;gap:0;line-height:1}
+.office-app-brand-lockup img{display:block;width:128px;height:48px;object-fit:contain}
+.office-app-brand-lockup small{width:100%;color:var(--muted,#6b7c89);font:700 7px/1 'DM Sans',sans-serif;letter-spacing:1.5px;text-align:center}
+.office-app-mark{width:38px;height:38px;display:grid;place-items:center;flex:none;border-radius:12px;background:linear-gradient(140deg,#009bce,#007da4);box-shadow:0 5px 12px #009bce30}
+.office-app-mark img{width:24px;height:24px;object-fit:contain}
+.office-app-actions{display:flex;align-items:center;gap:16px}
+.office-notifications{position:relative;display:flex;align-items:center}
+.office-notifications-trigger{position:relative;display:grid;place-items:center;width:40px;height:40px;border:1px solid var(--line,#dce5ea);border-radius:50%;background:#fff;color:var(--deep,#006f93);cursor:pointer;transition:background .18s,border-color .18s,transform .18s}
+.office-notifications-trigger:hover{border-color:#a9c5ca;background:#f2faf9;transform:translateY(-1px)}
+.office-notifications-trigger:focus-visible,.office-notifications-panel button:focus-visible,.office-notifications-panel a:focus-visible{outline:2px solid var(--blue,#007da4);outline-offset:2px}
+.office-notifications-count{position:absolute;top:-4px;right:-4px;min-width:19px;height:19px;display:grid;place-items:center;padding:0 4px;border:2px solid #fff;border-radius:99px;background:#df3342;color:#fff;font-size:9px;font-weight:800}
+.office-notifications-panel{position:fixed;z-index:50;top:68px;right:max(12px,4vw);width:min(370px,calc(100vw - 24px));max-height:min(560px,calc(100vh - 84px));display:grid;grid-template-rows:auto 1fr auto;overflow:hidden;border:1px solid #dce8eb;border-radius:16px;background:#fff;box-shadow:0 22px 60px #173d4b26;animation:office-notifications-in .18s ease-out}
+.office-notifications-panel>header{display:flex;justify-content:space-between;align-items:center;padding:15px 17px;border-bottom:1px solid #e8eff1}
+.office-notifications-panel>header>div{display:grid;gap:3px}.office-notifications-panel>header b{color:var(--ink,#1b2935);font:800 15px/1.2 Manrope,sans-serif}.office-notifications-panel>header small{color:var(--muted,#6b7c89);font-size:10px}
+.office-notifications-panel>header button{width:30px;height:30px;border:0;border-radius:50%;background:#f3f7f8;color:#52707b;font-size:20px;cursor:pointer}
+.office-notifications-panel ul{overflow:auto;list-style:none;margin:0;padding:7px}
+.office-notifications-panel li+li{border-top:1px solid #edf2f3}
+.office-notifications-panel li>button{display:grid;width:100%;gap:5px;padding:12px 10px;border:0;border-radius:10px;background:#f1faf9;color:#29434d;text-align:left;cursor:pointer;transition:background .16s}
+.office-notifications-panel li>button:hover{background:#e4f5f2}.office-notifications-panel li>button.is-read{background:#fff;color:#60727b}
+.office-notifications-item-title{display:flex;align-items:center;justify-content:space-between;color:var(--ink,#1b2935);font-size:12px}
+.office-notifications-item-title i{width:8px;height:8px;border-radius:50%;background:#00a88f}
+.office-notifications-panel li>button>span:nth-child(2){font-size:11px;line-height:1.5}.office-notifications-panel time{color:#7c9099;font-size:9px}
+.office-notifications-panel>a{display:flex;justify-content:center;align-items:center;gap:7px;padding:13px;border-top:1px solid #e8eff1;color:var(--deep,#006f93);font-size:11px;font-weight:750;text-decoration:none}
+.office-notifications-panel>a:hover{background:#f5fbfa}.office-notifications-empty,.office-notifications-error{margin:0;padding:24px;color:var(--muted,#6b7c89);font-size:12px;text-align:center}.office-notifications-error{color:#a52834}
+@keyframes office-notifications-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.office-app-role{display:inline-flex;align-items:center;gap:7px;padding:8px 11px;border:1px solid #dcebea;border-radius:99px;background:#f0f8f7;color:var(--deep,#006f93);font-size:11px;font-weight:750}
+.office-app-signout{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:0 11px;border:1px solid var(--line,#dce5ea);border-radius:8px;background:#fff;color:#536875;font-size:11px;font-weight:700}
+.office-app-signout:hover{border-color:#a9c5ca;background:#f5faf9;color:var(--deep,#006f93)}
+.office-app-signout:focus-visible,.office-app-error button:focus-visible{outline:2px solid var(--blue,#007da4);outline-offset:2px}
+.office-app-main{min-height:calc(100vh - 76px)}
+.office-app-error{display:flex;align-items:center;gap:9px;padding:11px max(calc((100% - 1240px)/2),24px);border-bottom:1px solid #f0e1be;background:#fff8e9;color:#785d20;font-size:11px}
+.office-app-error svg{flex:none}.office-app-error button{margin-left:auto;border:0;background:transparent;color:inherit;font-weight:750}
+.office-app-loading,.office-app-account-error{min-height:100vh;display:grid;place-content:center;justify-items:center;gap:12px;padding:24px;background:radial-gradient(ellipse at 50% 0,#e2f2ef 0,transparent 58%),#f4f8f8;text-align:center}
+.office-app-loading p,.office-app-account-error p{max-width:440px;margin:0;color:var(--muted,#6b7c89);font-size:13px;line-height:1.65}
+.office-app-loading b,.office-app-account-error h1{margin:0;color:var(--ink,#1b2935);font:800 clamp(22px,4vw,30px)/1.15 Manrope,sans-serif}
+.office-app-spinner{width:28px;height:28px;border:3px solid #d3e5e3;border-top-color:var(--deep,#006f93);border-radius:50%;animation:office-spin .8s linear infinite}
+@keyframes office-spin{to{transform:rotate(1turn)}}
+.office-app-account-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:5px}
+@media(max-width:760px){.office-app-topbar{height:66px;display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:8px;padding:0 12px}.office-app-brand{min-width:0}.office-app-brand-lockup img{width:112px;height:42px}.office-app-actions{min-width:0;gap:6px}.office-app-main{min-height:calc(100vh - 66px)}.office-app-role{padding:7px 9px;font-size:10px}.office-app-signout{min-height:36px;padding:0 9px;font-size:10px;white-space:nowrap}.office-app-error{align-items:flex-start;padding:10px 16px;font-size:10px}.office-notifications-panel{top:60px;right:10px;width:min(370px,calc(100vw - 20px))}}
+@media(max-width:420px){.office-app-role{width:36px;height:36px;justify-content:center;gap:0;padding:0;font-size:0}.office-app-role svg{flex:none}.office-app-brand-lockup img{width:104px;height:42px}.office-app-mark{width:34px;height:34px}}
+@media(max-width:360px){.office-app-topbar{gap:6px;padding-inline:8px}.office-app-brand-lockup img{width:88px}.office-app-actions{gap:5px}.office-app-signout{width:36px;min-height:36px;gap:0;padding:0;font-size:0}.office-app-signout svg{flex:none}}
+@media(prefers-reduced-motion:reduce){.office-app-spinner{animation:none}}
+@media(prefers-reduced-motion:reduce){.office-notifications-trigger,.office-notifications-panel li>button{transition:none}.office-notifications-panel{animation:none}}

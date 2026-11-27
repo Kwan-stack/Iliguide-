@@ -1,0 +1,54 @@
+.destination-map { margin: 1.5rem 0; padding: 1rem; border: 1px solid #d7e4ea; border-radius: 14px; background: #fff; }
+.destination-map-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem 1rem; margin-bottom: .8rem; }
+.destination-map-heading h3 { margin: .2rem 0; }
+.destination-map-heading p { margin: .25rem 0 0; color: #617987; font-size: .86rem; }
+.destination-map-heading a { display: inline-flex; align-items: center; gap: .25rem; color: var(--deep, #006f93); font-size: .86rem; font-weight: 700; }
+.destination-map-kicker { color: #078c8c; font-size: .64rem; font-weight: 800; letter-spacing: .11em; }
+.destination-gis-canvas { width: 100%; height: clamp(280px, 36vw, 420px); min-height: 260px; overflow: hidden; border-radius: 11px; background: #e6efeb; isolation: isolate; z-index: 0; }
+.destination-map-source-note { margin: .45rem 0 0; color: #617987; font-size: .72rem; line-height: 1.45; }
+.destination-map-source-note a { display: inline-flex; align-items: center; gap: .15rem; color: var(--deep, #006f93); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+.destination-map .leaflet-container { width: 100%; height: 100%; z-index: 0; font: inherit; }
+.destination-map .leaflet-control-attribution { font-size: 10px; }
+.destination-map .leaflet-control-scale-line { border-color: #334b54; color: #24343b; background: #fffffff0; }
+.destination-map-marker { display: grid; place-items: center; border: 0; background: transparent; }
+.destination-map-marker span { width: 16px; height: 16px; border: 3px solid #fff; border-radius: 50%; background: #087f8c; box-shadow: 0 1px 7px #132c3c8a, 0 0 0 7px #078c8c35; }
+.site-heat { --heat: 20, 165, 87; border-radius: 50%; pointer-events: none; }
+.site-heat span { display: block; width: 100%; height: 100%; border: 1px solid rgba(var(--heat), .3); border-radius: 50%; background: radial-gradient(circle, rgba(var(--heat), var(--heat-opacity)) 0, rgba(var(--heat), calc(var(--heat-opacity) * .8)) 22%, rgba(var(--heat), calc(var(--heat-opacity) * .44)) 50%, rgba(var(--heat), 0) 80%); }
+.site-heat-near { --heat: 231, 176, 0; }
+.site-heat-almost { --heat: 239, 111, 28; }
+.site-heat-critical { --heat: 215, 42, 55; }
+.map-legend-level { border-radius: 50% !important; background: #14a557; }
+.map-legend-near { background: #e7b000; }
+.map-legend-almost { background: #ef6f1c; }
+.map-legend-critical { background: #d72a37; }
+.map-legend-unknown,.map-legend-unconfigured { background: #a0acb3; }
+.destination-map-legend { display: flex; flex-wrap: wrap; gap: .7rem 1rem; padding: .7rem .15rem .15rem; color: #4e646e; font-size: .74rem; }
+.destination-map-legend span { display: inline-flex; align-items: center; gap: .38rem; }
+.destination-map-legend i { display: inline-block; width: 12px; height: 12px; flex: 0 0 auto; border-radius: 3px; }
+.map-legend-zone { border: 1px solid #278a4f; background: #54b77a66; }
+.map-legend-heat { border-radius: 50% !important; background: radial-gradient(circle, #c93845 0 12%, #f18a3d 34%, #f0d24d 58%, #a4c94a 80%, #35ad78 100%); }
+.map-legend-empty { border: 1px solid #9baeb5; background: #e8eef0; }
+.destination-heat-scale { display: flex; align-items: center; gap: .45rem; margin: .1rem 0 .25rem; color: #4e646e; font-size: .68rem; }
+.destination-heat-scale i { display: block; width: 112px; height: 8px; border-radius: 99px; background: linear-gradient(90deg, #35ad78, #a4c94a 25%, #f0d24d 50%, #f18a3d 75%, #c93845); box-shadow: inset 0 0 0 1px #17364b24; }
+.destination-map-legend svg { color: #718891; }
+.destination-map-note,.destination-map-message { display: flex; align-items: flex-start; gap: .45rem; margin: .45rem 0 0; color: #617987; font-size: .76rem; line-height: 1.5; }
+.destination-map-message { padding: 1.2rem; border-radius: 10px; background: #f4f8f7; }
+.destination-map-message svg { flex: 0 0 auto; color: var(--deep, #006f93); }
+.destination-map-placeholder { display: grid; min-height: 220px; place-items: center; border: 1px solid #d7e4ea; border-radius: 14px; color: #617987; background: #f4f8f7; font-size: .85rem; }
+.destination-map--compact { margin: 0; padding: .85rem; border: 0; border-radius: 0; box-shadow: none; }
+.destination-map--compact .destination-gis-canvas { height: 360px; min-height: 290px; }
+.destination-map--compact .destination-map-kicker { font-size: .58rem; }
+.destination-map--compact .destination-map-heading h3 { font-size: 1.1rem; }
+.destination-photo-credit { display: block; margin: .35rem 0 .6rem; color: #667b83; font-size: .72rem; }
+.destination-photo-credit a { color: var(--deep, #006f93); text-decoration: underline; text-underline-offset: 2px; }
+.locator-layout { display: grid; grid-template-columns: minmax(250px, .75fr) minmax(0, 1.7fr); gap: 1rem; margin-top: 1.4rem; }
+.locator-list,.locator-map { overflow: hidden; border: 1px solid #d7e4ea; border-radius: 14px; background: #fff; }
+.locator-list { padding: .6rem; display: grid; gap: .35rem; align-content: start; }
+.locator-list button { display: flex; gap: .75rem; width: 100%; padding: .85rem; text-align: left; border: 0; border-radius: 10px; color: var(--navy, #123047); background: transparent; }
+.locator-list button:hover,.locator-list button.selected { background: #eaf7fb; color: var(--deep, #006f93); }
+.locator-list small { display: block; margin-top: .18rem; color: #617987; }
+.locator-map { min-width: 0; }
+.locator-map-actions { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .75rem; padding: .7rem .9rem .9rem; color: var(--navy, #123047); }
+.locator-map-actions span { display: inline-flex; align-items: center; gap: .4rem; font-weight: 700; }
+@media (max-width: 720px) { .locator-layout { grid-template-columns: 1fr; } .locator-map-actions { padding-bottom: .75rem; } .destination-heat-scale { font-size: .62rem; gap: .35rem; } .destination-heat-scale i { width: 76px; height: 7px; } }
+@media (prefers-reduced-motion: reduce) { .destination-map *, .destination-map *::before, .destination-map *::after { scroll-behavior: auto !important; } }

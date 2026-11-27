@@ -35,7 +35,7 @@ export function StaffWorkspaceShell({ role, homePath, userId, siteSlug, siteId, 
   useEffect(() => { if (role !== 'gatekeeper' || !siteId || !siteSlug) setPaymentVerificationPending(0); }, [role, siteId, siteSlug]);
   return <OfficeMobileNavigation.Provider value={{ open: mobileNavOpen, setOpen: setMobileNavOpen }}><OfficeNotificationCounts.Provider value={{ paymentVerificationPending }}><div className={`office-app-shell office-app-${role}`}>
     <header className="office-app-topbar">
-      <button type="button" className="office-app-menu" aria-label={mobileNavOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen((open) => !open)}>{mobileNavOpen ? <X size={19}/> : <Menu size={19}/>}</button>
+      <button type="button" className="office-app-menu" aria-label={mobileNavOpen ? 'Close navigation' : 'Open navigation'} aria-controls="staff-mobile-navigation" aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen((open) => !open)}>{mobileNavOpen ? <X size={19}/> : <Menu size={19}/>}</button>
       <Link className="office-app-brand" to={homePath} aria-label="Iliguide staff workspace">
         <span className="office-app-brand-lockup"><img src="/iliguide-staff-logo.png" alt="Iliguide"/><small>OFFICE WORKSPACE</small></span>
       </Link>

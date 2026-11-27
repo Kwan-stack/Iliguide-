@@ -1,0 +1,35 @@
+{
+  "migrations": 51,
+  "tables": 44,
+  "rlsEnabled": 44,
+  "policyNames": 118,
+  "enums": 13,
+  "functions": 131,
+  "publicRpcNames": 47,
+  "securityDefinerDeclarations": 105,
+  "triggers": 99,
+  "views": 4,
+  "buckets": [
+    "manual-payment-proofs",
+    "manual-payment-qr",
+    "pwd-id-documents",
+    "tourism-site-images",
+    "visitor-avatars"
+  ],
+  "edgeFunctions": [
+    "accept-staff-invitation",
+    "invite-staff",
+    "paymongo-checkout",
+    "paymongo-webhook",
+    "process-refund",
+    "scan-ticket",
+    "send-booking-email",
+    "ticket"
+  ],
+  "sqlTests": [
+    "destination_scoped_feedback.test.sql",
+    "qr_attendance_and_live_occupancy.test.sql",
+    "site_admin_organization_ownership.test.sql",
+    "site_announcements.test.sql"
+  ]
+}

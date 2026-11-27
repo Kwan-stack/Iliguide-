@@ -608,10 +608,23 @@ function ManualPaymentVerificationPage(props: Props) {
   }, [props.role, props.siteId]);
   useEffect(() => {
     let active = true;
+    const client = db();
     const run = () => void refresh().catch((error) => { if (active) props.notify(error instanceof Error ? error.message : 'Could not load payment submissions.'); }).finally(() => { if (active) setLoading(false); });
+    const bookingChanges = props.siteId
+      ? { event: '*', schema: 'public', table: 'bookings', filter: `site_id=eq.${props.siteId}` } as const
+      : { event: '*', schema: 'public', table: 'bookings' } as const;
+    const channel = client.channel(`payment-review-${props.role}-${props.siteId ?? 'office'}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, run)
+      .on('postgres_changes', bookingChanges, run)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${props.user?.id ?? ''}` }, run)
+      .subscribe();
+    const onVisible = () => { if (document.visibilityState === 'visible') run(); };
+    const onOnline = () => run();
     run(); const timer = window.setInterval(run, 15000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [props.notify, refresh, refreshKey]);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', onOnline);
+    return () => { active = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('online', onOnline); void client.removeChannel(channel); };
+  }, [props.notify, props.user?.id, refresh, refreshKey]);
   const review = async (row: ManualPaymentReview, approve: boolean) => {
     const reason = (reasons[row.id] ?? '').trim();
     if (!approve && !reason) { props.notify('Enter a rejection reason.'); return; }

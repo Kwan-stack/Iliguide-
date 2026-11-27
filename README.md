@@ -30,34 +30,28 @@ Sign in as Tourism Office to create destination records, fees, and operating day
 The Edge Functions are in `supabase/functions`; `supabase/config.toml` documents their JWT settings. The linked Supabase project has the eight app functions deployed. Deploy again after changing function code, or deploy them to another project with the Supabase CLI:
 
 ```powershell
-supabase functions deploy paymongo-checkout
-supabase functions deploy paymongo-webhook
 supabase functions deploy ticket
 supabase functions deploy scan-ticket
 supabase functions deploy invite-staff
 supabase functions deploy accept-staff-invitation
-supabase functions deploy process-refund
 supabase functions deploy send-booking-email
 ```
 
+The PayMongo checkout, webhook, and refund handlers are disabled and return HTTP 410. Do not deploy or configure them for the current demo payment flow.
+
 Set these **server-side Edge Function secrets** in the Supabase Dashboard or with `supabase secrets set`:
 
-- `APP_BASE_URL`: public application origin used for checkout return URLs.
+- `APP_BASE_URL`: public application origin used for authentication and ticket links.
 - `TICKET_SIGNING_SECRET`: random value with at least 32 characters.
-- `PAYMONGO_SECRET_KEY`: PayMongo secret API key.
-- `PAYMONGO_WEBHOOK_SECRET`: signing secret shown when the webhook endpoint is created.
-- `PAYMONGO_PAYMENT_METHODS`: optional comma-separated method list; default is `gcash,qrph,card`.
 - `BREVO_API_KEY`: server-side transactional email key. The four Brevo templates in `supabase/functions/_shared/email.ts` must exist with matching IDs.
 
-Create a PayMongo webhook at `https://<project-ref>.supabase.co/functions/v1/paymongo-webhook` and subscribe it to `checkout_session.payment.paid`, `checkout_session.payment.failed`, and `payment.refund.updated`. Copy its endpoint secret into `PAYMONGO_WEBHOOK_SECRET`. The frontend never treats the checkout redirect as payment confirmation.
-
-The ticket endpoint can validate a private guest access code. Scanner, invitation, refund, and booking-email endpoints require an authenticated JWT. The webhook verifies PayMongo's signature.
+The current online option is a demo. It does not call a payment provider or move money. Do not configure PayMongo keys or webhooks. The disabled PayMongo checkout, webhook, and refund handlers return HTTP 410. Ticket, scanner, invitation, and booking-email endpoints retain their own authentication checks.
 
 ## Current behavior
 
 - Visitor registration, sign-in, password reset, profile, avatar, and notifications use Supabase Auth and Storage.
 - Public destination pages use published site details, fee settings, uploaded images, live slot capacity, and published review aggregates.
-- Booking holds last ten minutes and use database-side fee and capacity checks. The current visitor flow confirms the reservation without online payment; displayed fees are estimates to be paid under the destination's own admission process. PayMongo checkout, webhook, and refund functions remain available but are not called by the current visitor interface.
+- Booking holds last ten minutes and use database-side fee and capacity checks. The current visitor flow uses demo payment only; it makes no provider call and transfers no money. Displayed fees are estimates to be paid under the destination's own admission process. PayMongo checkout, webhook, and refund handlers are disabled and return HTTP 410.
 - Confirmed reservations receive an opaque signed QR ticket. Gatekeeper scans and manual lookups record entry and exit in the database.
 - Walk-ins record the onsite payment amount and validate current slot, capacity, and staff assignment.
 - Site teams manage operating hours, visit slots, closures, gatekeeper assignments, reviews, cancellation requests, and image uploads according to row-level security. Request and decision emails use the linked Brevo templates.

@@ -1,0 +1,64 @@
+✔ visitors stay on visitor pages and leave staff routes (2.6637ms)
+✔ gatekeepers can use operational pages only (0.2515ms)
+✖ site administrators can manage scoped demo payments but cannot enter office-only pages (2.3156ms)
+✔ Tourism Office gets office pages and no visitor account pages (0.2273ms)
+✔ destination feedback stays out of Gatekeeper access (0.1726ms)
+✔ destination updates are restricted to Tourism Office and assigned Site Admin routes (0.1575ms)
+✖ legacy schedule pages remain available to Site Admin and Gatekeeper roles stay blocked (0.3056ms)
+✔ visitors cannot enter the staff password page (0.1297ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 6
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 669.8394
+
+✖ failing tests:
+
+test at tests\actorRoutes.test.mjs:25:1
+✖ site administrators can manage scoped demo payments but cannot enter office-only pages (2.3156ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'Sites and staff'
+  - 'Overview'
+  
+      at TestContext.<anonymous> (file:///C:/Users/gaily/OneDrive/Desktop/Iliguide/qa/app/tests/actorRoutes.test.mjs:31:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'Sites and staff',
+    expected: 'Overview',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\actorRoutes.test.mjs:61:1
+✖ legacy schedule pages remain available to Site Admin and Gatekeeper roles stay blocked (0.3056ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'Sites and staff'
+  - 'Overview'
+  
+      at TestContext.<anonymous> (file:///C:/Users/gaily/OneDrive/Desktop/Iliguide/qa/app/tests/actorRoutes.test.mjs:64:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'Sites and staff',
+    expected: 'Overview',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -1,0 +1,75 @@
+R3 manual reference attendance:
+78:  p_booking_id uuid, p_token_hash bytea, p_site_id uuid, p_require_token boolean
+108:  if not found or (p_require_token and (p_token_hash is null or v_booking.qr_token_hash is distinct from p_token_hash)) then
+397:  p_visitor_count integer, p_visitor_ids uuid[], p_idempotency_key uuid, p_device jsonb, p_require_token boolean
+440:  if p_require_token and (p_token_hash is null or v_booking.qr_token_hash is distinct from p_token_hash) then
+572:create function public.confirm_manual_attendance(
+595:    v_booking_id, null, p_site_id, p_action, p_visitor_count, p_visitor_ids, p_idempotency_key, p_device, false
+R6 supported fee fields:
+src/components/StaffPages.tsx:472:              {pwd && <><small>PWD discount claimed · {pwd.disability_category.replace(/_/g, ' ')} · {String(pwd.verification_status).replace(/_/g, ' ')}</small>{pwd.review_reason && <small>Review reason: {pwd.review_reason}</small>}<small>Private ID retained through {dateLabel(pwd.delete_after)}.</small>
+src/components/StaffPages.tsx:1582:  adult_fee: string; child_fee: string; pwd_discount_percent: string;
+src/components/StaffPages.tsx:1586:const emptyDraft = (): SiteDraft => ({ name: '', category: '', description: '', address: '', latitude: '', longitude: '', adult_fee: '', child_fee: '', pwd_discount_percent: '0', fee_information_confirmed: false, max_per_booking: '20', cancellation_cutoff_hours: '24' });
+src/components/StaffPages.tsx:1625:    ...(['adult_fee', 'child_fee', 'pwd_discount_percent'].includes(key) ? { fee_information_confirmed: false } : {}),
+src/components/StaffPages.tsx:1635:      adult_fee: String(site.adult_fee), child_fee: String(site.child_fee),
+src/components/StaffPages.tsx:1636:      pwd_discount_percent: String(site.pwd_discount_percent),
+src/components/StaffPages.tsx:1676:    const adultFee = Number(draft.adult_fee), childFee = Number(draft.child_fee);
+src/components/StaffPages.tsx:1677:    const pwdDiscount = Number(draft.pwd_discount_percent), maxPerBooking = Number(draft.max_per_booking);
+src/components/StaffPages.tsx:1684:      props.notify('PWD discounts require the same adult and child admission fee.'); return;
+src/components/StaffPages.tsx:1718:        adult_fee: adultFee,
+src/components/StaffPages.tsx:1719:        child_fee: childFee,
+src/components/StaffPages.tsx:1720:        pwd_discount_percent: pwdDiscount,
+src/components/StaffPages.tsx:1818:    <div className="form-two"><label>Adult fee (PHP)<input type="number" min="0" step="0.01" required value={draft.adult_fee} onChange={(event) => change('adult_fee', event.target.value)}/></label>
+src/components/StaffPages.tsx:1819:      <label>Child fee (PHP)<input type="number" min="0" step="0.01" required value={draft.child_fee} onChange={(event) => change('child_fee', event.target.value)}/></label></div>
+src/components/StaffPages.tsx:1820:    <label>PWD discount (%)<input type="number" min="0" max="100" step="0.01" required value={draft.pwd_discount_percent} onChange={(event) => change('pwd_discount_percent', event.target.value)}/></label>
+src/components/StaffPages.tsx:1821:    <small className="field-hint">Set a PWD discount only when adult and child admission fees match.</small>
+src/components/StaffPages.tsx:1876:          <button className="site-admin-main" aria-current={site?.id === item.id ? 'true' : undefined} onClick={() => beginEdit(item)}><span><b>{item.name}</b><small>{item.address || item.category} · {item.fee_information_confirmed ? `Adult ${money(item.adult_fee)} / child ${money(item.child_fee)}` : 'Fee information needs confirmation'}</small></span><span className={'status-tag ' + (item.status === 'published' ? 'paid' : '')}>{item.status.replace('_', ' ')}</span></button>
+src/components/StaffPages.tsx:2161:    ? calculateBookingTotal(site.adult_fee, site.child_fee, site.pwd_discount_percent, form.adults, form.children, form.pwd)
+src/components/StaffPages.tsx:2248:      {site.pwd_discount_percent > 0 && <label>PWD visitors<input type="number" min="0" max={form.adults + form.children} value={form.pwd} onChange={(event) => { const parsed = Number.parseInt(event.target.value, 10); setForm({ ...form, pwd: Math.max(0, Math.min(form.adults + form.children, Number.isNaN(parsed) ? 0 : parsed)) }); }} required/><small>{site.pwd_discount_percent}% discount per PWD visitor. Verify eligibility at the gate.</small></label>}
+src/lib/iliguide.ts:44:  adult_fee: number;
+src/lib/iliguide.ts:45:  child_fee: number;
+src/lib/iliguide.ts:46:  pwd_discount_percent: number;
+src/lib/iliguide.ts:199:        ' settings:site_settings(adult_fee, child_fee, pwd_discount_percent, max_per_booking, daily_capacity, fee_information_confirmed, cancellation_cutoff_hours),' +
+src/lib/iliguide.ts:234:      adult_fee: Number(settings?.adult_fee ?? 0),
+src/lib/iliguide.ts:235:      child_fee: Number(settings?.child_fee ?? 0),
+src/lib/iliguide.ts:236:      pwd_discount_percent: Number(settings?.pwd_discount_percent ?? 0),
+supabase/migrations/20261119122333_ecotrack_initial_schema.sql:52:  adult_fee numeric(12,2) not null default 0 check (adult_fee >= 0),
+supabase/migrations/20261119122333_ecotrack_initial_schema.sql:53:  child_fee numeric(12,2) not null default 0 check (child_fee >= 0),
+supabase/migrations/20261119122333_ecotrack_initial_schema.sql:603:  v_total := (v_settings.adult_fee * p_adult_count) + (v_settings.child_fee * p_child_count);
+supabase/migrations/20261119122333_ecotrack_initial_schema.sql:871:  v_total := v_settings.adult_fee * p_adult_count + v_settings.child_fee * p_child_count;
+R7 webhook/payment docs:
+ILIGUIDE_SETUP.md:34:supabase functions deploy paymongo-webhook
+ILIGUIDE_SETUP.md:50:Create a PayMongo webhook at `https://<project-ref>.supabase.co/functions/v1/paymongo-webhook` and subscribe it to `checkout_session.payment.paid`, `checkout_session.payment.failed`, and `payment.refund.updated`. Copy its endpoint secret into `PAYMONGO_WEBHOOK_SECRET`. The frontend never treats the checkout redirect as payment confirmation.
+ILIGUIDE_SETUP.md:66:- Booking holds last ten minutes and use database-side fee and capacity checks. Free bookings confirm through a database RPC. Paid bookings redirect to PayMongo Checkout and become confirmed only after a signed webhook.
+supabase/config.toml:13:verify_jwt = false
+supabase/config.toml:15:[functions.paymongo-webhook]
+supabase/config.toml:16:verify_jwt = false
+supabase/config.toml:19:verify_jwt = false
+supabase/config.toml:22:verify_jwt = true
+supabase/config.toml:25:verify_jwt = true
+supabase/config.toml:28:verify_jwt = true
+supabase/config.toml:31:verify_jwt = true
+supabase/config.toml:34:verify_jwt = false
+README.md:34:supabase functions deploy paymongo-webhook
+README.md:52:Create a PayMongo webhook at `https://<project-ref>.supabase.co/functions/v1/paymongo-webhook` and subscribe it to `checkout_session.payment.paid`, `checkout_session.payment.failed`, and `payment.refund.updated`. Copy its endpoint secret into `PAYMONGO_WEBHOOK_SECRET`. The frontend never treats the checkout redirect as payment confirmation.
+README.md:60:- Booking holds last ten minutes and use database-side fee and capacity checks. The current visitor flow confirms the reservation without online payment; displayed fees are estimates to be paid under the destination's own admission process. PayMongo checkout, webhook, and refund functions remain available but are not called by the current visitor interface.
+R7 provider handlers:
+supabase/functions/paymongo-webhook/index.ts:6:  return json({ error: 'PayMongo webhook processing is disabled.' }, 410);
+supabase/functions/paymongo-checkout/index.ts:6:  return json({ error: 'PayMongo checkout is disabled. Use the manual payment flow.' }, 410);
+supabase/functions/process-refund/index.ts:6:  return json({ error: 'Gateway refunds are disabled. Contact the Tourism Office for refund assistance.' }, 410);
+Frontend PayMongo calls:
+NO_FRONTEND_PAYMONGO_INVOCATION_FOUND
+Supabase config and conflicting docs:
+supabase/config.toml:13:verify_jwt = false
+supabase/config.toml:15:[functions.paymongo-webhook]
+supabase/config.toml:16:verify_jwt = false
+supabase/config.toml:19:verify_jwt = false
+supabase/config.toml:22:verify_jwt = true
+supabase/config.toml:25:verify_jwt = true
+supabase/config.toml:28:verify_jwt = true
+supabase/config.toml:31:verify_jwt = true
+supabase/config.toml:34:verify_jwt = false
+ILIGUIDE_SETUP.md:34:supabase functions deploy paymongo-webhook
+ILIGUIDE_SETUP.md:50:Create a PayMongo webhook at `https://<project-ref>.supabase.co/functions/v1/paymongo-webhook` and subscribe it to `checkout_session.payment.paid`, `checkout_session.payment.failed`, and `payment.refund.updated`. Copy its endpoint secret into `PAYMONGO_WEBHOOK_SECRET`. The frontend never treats the checkout redirect as payment confirmation.
+README.md:34:supabase functions deploy paymongo-webhook
+README.md:52:Create a PayMongo webhook at `https://<project-ref>.supabase.co/functions/v1/paymongo-webhook` and subscribe it to `checkout_session.payment.paid`, `checkout_session.payment.failed`, and `payment.refund.updated`. Copy its endpoint secret into `PAYMONGO_WEBHOOK_SECRET`. The frontend never treats the checkout redirect as payment confirmation.
+README.md:60:- Booking holds last ten minutes and use database-side fee and capacity checks. The current visitor flow confirms the reservation without online payment; displayed fees are estimates to be paid under the destination's own admission process. PayMongo checkout, webhook, and refund functions remain available but are not called by the current visitor interface.

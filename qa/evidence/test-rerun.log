@@ -1,0 +1,121 @@
+✔ visitors stay on visitor pages and leave staff routes (6.0639ms)
+✔ gatekeepers can use operational pages only (0.3225ms)
+✖ site administrators can manage scoped demo payments but cannot enter office-only pages (9.5236ms)
+✔ Tourism Office gets office pages and no visitor account pages (0.2798ms)
+✔ destination feedback stays out of Gatekeeper access (0.2259ms)
+✔ destination updates are restricted to Tourism Office and assigned Site Admin routes (0.2439ms)
+✖ legacy schedule pages remain available to Site Admin and Gatekeeper roles stay blocked (0.3899ms)
+✔ visitors cannot enter the staff password page (0.1761ms)
+✔ visitor and staff sign-in have distinct entry routes (3.6787ms)
+✔ sign-in return routes allow only local routes for the matching audience (1.0283ms)
+✔ successful staff sign-in returns to its workspace, never the visitor home (0.4218ms)
+✔ Site Admin has distinct protected portal routes while Tourism Office keeps office routes (0.8519ms)
+✔ password recovery returns to the matching account portal (0.4146ms)
+✔ detects supported recovery callback forms without treating ordinary PKCE codes as resets (0.6044ms)
+✔ recovery callback target keeps proof params, removes provider errors, and stays local (0.5503ms)
+✔ visitor auth modal never opens over staff sign-in or workspace routes (0.2353ms)
+✔ route matching resolves workspace and destination pages (0.5393ms)
+✔ visitor announcement list and detail routes stay public and return safely (0.7856ms)
+✔ requires a usable name and one contact method (10.4706ms)
+✔ rejects malformed email or phone input (1.0415ms)
+✔ accepts a valid phone-only booking contact (0.3096ms)
+✔ crowd levels use raw recorded occupancy and keep 95% distinct from the approved maximum (2.8168ms)
+✔ site thresholds override defaults without rounding across a boundary (0.3062ms)
+✔ scheduled capacity includes only the projected visitor count and selected-date thresholds (0.2329ms)
+✔ operating status respects hours, exceptions and closures (191.3218ms)
+✔ exchanges a PKCE callback code before updating (4.8376ms)
+✔ verifies a recovery token hash before updating when no session exists yet (42.1888ms)
+✔ validates a fresh token hash even when a prior recovery session marker exists (0.5027ms)
+✔ rejects an invalid recovery token hash without updating (1.1724ms)
+✔ rejects a normal signed-in session without recovery proof (0.4763ms)
+✔ requires the marked recovery session to belong to the same user (0.4284ms)
+✔ uses a previously validated recovery session after refresh (0.3535ms)
+✔ rejects a short reset password before consuming the recovery token (0.3666ms)
+✔ shows a friendly reset-link error when PKCE verification fails (0.5612ms)
+✔ validates new password and confirmation before authentication (0.9853ms)
+✔ rejects an incorrect current password without updating (0.4817ms)
+✔ updates only the currently authenticated user after password verification (0.3422ms)
+✔ does not update if authentication resolves to another user (0.3474ms)
+✔ duty status follows the assigned shift window, not the assignment date alone (25.2721ms)
+✔ calculateBookingTotal rounds to cents and guards against NaN or out-of-range PWD counts (2.5096ms)
+✔ money formats finite amounts and falls back cleanly on NaN (93.168ms)
+✔ dateLabel and timeLabel return fallback em-dash for empty or invalid values (10.3242ms)
+✔ escapeCsvCell neutralizes spreadsheet formula injection and escapes quotes (0.5173ms)
+✔ monthDateRange validates YYYY-MM strings and handles leap years safely (2.2481ms)
+✔ isValidOptionalPhone requires 7 to 15 digits when non-empty (0.3984ms)
+✔ destination route resolves only known gatekeeper sections (5.9528ms)
+✔ gatekeeper path builder preserves the explicit destination and page (0.4911ms)
+✔ weekday shortcut copies Monday hours and leaves weekend unchanged (7.7016ms)
+✔ all-days shortcut opens Sunday and all remaining days (1.2948ms)
+✔ shortcut refuses to invent hours when every target day is closed (0.4973ms)
+✔ recognizes confirmed zero-fee reservations as free registration (1.4052ms)
+✔ shows positive admission estimates as not collected online (0.2894ms)
+✔ shows zero admission fees as payment not required (0.2218ms)
+✔ formats other payment states (0.2002ms)
+✔ restores valid reservation data (9.8489ms)
+✔ rejects expired, past-date, and invalid party data (2.6242ms)
+✔ groups upcoming, pending, completed, cancelled, and expired bookings (2.2897ms)
+✔ searches and date-filters bookings, sorted by creation date (2.1963ms)
+✔ uses destination-specific visitor fields (3.1008ms)
+✔ resizes groups while preserving entered rows and validating every person (0.6969ms)
+✔ creates one clean database payload per adult and child (1.6834ms)
+✔ PWD claims match the selected count and require category and photo (0.4976ms)
+✔ upcoming visits exclude cancelled, expired, completed, and already-ended reservations (36.5781ms)
+✔ nearest upcoming visit sorts by date then start time (0.2611ms)
+✔ QR ticket eligibility follows confirmed booking and payment rules (0.168ms)
+ℹ tests 65
+ℹ suites 0
+ℹ pass 63
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2580.8342
+
+✖ failing tests:
+
+test at tests\actorRoutes.test.mjs:25:1
+✖ site administrators can manage scoped demo payments but cannot enter office-only pages (9.5236ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'Sites and staff'
+  - 'Overview'
+  
+      at TestContext.<anonymous> (file:///C:/Users/gaily/OneDrive/Desktop/Iliguide/qa/app/tests/actorRoutes.test.mjs:31:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'Sites and staff',
+    expected: 'Overview',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\actorRoutes.test.mjs:61:1
+✖ legacy schedule pages remain available to Site Admin and Gatekeeper roles stay blocked (0.3899ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'Sites and staff'
+  - 'Overview'
+  
+      at TestContext.<anonymous> (file:///C:/Users/gaily/OneDrive/Desktop/Iliguide/qa/app/tests/actorRoutes.test.mjs:64:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'Sites and staff',
+    expected: 'Overview',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
