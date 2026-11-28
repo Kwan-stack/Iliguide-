@@ -370,7 +370,7 @@ function TicketView({ booking, ticket, userId, configured, notify, onConfirmatio
     <div className="ticket-data"><span>BOOKING REFERENCE<b>{booking.booking_reference}</b></span><span>VISITOR NAME<b>{ticket.booking.visitor_name}</b></span>
       <span>VISITOR COUNT<b>{ticket.booking.visitor_count}</b></span><span>VISIT DATE<b>{dateLabel(ticket.booking.slot_date)}</b></span>
       <span>{booking.payment_status === 'not_required' ? 'ESTIMATED FEE' : 'ADMISSION'}<b>{money(ticket.booking.total_amount)}</b></span></div></div>
-    <div className="ticket-qr">{!attendanceLoaded ? <p role="status">Verifying ticket status…</p> : <><QRCodeSVG value={ticket.token} size={188} level="H" includeMargin aria-label="Secure Iliguide entry ticket QR code"/>
+    <div className="ticket-qr">{!attendanceLoaded ? <p role="status">Verifying ticket status…</p> : <><QRCodeSVG value={ticket.token} size={256} level="H" includeMargin aria-label="Secure Iliguide entry ticket QR code"/>
       <small>{isExitOnly ? 'This ticket is valid for check-out only.' : 'This private QR code contains an opaque signed ticket token, not visitor contact information.'}</small>
       <button className="btn btn-outline" onClick={download}><ArrowDownToLine size={15}/> Export booking</button></>}</div></article>;
 }
