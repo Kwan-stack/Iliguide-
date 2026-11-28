@@ -52,3 +52,6 @@
 .locator-map-actions span { display: inline-flex; align-items: center; gap: .4rem; font-weight: 700; }
 @media (max-width: 720px) { .locator-layout { grid-template-columns: 1fr; } .locator-map-actions { padding-bottom: .75rem; } .destination-heat-scale { font-size: .62rem; gap: .35rem; } .destination-heat-scale i { width: 76px; height: 7px; } }
 @media (prefers-reduced-motion: reduce) { .destination-map *, .destination-map *::before, .destination-map *::after { scroll-behavior: auto !important; } }
+.destination-map-heading a, .destination-map-source-note a, .destination-photo-credit a { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; padding: 6px 0; }
+.leaflet-touch .leaflet-bar a, .leaflet-bar a { width: 44px !important; height: 44px !important; line-height: 44px !important; }
+

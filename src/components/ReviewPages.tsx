@@ -27,6 +27,7 @@ export function ReviewComposer({ bookingId, siteName, existing, onClose, onSaved
   const [category, setCategory] = useState(existing?.category ?? 'overall_experience');
   const [comment, setComment] = useState(existing?.comment ?? '');
   const [busy, setBusy] = useState(false);
+  const submitLockRef = useRef(false);
   const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef(onClose);
   useEffect(() => { closeRef.current = onClose; }, [onClose]);
@@ -36,7 +37,11 @@ export function ReviewComposer({ bookingId, siteName, existing, onClose, onSaved
     const focusable = dialog?.querySelectorAll<HTMLElement>('button:not([disabled]), select:not([disabled]), textarea:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])');
     (focusable?.[0] ?? dialog)?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.preventDefault(); closeRef.current(); return; }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (!submitLockRef.current) closeRef.current();
+        return;
+      }
       if (event.key !== 'Tab' || !dialog) return;
       const focusable = dialog.querySelectorAll<HTMLElement>('button:not([disabled]), select:not([disabled]), textarea:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])');
       if (!focusable.length) { event.preventDefault(); dialog.focus(); return; }
@@ -47,7 +52,10 @@ export function ReviewComposer({ bookingId, siteName, existing, onClose, onSaved
     return () => { document.removeEventListener('keydown', handleKeyDown); previous?.focus(); };
   }, []);
   const save = async (event: FormEvent) => {
-    event.preventDefault(); setBusy(true);
+    event.preventDefault();
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
+    setBusy(true);
     try {
       const { error } = existing
         ? await db().rpc('update_visitor_review', { p_review_id: existing.id, p_rating: rating, p_category: category, p_comment: comment.trim() })
@@ -55,11 +63,11 @@ export function ReviewComposer({ bookingId, siteName, existing, onClose, onSaved
       if (error) throw error;
       notify(existing ? 'Review updated. It will appear after moderation.' : 'Review submitted for moderation.'); onSaved();
     } catch (error) { notify(errorText(error, 'Could not save your review.')); }
-    finally { setBusy(false); }
+    finally { submitLockRef.current = false; setBusy(false); }
   };
-  return <div className="review-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+  return <div className="review-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
     <section ref={dialogRef} tabIndex={-1} className="review-dialog" role="dialog" aria-modal="true" aria-labelledby="review-dialog-title">
-      <div className="review-dialog-heading"><div><span className="eyebrow"><span className="eyebrow-line"/> VERIFIED VISIT</span><h2 id="review-dialog-title">{existing ? 'Edit your review' : 'Write a review'}</h2><p>{siteName}</p></div><button type="button" className="icon-btn" aria-label="Close review form" onClick={onClose}><X size={18}/></button></div>
+      <div className="review-dialog-heading"><div><span className="eyebrow"><span className="eyebrow-line"/> VERIFIED VISIT</span><h2 id="review-dialog-title">{existing ? 'Edit your review' : 'Write a review'}</h2><p>{siteName}</p></div><button type="button" className="icon-btn" aria-label="Close review form" disabled={busy} onClick={onClose}><X size={18}/></button></div>
       <form onSubmit={(event) => void save(event)}>
         <fieldset className="review-rating-picker"><legend>Your rating</legend><div>{[1, 2, 3, 4, 5].map((value) => <button type="button" key={value} aria-label={`${value} star${value > 1 ? 's' : ''}`} aria-pressed={rating === value} onClick={() => setRating(value)}><Star size={27} fill={value <= rating ? 'currentColor' : 'none'}/></button>)}</div><small>{rating} out of 5</small></fieldset>
         <label>Review category<select value={category} onChange={(event) => setCategory(event.target.value)}>{reviewCategories.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -79,6 +87,8 @@ export function DestinationReviews({ siteId, isVisitor, notify }: { siteId: stri
   const [reason, setReason] = useState('inappropriate');
   const [details, setDetails] = useState('');
   const [loading, setLoading] = useState(true);
+  const [reportBusy, setReportBusy] = useState(false);
+  const reportLockRef = useRef(false);
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
     let active = true; setLoading(true); setRows([]); setSummary({ review_count: 0, average_rating: 0 }); setReported(new Set());
@@ -106,15 +116,19 @@ export function DestinationReviews({ siteId, isVisitor, notify }: { siteId: stri
   }, [siteId, isVisitor, refresh, notify]);
   const report = async (event: FormEvent, reviewId: string) => {
     event.preventDefault();
+    if (reportLockRef.current) return;
+    reportLockRef.current = true;
+    setReportBusy(true);
     try {
       const { error } = await db().rpc('submit_review_report', { p_review_id: reviewId, p_reason: reason, p_details: details.trim() });
       if (error) throw error;
       notify('Report sent to the destination team.'); setReporting(''); setDetails(''); setRefresh((value) => value + 1);
     } catch (error) { notify(errorText(error, 'Could not send this report.')); }
+    finally { reportLockRef.current = false; setReportBusy(false); }
   };
   return <section className="destination-reviews" aria-labelledby="destination-reviews-title"><div className="destination-reviews-heading"><div><span className="eyebrow"><span className="eyebrow-line"/> VISITOR FEEDBACK</span><h2 id="destination-reviews-title">Ratings &amp; reviews</h2></div><div className="review-score"><Star size={19} fill="currentColor"/><b>{summary.average_rating ? summary.average_rating.toFixed(1) : '—'}</b><span>{summary.review_count} published reviews</span></div></div>
     {loading ? <p className="empty-inline">Loading reviews…</p> : rows.length ? <div className="destination-review-list">{rows.map((row) => <article className="destination-review" key={row.id}><div className="destination-review-top"><span className="review-avatar"><CheckCircle2 size={18}/></span><div><b>Verified visitor</b><small>{dateText(row.created_at)} · {categoryLabel(row.category)}</small></div><span className="review-stars" aria-label={`${row.rating} out of 5 stars`}>{'★'.repeat(row.rating)}<span>{'★'.repeat(5 - row.rating)}</span></span></div>
-      {row.comment && <p>{row.comment}</p>}{isVisitor && <div className="review-report-action">{reported.has(row.id) ? <small>Report received</small> : <><button type="button" className="link-btn" aria-expanded={reporting === row.id} onClick={() => setReporting(reporting === row.id ? '' : row.id)}><Flag size={14}/> Report review</button>{reporting === row.id && <form onSubmit={(event) => void report(event, row.id)}><label>Reason<select value={reason} onChange={(event) => setReason(event.target.value)}><option value="inappropriate">Inappropriate</option><option value="inaccurate">Inaccurate</option><option value="spam">Spam</option><option value="other">Other</option></select></label><label>Details (optional)<textarea value={details} onChange={(event) => setDetails(event.target.value)} maxLength={1000} rows={2}/></label><div><button type="button" className="btn btn-outline" onClick={() => setReporting('')}>Cancel</button><button className="btn btn-outline">Send report</button></div></form>}</>}</div>}</article>)}</div> : <div className="empty-inline">No published reviews yet. Reviews from completed visits will appear here.</div>}
+      {row.comment && <p>{row.comment}</p>}{isVisitor && <div className="review-report-action">{reported.has(row.id) ? <small>Report received</small> : <><button type="button" className="link-btn" aria-expanded={reporting === row.id} onClick={() => setReporting(reporting === row.id ? '' : row.id)}><Flag size={14}/> Report review</button>{reporting === row.id && <form onSubmit={(event) => void report(event, row.id)}><label>Reason<select value={reason} onChange={(event) => setReason(event.target.value)} disabled={reportBusy}><option value="inappropriate">Inappropriate</option><option value="inaccurate">Inaccurate</option><option value="spam">Spam</option><option value="other">Other</option></select></label><label>Details (optional)<textarea value={details} onChange={(event) => setDetails(event.target.value)} maxLength={1000} rows={2} disabled={reportBusy}/></label><div><button type="button" className="btn btn-outline" disabled={reportBusy} onClick={() => setReporting('')}>Cancel</button><button className="btn btn-outline" disabled={reportBusy} aria-busy={reportBusy}>{reportBusy ? 'Sending…' : 'Send report'}</button></div></form>}</>}</div>}</article>)}</div> : <div className="empty-inline">No published reviews yet. Reviews from completed visits will appear here.</div>}
   </section>;
 }
 

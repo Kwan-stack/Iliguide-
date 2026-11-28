@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, RefreshCw } from 'lucide-react';
+import { Bell, RefreshCw, X } from 'lucide-react';
 import { db } from '../lib/iliguide';
 import './VisitorNotificationButton.css';
 
@@ -85,7 +85,7 @@ export function VisitorNotificationButton({ userId, configured, notify, onOpenBo
       <span className="profile-nav-icon"><Bell size={18}/>{unread > 0 && <span className="notification-count">{unread > 9 ? '9+' : unread}</span>}</span>
     </button>
     {open && <section id="visitor-notification-panel" className="visitor-notification-panel" aria-label="Notifications">
-      <header><span><b>Notifications</b><small>{unread ? `${unread} unread` : 'You’re all caught up'}</small></span><button type="button" disabled={markingAll || unread === 0} onClick={() => void markAllRead()}>{markingAll ? 'Marking…' : 'Mark all read'}</button></header>
+      <header><span><b>Notifications</b><small>{unread ? `${unread} unread` : 'You’re all caught up'}</small></span><div className="visitor-notification-header-actions"><button type="button" disabled={markingAll || unread === 0} onClick={() => void markAllRead()}>{markingAll ? 'Marking…' : 'Mark all read'}</button><button type="button" className="visitor-notification-close" aria-label="Close notifications" onClick={() => setOpen(false)}><X size={16}/></button></div></header>
       {loading && <p className="notification-panel-state" role="status">Loading notifications…</p>}
       {!loading && error && <p className="notification-panel-state" role="alert">Could not load notifications.<button type="button" onClick={() => setReload((value) => value + 1)}><RefreshCw size={14}/> Retry</button></p>}
       {!loading && liveError && <p className="notification-live-error" role="status">Live connection paused. Checking for updates every minute.<button type="button" onClick={() => setReload((value) => value + 1)}><RefreshCw size={13}/> Reconnect</button></p>}

@@ -47,3 +47,13 @@
 @media(max-width:360px){.office-app-topbar{gap:6px;padding-inline:8px}.office-app-brand-lockup img{width:88px}.office-app-actions{gap:5px}.office-app-signout{width:36px;min-height:36px;gap:0;padding:0;font-size:0}.office-app-signout svg{flex:none}}
 @media(prefers-reduced-motion:reduce){.office-app-spinner{animation:none}}
 @media(prefers-reduced-motion:reduce){.office-notifications-trigger,.office-notifications-panel li>button{transition:none}.office-notifications-panel{animation:none}}
+.office-notifications-panel>header .office-notifications-close{display:grid;place-items:center;width:44px;height:44px;min-width:44px;min-height:44px;flex:none;border:0;border-radius:50%;background:#f3f7f8;color:#47606b;cursor:pointer;transition:background .16s ease,color .16s ease}
+.office-notifications-panel>header .office-notifications-close:hover{background:#e4eff1;color:var(--ink,#1b2935)}
+.office-notifications-trigger{width:44px;height:44px;min-width:44px;min-height:44px}
+.office-notifications-panel>header .office-notifications-mark-read{min-width:44px;min-height:44px;padding:0 12px;display:inline-flex;align-items:center;justify-content:center}
+.office-notifications-panel>a{min-height:44px}
+.office-app-signout{min-width:44px;min-height:44px}
+.office-app-error button{min-width:44px;min-height:44px;padding:0 12px;display:inline-flex;align-items:center;justify-content:center}
+@media(max-width:760px){.office-app-signout{min-width:44px;min-height:44px;padding:0 10px}}
+@media(max-width:360px){.office-app-signout{width:44px;min-width:44px;min-height:44px;padding:0}}
+

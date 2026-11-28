@@ -315,3 +315,96 @@ body{min-width:0}@media(max-width:760px){html,body,#root,.app-shell,.office-app-
 @media(max-width:760px){.camera-box{height:min(58vh,460px);min-height:240px}.scanner-video{height:100%;min-height:0}}
 @media(max-width:760px) and (orientation:landscape){.camera-box{height:min(62vh,320px);min-height:180px}}
 @media(prefers-reduced-motion:reduce){.scanner-video{transition:none}}
+
+/* Admin booking cancellation badges, visitor notices, scanner rejection banners, and closure bulk-cancel controls */
+.status-tag-danger{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}
+.admin-cancelled-notice{display:flex;align-items:flex-start;gap:12px;margin:14px 0;padding:14px 16px;border:1px solid #fecaca;border-radius:11px;background:#fef2f2;color:#991b1b}
+.admin-cancelled-notice>svg{flex:none;margin-top:2px;color:#dc2626}
+.admin-cancelled-notice>div{display:grid;gap:4px;min-width:0;flex:1}
+.admin-cancelled-notice b{font-size:13px;color:#991b1b}
+.admin-cancelled-notice p{margin:0;font-size:12px;line-height:1.5;color:#7f1d1d}
+.admin-cancelled-notice small{font-size:11px;color:#991b1b}
+.admin-cancelled-actions{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px}
+.booking-cancel-detail{margin:6px 0 0;color:#b91c1c!important;font-size:11px!important;font-weight:600;line-height:1.45}
+.booking-cancel-action-btn{padding:7px 11px;font-size:11px;white-space:nowrap}
+.scan-camera-fallback{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:12px 14px;border:1px solid #fde68a;border-radius:10px;background:#fffbeb;color:#92400e;font-size:12px}
+.scan-camera-fallback span{flex:1;min-width:180px;line-height:1.45}
+.scan-cancelled-banner{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:12px 14px;border:1px solid #fecaca;border-radius:10px;background:#fef2f2;color:#991b1b}
+.scan-cancelled-banner>svg{flex:none;margin-top:2px;color:#dc2626}
+.scan-cancelled-banner>div{display:grid;gap:3px;min-width:0}
+.scan-cancelled-banner strong{font-size:12px;letter-spacing:.4px;color:#b91c1c}
+.scan-cancelled-banner p{margin:0;font-size:12px;line-height:1.45;color:#7f1d1d}
+.scan-result-icon.danger{background:#fef2f2;color:#dc2626}
+.scan-result-cancelled{border-color:#fca5a5!important}
+.closure-bulk-cancel{display:grid;gap:10px;margin:12px 0;padding:13px 14px;border:1px solid #fed7aa;border-radius:10px;background:#fff7ed}
+.closure-bulk-cancel .check-line{margin:0!important;font-size:12px!important;font-weight:600!important;color:#9a3412!important}
+.closure-bulk-cancel label:not(.check-line){display:grid;gap:5px;font-size:11px;font-weight:600;color:#7c2d12}
+.closure-bulk-cancel select{border:1px solid #fdba74;border-radius:7px;padding:8px 10px;background:#fff;color:var(--ink);font-size:12px}
+
+/* Accessible close ("X") button sizing, layering, and tap targets */
+.modal-close{width:44px;height:44px;min-width:44px;min-height:44px;z-index:10;pointer-events:auto;cursor:pointer;transition:background .16s ease,color .16s ease}
+.modal-close:hover:not(:disabled){background:#e5eff1;color:var(--ink)}
+.modal-close:disabled{opacity:.5;cursor:not-allowed}
+.profile-dialog-close{width:44px;height:44px;min-width:44px;min-height:44px;z-index:10;pointer-events:auto;transition:background .16s ease,color .16s ease}
+.profile-dialog-close:hover:not(:disabled){background:#f1f7f8;color:var(--deep)}
+.profile-dialog-close:disabled{opacity:.5;cursor:not-allowed}
+.icon-btn:not(.mobile-menu){display:inline-grid;place-items:center;width:44px;height:44px;min-width:44px;min-height:44px;flex:none;border:0;border-radius:50%;background:#f3f7f8;color:#47606b;cursor:pointer;z-index:5;pointer-events:auto;transition:background .16s ease,color .16s ease}
+.icon-btn:not(.mobile-menu):hover:not(:disabled){background:#e4eff1;color:var(--ink)}
+.icon-btn:not(.mobile-menu):focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.icon-btn:not(.mobile-menu):disabled{opacity:.5;cursor:not-allowed}
+.managed-image button,.destination-photo-preview button{width:44px;height:44px;min-width:44px;min-height:44px;border:6px solid transparent;background-clip:padding-box;z-index:2;cursor:pointer}
+@media(max-width:760px){
+  .modal-close{right:12px;top:12px}
+  .mobile-menu{width:44px;height:44px;min-width:44px;min-height:44px}
+  .managed-image button,.destination-photo-preview button{width:44px;height:44px;min-width:44px;min-height:44px}
+}
+
+/* Mobile 4G field accessibility: minimum 44px x 44px touch targets across visitor & admin portals */
+.brand{min-height:44px;min-width:44px}
+.btn,.btn-sm,.btn-danger{min-height:44px;min-width:44px}
+.header-actions .btn,.header-auth-login{min-height:44px;min-width:44px;padding:0 16px}
+.main-nav button,.link-btn,.text-link,.back-link{min-height:44px;min-width:44px;display:inline-flex;align-items:center}
+.back-link{margin-bottom:14px;padding:0 4px 0 0}
+.filter-pill,.table-card:not(.admin-table) .filter-pills .filter-pill{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center;padding:8px 14px}
+.site-save-btn,.save-site{width:44px;height:44px;min-width:44px;min-height:44px;right:6px;top:6px;display:grid;place-items:center;padding:0;border:5px solid transparent;background-clip:padding-box}
+.site-title{min-height:44px;padding:6px 0}
+.card-bottom button{min-height:44px;min-width:44px;padding:0 4px;justify-content:flex-end}
+.hero-slider-controls{gap:0;padding:0;bottom:44px}
+.hero-slider-controls button{width:44px;height:44px;min-width:44px;min-height:44px}
+.hero-slider-controls .hero-slide-arrow{border:6px solid transparent;background-clip:padding-box}
+.hero .search-field select,.hero .search-field input,.search-field input,.search-field select{min-height:44px;padding:10px 0}
+.footer-col{gap:2px}
+.footer-col>b{margin-bottom:6px}
+.footer-col a,.footer-col button{min-width:44px;min-height:44px;display:inline-flex;align-items:center;padding:6px 0;text-align:left}
+.detail-tabs button,.account-section-tabs button,.site-editor-tabs button,.scan-mode button{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center}
+.calendar-head button{min-width:44px;min-height:44px;display:inline-grid;place-items:center}
+.date-option,.slot-option{min-height:44px;min-width:44px}
+.counter button,.mini-counter{width:44px;height:44px;min-width:44px;min-height:44px;display:inline-grid;place-items:center}
+.counter{gap:10px}
+.star-picker button{min-width:44px;min-height:44px;display:inline-grid;place-items:center}
+.modal .login-nudge button,.remember-row button{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px}
+.staff-login-note button{min-height:44px}
+.profile-photo-action{right:-10px;bottom:-10px;width:44px;height:44px;min-width:44px;min-height:44px;border:8px solid transparent;background-clip:padding-box;box-shadow:inset 0 0 0 2px #fff}
+.profile-edit-button{min-height:44px;min-width:44px;padding:8px 14px}
+.profile-photo-menu>button{min-height:44px;padding:10px 10px}
+.profile-security-panel summary,.support-faq summary{min-height:44px;display:flex;align-items:center}
+.check-line,.preference-toggle,.day-switch,label.auth-consent{min-height:44px;padding-block:6px;cursor:pointer}
+.check-line input[type=checkbox],.preference-toggle input[type=checkbox],.day-switch input[type=checkbox],label.auth-consent input[type=checkbox]{width:18px;height:18px;flex:none}
+.card-heading select,.header-actions select,.table-toolbar>input,.manual-search input,.form-card input:not([type=checkbox]),.form-card select,.modal input:not([type=checkbox]),.modal select,.schedule-row input[type=time],.capacity-input,.support-form select,.support-staff-row select,.review-edit-form select,.profile-name-fields input,.traveler-form input,.profile-security-panel input,.profile-form-grid input,.closure-bulk-cancel select{min-height:44px}
+.camera-placeholder .btn,.manual-search .btn,.booking-cancel-action-btn,.gatekeeper-bookings-table .record-payment-btn,.booking-record>.btn,.account-card>.btn,.role-preview .btn,.staff-quick .btn,.how-intro .btn{min-height:44px;min-width:44px;padding:10px 14px}
+.mobile-tabs button{min-width:48px;min-height:44px}
+@media(max-width:760px){
+  .header-actions .btn,.header-auth-login{min-height:44px;min-width:44px;padding:0 14px;font-size:11px}
+  .hero-slider-controls{bottom:44px}
+  .save-site,.site-save-btn{width:44px;height:44px;min-width:44px;min-height:44px;right:4px;top:4px;font-size:16px}
+  .filter-pill{min-height:44px;padding:8px 12px}
+  .footer-col{gap:0}
+  .footer-col a,.footer-col button{min-height:44px;min-width:44px;font-size:11px}
+  .scan-mode button{min-height:44px;padding:10px 12px}
+  .account-section-tabs button{min-height:44px;padding:10px 12px}
+}
+@media(max-width:380px){
+  .filter-pill{min-height:44px;padding:8px 10px}
+  .header-actions .btn,.header-auth-login{padding:0 12px}
+}
+

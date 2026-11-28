@@ -6,3 +6,9 @@
 @media(max-width:760px){.notification-nav-btn,.visitor-topbar .profile-nav-btn{min-width:44px;min-height:44px}.visitor-topbar .profile-nav-icon{width:30px;height:30px}.visitor-topbar .profile-nav-icon svg{width:18px;height:18px}.notification-nav-btn .profile-nav-label{display:none}}
 @media(max-width:380px){.profile-nav-btn{min-width:44px}.profile-nav-btn .profile-nav-label{display:none}}
 @media(max-width:560px){.visitor-notification-panel{position:fixed;top:70px;right:10px;left:10px;width:auto;max-height:calc(100dvh - 84px)}.visitor-notification-list{max-height:calc(100dvh - 156px)}}
+.visitor-notification-header-actions{display:flex;align-items:center;gap:6px;flex:none}
+.visitor-notification-panel>header .visitor-notification-close{display:grid;place-items:center;width:44px;height:44px;min-width:44px;min-height:44px;flex:none;border:0;border-radius:50%;background:#f3f7f8;color:#47606b;cursor:pointer;transition:background .16s ease,color .16s ease}
+.visitor-notification-panel>header .visitor-notification-close:hover{background:#e4eff1;color:var(--ink)}
+.visitor-notification-panel>header button,.notification-panel-state button,.notification-live-error button{min-width:44px;min-height:44px;padding:0 10px}
+.notification-nav-btn{min-width:44px;min-height:44px}
+

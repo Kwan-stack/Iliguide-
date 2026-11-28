@@ -4,3 +4,16 @@
 
 
 .auth-password-requirement{margin:-8px 0 0;color:#71828a;font-size:10px;line-height:1.4}.auth-reset-action{margin-top:6px}.auth-page-card .auth-reset-action{min-height:46px}
+.auth-page-card{position:relative}
+.auth-page-card>.eyebrow,.auth-page-card>h2,.auth-modal>.eyebrow,.auth-modal>h2{padding-right:52px}
+.auth-page-card .auth-page-close{position:absolute;top:16px;right:16px;z-index:10}
+@media(max-width:760px){.auth-page-card .auth-page-close{top:12px;right:12px}}
+.auth-topbar .header-actions .link-btn,.auth-route-actions .link-btn{min-width:44px;min-height:44px;display:inline-flex;align-items:center;padding:0 6px}
+.auth-page-card .password-field input{padding-right:52px}
+.auth-page-card .password-toggle{right:0;top:0;width:44px;height:44px;min-width:44px;min-height:44px;border:5px solid transparent;background-clip:padding-box;border-radius:10px}
+.auth-modal .password-toggle{min-width:44px;min-height:44px;width:44px}
+.auth-page-card .auth-switch button,.auth-modal .auth-switch button{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:8px 6px}
+.auth-page-card .auth-switch,.auth-modal .auth-switch{gap:4px 10px;padding-top:8px}
+.auth-page-card .auth-consent,.auth-modal .auth-consent{min-height:44px;padding:6px 0;cursor:pointer}
+.auth-page-card .auth-consent input[type=checkbox],.auth-modal .auth-consent input[type=checkbox]{width:18px;height:18px;flex:none;margin-top:1px}
+

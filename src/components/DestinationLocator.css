@@ -144,3 +144,12 @@
   .destination-locator .locator-selected-facts small { font-size: .72rem; }
 }
 @media (max-width: 360px) { .destination-locator .locator-list { grid-template-columns: 1fr; } }
+.destination-locator .locator-toolbar button { min-width: 44px; min-height: 44px; }
+.destination-locator .locator-directory-filters input, .destination-locator .locator-directory-filters select, .destination-locator .locator-filters input, .destination-locator .locator-filters select { min-height: 44px; }
+.destination-locator .leaflet-popup-content button { min-width: 44px; min-height: 44px; padding: .5rem .85rem; }
+.destination-locator .locator-selected-actions button { min-height: 44px; min-width: 44px; }
+.locator-mobile-switch button { min-height: 44px; min-width: 44px; }
+.locator-selected .occupancy-carousel-controls > button { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+.capacity-evidence-disclosure > summary { min-height: 44px; display: flex; align-items: center; }
+.destination-locator .capacity-pin { width: 56px !important; height: 44px !important; }
+
