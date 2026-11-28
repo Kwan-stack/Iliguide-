@@ -2,6 +2,7 @@ import { createContext, useEffect, useRef, useState, type Dispatch, type ReactNo
 import { ArrowRight, Bell, Check, LogOut, Menu, ShieldCheck, X } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { gatekeeperPath } from '../lib/gatekeeperRoutes';
+import { PushNotificationControl } from './PushNotificationControl';
 import { supabase } from '../lib/supabase';
 import { loadMyActiveGatekeeperDuty, pendingManualPaymentQuery, type Profile } from '../lib/iliguide';
 import './StaffWorkspaceShell.css';
@@ -40,6 +41,7 @@ export function StaffWorkspaceShell({ role, homePath, userId, siteSlug, siteId, 
         <span className="office-app-brand-lockup"><img src="/iliguide-staff-logo.png" alt="Iliguide"/><small>OFFICE WORKSPACE</small></span>
       </Link>
       <div className="office-app-actions">
+        <PushNotificationControl key={`push-${userId}`} userId={userId}/>
         {role === 'gatekeeper' && siteSlug && siteId && <GatekeeperNotifications userId={userId} siteId={siteId} siteSlug={siteSlug} setPaymentVerificationPending={setPaymentVerificationPending}/>}
         <span className="office-app-role" aria-label={roleLabel[role]} title={roleLabel[role]}><ShieldCheck size={15}/>{roleLabel[role]}</span>
         <button className="office-app-signout" aria-label="Log out" title="Log out" onClick={onSignOut}><LogOut size={15}/><span>Log out</span></button>

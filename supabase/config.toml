@@ -32,3 +32,9 @@ verify_jwt = true
 
 [functions.send-booking-email]
 verify_jwt = false
+
+[functions.dispatch-push]
+verify_jwt = false
+
+[functions.push-config]
+verify_jwt = true

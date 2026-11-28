@@ -10,6 +10,7 @@ import { bookingContactError } from './lib/bookingValidation';
 import { useSilentLoad } from './lib/useSilentLoad';
 import { AuthDialog, type AuthMode } from './components/AuthDialog';
 import { VisitorNotificationButton } from './components/VisitorNotificationButton';
+import { deactivatePushSubscription, PushNotificationControl } from './components/PushNotificationControl';
 import { StaffWorkspaceShell } from './components/StaffWorkspaceShell';
 import './components/DestinationMap.css';
 import './components/VisitorGuide.css';
@@ -698,6 +699,7 @@ export default function App() {
   const signOut = async () => {
     if (!supabase) return;
     try {
+      if (user) await deactivatePushSubscription(user.id).catch(() => undefined);
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       setAuthMode(null);
@@ -782,7 +784,7 @@ export default function App() {
         ? passwordRecovery ? null : <Link className="link-btn" to="/">Explore Iligan</Link>
         : role === 'visitor'
         ? user
-          ? <><VisitorNotificationButton key={user.id} userId={user.id} configured={supabaseConfigured} notify={notify} onOpenBookings={(bookingId) => { setActiveBooking(null); setActiveTicket(null); setActiveGuestCode(''); setPage('Bookings'); navigate(bookingId ? `/bookings?booking=${encodeURIComponent(bookingId)}` : '/bookings'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}/><button className={page === 'Account' ? 'profile-nav-btn active' : 'profile-nav-btn'} aria-label="Open profile" title="Profile" aria-current={page === 'Account' ? 'page' : undefined} onClick={() => go('Account')}><span className="profile-nav-icon">{visitorAvatarUrl ? <img src={visitorAvatarUrl} alt=""/> : <UserRound size={18}/>}</span></button></>
+          ? <><VisitorNotificationButton key={user.id} userId={user.id} configured={supabaseConfigured} notify={notify} onOpenBookings={(bookingId) => { setActiveBooking(null); setActiveTicket(null); setActiveGuestCode(''); setPage('Bookings'); navigate(bookingId ? `/bookings?booking=${encodeURIComponent(bookingId)}` : '/bookings'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}/><PushNotificationControl key={`push-${user.id}`} userId={user.id}/><button className={page === 'Account' ? 'profile-nav-btn active' : 'profile-nav-btn'} aria-label="Open profile" title="Profile" aria-current={page === 'Account' ? 'page' : undefined} onClick={() => go('Account')}><span className="profile-nav-icon">{visitorAvatarUrl ? <img src={visitorAvatarUrl} alt=""/> : <UserRound size={18}/>}</span></button></>
           : <><button className="link-btn" onClick={() => setAuthMode('signup')}>Sign up</button><Link className="btn btn-primary btn-sm header-auth-login" to={visitorLoginUrl(page === 'Discover' ? '/discover' : location.pathname)}>Log in</Link></>
         : <><span className="role-pill"><span className="status-dot"/>{role.replace('_', ' ')}</span><button className="link-btn" onClick={signOut}>Log out</button></>}
       </div>
