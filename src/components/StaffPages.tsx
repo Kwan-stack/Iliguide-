@@ -677,10 +677,13 @@ const attendanceDateTime = (value: string) => new Intl.DateTimeFormat('en-PH', {
 function ScannerPage(props: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
+  const cameraAttemptRef = useRef(0);
+  const cameraStartLockRef = useRef(false);
   const lockRef = useRef(false);
   const [scanMode, setScanMode] = useState<'camera' | 'manual'>('camera');
   const [manual, setManual] = useState('');
   const [cameraOn, setCameraOn] = useState(false);
+  const [cameraStarting, setCameraStarting] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [attendanceCount, setAttendanceCount] = useState('1');
   const [attendanceAction, setAttendanceAction] = useState<'entry' | 'exit'>('entry');
@@ -749,23 +752,53 @@ function ScannerPage(props: Props) {
   }, [props.siteId]);
 
   const startCamera = async () => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || cameraStartLockRef.current) return;
+    if (!window.isSecureContext) {
+      setScanError('Camera scanning requires a secure HTTPS connection. Open Illiguide using its HTTPS address.');
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setScanError('Camera access is unavailable in this browser. Use manual booking reference lookup.');
+      return;
+    }
+    const video = videoRef.current;
+    cameraStartLockRef.current = true;
+    const attempt = ++cameraAttemptRef.current;
     setScanError('');
     setResult(null); setTicketToken(''); setManualReference('');
+    setCameraStarting(true);
     try {
       const { BrowserQRCodeReader } = await import('@zxing/browser');
       const reader = new BrowserQRCodeReader();
-      controlsRef.current = await reader.decodeFromVideoDevice(undefined, videoRef.current, (decoded) => {
+      const controls = await reader.decodeFromConstraints({
+        audio: false,
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      }, video, (decoded) => {
         if (decoded && !lockRef.current) void processToken(decoded.getText());
       });
+      if (cameraAttemptRef.current !== attempt) { void controls.stop(); return; }
+      controlsRef.current = controls;
       setCameraOn(true);
     } catch (error) {
-      setScanError(error instanceof Error ? error.message : 'Camera access is unavailable. Use manual booking reference lookup.');
+      if (cameraAttemptRef.current !== attempt) return;
+      const name = error instanceof Error ? error.name : '';
+      setScanError(name === 'NotAllowedError'
+        ? 'Allow camera access in your browser settings, then tap Start camera again.'
+        : name === 'NotFoundError'
+          ? 'No camera was found on this device. Use manual booking reference lookup.'
+          : name === 'NotReadableError'
+            ? 'The camera is busy in another app. Close it and try again.'
+            : error instanceof Error ? error.message : 'Could not start the camera. Use manual booking reference lookup.');
+    } finally {
+      if (cameraAttemptRef.current === attempt) {
+        cameraStartLockRef.current = false;
+        setCameraStarting(false);
+      }
     }
   };
-  const stopCamera = () => { controlsRef.current?.stop(); controlsRef.current = null; setCameraOn(false); };
+  const stopCamera = () => { cameraAttemptRef.current += 1; cameraStartLockRef.current = false; controlsRef.current?.stop(); controlsRef.current = null; setCameraStarting(false); setCameraOn(false); };
   const resetScan = () => { setResult(null); setScanError(''); setManual(''); setTicketToken(''); setManualReference(''); setPendingEventKey(''); setReconciliationReason(''); setLastAttendance(null); setParticipants([]); setSelectedVisitorIds([]); };
-  useEffect(() => () => { controlsRef.current?.stop(); }, []);
+  useEffect(() => () => { cameraAttemptRef.current += 1; controlsRef.current?.stop(); }, []);
   const manualLookup = async (event: FormEvent) => {
     event.preventDefault();
     if (!manual.trim() || !props.siteId) return;
@@ -856,9 +889,9 @@ function ScannerPage(props: Props) {
     {!props.siteId && <div className="empty-card"><ShieldCheck size={30}/><h3>No site assignment</h3><p>Ask the Tourism Office to assign your gatekeeper account.</p></div>}
     {!!props.siteId && <div className="scan-layout"><article className="scan-card"><div className="scan-mode"><button type="button" className={scanMode === 'camera' ? 'selected' : ''} aria-pressed={scanMode === 'camera'} onClick={() => { setScanMode('camera'); setManual(''); setScanError(''); }}>Camera</button><button type="button" className={scanMode === 'manual' ? 'selected' : ''} aria-pressed={scanMode === 'manual'} onClick={() => { stopCamera(); setScanMode('manual'); setScanError(''); }}>Manual reference</button></div>
       {scanMode === 'camera' && <>
-        <div className="camera-box"><video ref={videoRef} muted playsInline className={cameraOn ? 'scanner-video visible' : 'scanner-video'}/>{!cameraOn && <div className="camera-placeholder"><Camera size={31}/><p>Point the camera at the visitor’s QR ticket.</p><small>Camera permission is requested only after you start the scanner.</small></div>}</div>
+        <div className="camera-box"><video ref={videoRef} muted autoPlay playsInline className={cameraOn || cameraStarting ? 'scanner-video visible' : 'scanner-video'}/>{!cameraOn && !cameraStarting && <div className="camera-placeholder"><Camera size={31}/><p>Point the rear camera at the visitor’s QR ticket.</p><small>Allow camera access when prompted. Camera scanning requires HTTPS.</small></div>}</div>
         <div className="scan-controls">{cameraOn ? <button type="button" className="btn btn-outline" onClick={stopCamera}><X size={15}/> Stop camera</button>
-          : <button type="button" className="btn btn-primary" onClick={() => void startCamera()} disabled={!props.siteId}><Camera size={15}/> Start camera</button>}
+          : <button type="button" className="btn btn-primary" onClick={() => void startCamera()} disabled={!props.siteId || cameraStarting}><Camera size={15}/> {cameraStarting ? 'Opening camera…' : 'Start camera'}</button>}
           <span>{site?.name ?? 'Select a site'}</span></div>
       </>}
       {scanMode === 'manual' && <form className="manual-scan-form" onSubmit={(event) => void manualLookup(event)}><label>Booking reference<input value={manual} onChange={(event) => setManual(event.target.value)} autoFocus placeholder="ILG-…" autoCapitalize="characters" required/></label><button type="submit" className="btn btn-primary" disabled={scanBusy || !manual.trim()}>{scanBusy ? 'Checking…' : 'Look up booking'} <ArrowRight size={15}/></button></form>}
