@@ -36,10 +36,17 @@ test('sign-in return routes allow only local routes for the matching audience', 
   assert.equal(routes.visitorAuthDismissPath(null), '/discover');
   assert.equal(routes.visitorAuthDismissPath('/'), '/');
   assert.equal(routes.visitorAuthDismissPath('/destinations'), '/destinations');
+  assert.equal(routes.visitorAuthDismissPath('/destinations/tinago-falls'), '/destinations/tinago-falls');
+  assert.equal(routes.visitorAuthDismissPath('/destinations/tinago-falls/book'), '/destinations/tinago-falls');
+  assert.equal(routes.visitorAuthDismissPath('/payment/ILG-2026-0001'), '/discover');
+  assert.equal(routes.visitorAuthDismissPath('/booking-confirmation/ILG-2026-0001'), '/discover');
+  assert.equal(routes.visitorAuthDismissPath('/login'), '/discover');
+  assert.equal(routes.visitorAuthDismissPath('/staff/login'), '/discover');
   assert.equal(routes.visitorAuthDismissPath('/workspace'), '/discover');
   assert.equal(routes.visitorAuthDismissPath('https://example.com'), '/discover');
   assert.equal(routes.pageFromPath(routes.visitorAuthDismissPath(null)), 'Discover');
   assert.equal(routes.pageFromPath(routes.visitorAuthDismissPath('/')), 'Landing');
+  assert.equal(routes.pageFromPath(routes.visitorAuthDismissPath('/destinations/tinago-falls/book')), 'Destination');
   assert.equal(routes.staffReturnPath('/workspace/team'), '/workspace/team');
   assert.equal(routes.staffReturnPath('/gatekeeper/tinago-falls/check-in'), '/gatekeeper/tinago-falls/check-in');
   assert.equal(routes.staffReturnPath('/account'), '');

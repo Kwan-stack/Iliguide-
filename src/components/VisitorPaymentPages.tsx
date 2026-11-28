@@ -72,6 +72,7 @@ export function VisitorManualPaymentPage({ reference, notify, onBack, onConfirme
   const [photoValidating, setPhotoValidating] = useState(false);
   const [resubmitReady, setResubmitReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  const actionLockRef = useRef(false);
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
   useEffect(() => {
@@ -97,7 +98,8 @@ export function VisitorManualPaymentPage({ reference, notify, onBack, onConfirme
   const remaining = Math.max(0, Math.ceil((deadline - now) / 1000));
   const expired = Boolean(deadline && remaining === 0 && ['pending', 'rejected'].includes(payment?.payment_status ?? ''));
   const simulatePayment = async () => {
-    if (!booking || !payment || expired) return;
+    if (!booking || !payment || expired || actionLockRef.current) return;
+    actionLockRef.current = true;
     setBusy(true);
     try {
       const { data, error } = await db().rpc('simulate_manual_payment', { p_booking_id: booking.booking_id });
@@ -107,12 +109,13 @@ export function VisitorManualPaymentPage({ reference, notify, onBack, onConfirme
       setTransactionReference(reference); setFile(null);
       notify('Demo transaction created. Choose a JPG or PNG photo, then submit for staff review.');
     } catch (cause) { notify(cause instanceof Error ? cause.message : 'Could not simulate demo payment.'); }
-    finally { setBusy(false); }
+    finally { actionLockRef.current = false; setBusy(false); }
   };
   const submitProof = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!booking || !payment || !app || !file) return;
+    if (!booking || !payment || !app || !file || actionLockRef.current) return;
     if (!transactionReference.startsWith('DEMO-')) { notify('Complete the demo simulation before submitting proof.'); return; }
+    actionLockRef.current = true;
     setBusy(true);
     try {
       const photo = await validatePaymentProofPhoto(file);
@@ -128,7 +131,7 @@ export function VisitorManualPaymentPage({ reference, notify, onBack, onConfirme
       notify('Proof submitted. Gatekeeper review is pending.');
       setFile(null); setTransactionReference(''); await refresh();
     } catch (cause) { notify(cause instanceof Error ? cause.message : 'Could not submit payment proof. Try again.'); }
-    finally { setBusy(false); }
+    finally { actionLockRef.current = false; setBusy(false); }
   };
   if (error) return <section className="visitor-payment-page section-wrap"><div className="empty-card" role="alert"><h2>Payment details unavailable</h2><p>{error}</p><button className="btn btn-outline" onClick={() => void refresh()}>Retry</button></div></section>;
   if (!booking || !payment) return <section className="visitor-payment-page section-wrap"><div className="empty-inline" role="status">Loading payment details…</div></section>;

@@ -1,0 +1,126 @@
+.admin-cancel-backdrop {
+  z-index: 1200;
+}
+
+.admin-cancel-modal {
+  width: min(100%, 520px);
+  border: 1px solid var(--line);
+}
+
+.admin-cancel-header {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 12px;
+}
+
+.admin-cancel-header h2 {
+  margin: 6px 0 0;
+  font-size: 24px;
+  letter-spacing: -0.7px;
+}
+
+.admin-cancel-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+}
+
+.admin-cancel-intro {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.admin-cancel-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin: 0 0 18px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fbfc;
+}
+
+.admin-cancel-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.admin-cancel-summary dt {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: #7b8d97;
+}
+
+.admin-cancel-summary dd {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-cancel-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-cancel-form select,
+.admin-cancel-form textarea {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.admin-cancel-form select:focus,
+.admin-cancel-form textarea:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px #009bce18;
+}
+
+.admin-cancel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.admin-cancel-actions .btn {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (max-width: 560px) {
+  .admin-cancel-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-cancel-actions {
+    flex-direction: column-reverse;
+  }
+
+  .admin-cancel-actions .btn {
+    width: 100%;
+  }
+}

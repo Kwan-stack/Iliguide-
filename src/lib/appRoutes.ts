@@ -136,6 +136,11 @@ export function visitorAuthDismissPath(candidate: string | null | undefined): st
   const path = safeInternalPath(candidate);
   if (!path) return '/discover';
   if (path === '/') return '/';
+  if (/^\/destinations\/[^/]+\/book\/?$/.test(path)) {
+    const slug = destinationSlugFromPath(path);
+    return slug ? `/destinations/${encodeURIComponent(slug)}` : '/discover';
+  }
+  if (/^\/(?:payment|booking-confirmation)\/[^/]+\/?$/.test(path)) return '/discover';
   const returnPath = visitorReturnPath(path);
   return returnPath === '/' ? '/discover' : returnPath;
 }

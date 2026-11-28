@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { completePasswordReset } from '../lib/changePassword';
 import { passwordRecoveryPath, STAFF_LOGIN_PATH, VISITOR_LOGIN_PATH } from '../lib/appRoutes';
+import { buildAuthRedirectUrl } from '../lib/authRedirect';
 import './AuthPages.css';
 
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset' | null;
@@ -26,6 +27,7 @@ type Props = {
 
 export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initialVisitor, redirectTo, audience = 'visitor', presentation = 'dialog', recoveryTokenHash = null, recoverySessionUserId = null, initialRecoveryError = '', onRecoverySession, onResetComplete }: Props) {
   const [busy, setBusy] = useState(false);
+  const submitLockRef = useRef(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -69,15 +71,22 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
 
   useEffect(() => {
     if (!mode || presentation !== 'dialog') return;
+    const previousFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', onKeyDown);
+      if (previousFocused && previousFocused.isConnected) {
+        previousFocused.focus();
+      }
     };
   }, [mode, onClose, presentation]);
 
@@ -92,50 +101,45 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setBusy(true);
+    if (submitLockRef.current || busy) return;
     setError('');
     setNotice('');
     if (mode === 'signup' && !awaitingConfirmation) {
       if (!firstName.trim() || !lastName.trim()) {
         setError('Enter both your first and last name.');
-        setBusy(false);
         return;
       }
       const trimmedPhone = phone.trim();
       const phoneDigits = trimmedPhone.replace(/\D/g, '').length;
       if (trimmedPhone && (phoneDigits < 7 || phoneDigits > 15)) {
         setError('Enter a phone number with 7 to 15 digits, or leave it blank.');
-        setBusy(false);
         return;
       }
       if (!password.trim() || password.length < 8) {
         setError('Password must be at least 8 characters and cannot be blank.');
-        setBusy(false);
         return;
       }
       if (password !== confirmPassword) {
         setError('Passwords do not match.');
-        setBusy(false);
         return;
       }
     }
     if (mode === 'reset') {
       if (!newPassword.trim() || newPassword.length < 8) {
         setError('New password must be at least 8 characters and cannot be blank.');
-        setBusy(false);
         return;
       }
       if (newPassword !== confirmPassword) {
         setError('New passwords do not match.');
-        setBusy(false);
         return;
       }
     }
     if (!supabase) {
       setError('Add the Supabase project URL and publishable key to .env.local first.');
-      setBusy(false);
       return;
     }
+    submitLockRef.current = true;
+    setBusy(true);
     try {
       if (mode === 'login') {
         const { error: loginError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
@@ -165,9 +169,9 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
         if (data.session) onSuccess();
         else { setAwaitingConfirmation(true); setNotice('If this address is new, check your inbox for a confirmation link. If no email arrives, try logging in or resetting your password.'); }
       } else if (mode === 'forgot') {
-        const resetRedirect = new URL(passwordRecoveryPath(audience === 'staff' ? 'gatekeeper' : 'visitor'), window.location.origin);
+        const resetRedirect = buildAuthRedirectUrl(passwordRecoveryPath(audience === 'staff' ? 'gatekeeper' : 'visitor'));
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-          redirectTo: resetRedirect.toString(),
+          redirectTo: resetRedirect,
         });
         if (resetError) throw resetError;
         setNotice('If an account uses that email, Supabase will send a password reset link.');
@@ -205,12 +209,13 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
         : 'Could not update your password. Check your connection and try again.');
       else setError(message);
     } finally {
+      submitLockRef.current = false;
       setBusy(false);
     }
   };
 
   const card = <section className={presentation === 'page' ? 'auth-page-card' : 'modal auth-modal'} role={presentation === 'dialog' ? 'dialog' : undefined} aria-modal={presentation === 'dialog' ? 'true' : undefined} aria-labelledby="auth-title">
-      {presentation === 'dialog' && <button type="button" className="modal-close" onClick={onClose} aria-label="Close"><X size={18}/></button>}
+      <button type="button" className={presentation === 'page' ? 'modal-close auth-page-close' : 'modal-close'} onClick={onClose} aria-label="Close"><X size={18}/></button>
       <span className="eyebrow"><span className="eyebrow-line"/> ILIGUIDE {audience === 'staff' ? 'STAFF ACCESS' : 'VISITOR ACCOUNT'}</span>
       <h2 id="auth-title">{title}</h2>
       <p role={mode === 'reset' && resetComplete ? 'status' : undefined}>{mode === 'signup' && awaitingConfirmation
@@ -247,7 +252,7 @@ export function AuthDialog({ mode, onClose, onSuccess = onClose, onMode, initial
         </>}
         {error && <p className="form-error" role="alert">{error}</p>}
         {notice && <p className="form-success" role="status">{notice}</p>}
-        <button className="btn btn-primary btn-wide" type="submit" disabled={busy}>
+        <button className="btn btn-primary btn-wide" type="submit" disabled={busy} aria-busy={busy}>
           {busy ? 'Please wait…' : mode === 'login' ? 'Log in'
             : mode === 'signup' ? awaitingConfirmation ? 'Resend confirmation' : 'Create visitor account'
             : mode === 'forgot' ? 'Send reset link' : 'Update password'}

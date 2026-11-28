@@ -7,6 +7,7 @@ import { calculateBookingTotal, createHold, db, invokeFunction, loadAssignments,
 import { type Party } from './lib/pendingReservation';
 import { emptyVisitorInformation, pwdVisitorInformationComplete, resizeVisitorInformation, visitorInformationComplete, visitorInformationPayload, type VisitorInformation } from './lib/visitorInformation';
 import { bookingContactError } from './lib/bookingValidation';
+import { buildAuthRedirectUrl } from './lib/authRedirect';
 import { useSilentLoad } from './lib/useSilentLoad';
 import { AuthDialog, type AuthMode } from './components/AuthDialog';
 import { VisitorNotificationButton } from './components/VisitorNotificationButton';
@@ -17,6 +18,7 @@ import './components/VisitorGuide.css';
 import { gatekeeperPath, isGatekeeperPath, parseGatekeeperRoute, type GatekeeperPage } from './lib/gatekeeperRoutes';
 import { staffPageForRole, type AppPage } from './lib/actorRoutes';
 import { announcementIdFromPath, authSuccessPath, canShowVisitorAuthModal, destinationSlugFromPath, isAnnouncementPath, isAuthPath, isKnownAppPath, isPasswordRecoveryRequest, isWorkspacePath, pageFromPath, passwordRecoveryTarget, staffLoginUrl, staffPortalPath, staffReturnPath, visitorAuthDismissPath, visitorLoginUrl, visitorReturnPath, visitorRoutePaths, STAFF_LOGIN_PATH, VISITOR_LOGIN_PATH } from './lib/appRoutes';
+import { resolveSafeHomePath, safeNavigateBack } from './lib/safeNavigation';
 const VisitorPages = lazy(() => import('./components/VisitorPages').then((module) => ({ default: module.VisitorPages })));
 const StaffPages = lazy(() => import('./components/StaffPages').then((module) => ({ default: module.StaffPages })));
 const DestinationLocator = lazy(() => import('./components/DestinationLocator'));
@@ -121,6 +123,7 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [dataError, setDataError] = useState('');
   const [busy, setBusy] = useState(false);
+  const reserveLockRef = useRef(false);
   const [accountReady, setAccountReady] = useState(false);
   const [activeBooking, setActiveBooking] = useState<Booking | null>(null);
   const [activeTicket, setActiveTicket] = useState<IssuedTicket | null>(null);
@@ -361,7 +364,7 @@ export default function App() {
     if (passwordRecovery) {
       const recoveryRole = profile?.role ?? (location.pathname === STAFF_LOGIN_PATH ? 'gatekeeper' : 'visitor');
       const resetPath = passwordRecoveryTarget(recoveryRole, location.search, location.hash);
-      if (authMode !== 'forgot') setAuthMode('reset');
+      setAuthMode((current) => current === 'forgot' ? current : 'reset');
       setPage(recoveryRole === 'visitor' ? 'Visitor login' : 'Staff login');
       if (`${location.pathname}${location.search}${location.hash}` !== resetPath) navigate(resetPath, { replace: true });
       return;
@@ -476,7 +479,7 @@ export default function App() {
     const canonicalPath = staffPortalPath(role, nextPage);
     const nextPath = path === canonicalPath ? path : canonicalPath + (legacyTab ? `?tab=${legacyTab}` : '');
     if (nextPath !== path) navigate(nextPath, { replace: true });
-  }, [accountReady, assignedGatekeeperSite, authMode, gatekeeperAssignments.length, location.hash, location.pathname, location.search, navigate, notify, passwordRecovery, profile, role, sites, sitesLoaded, staffPasswordReset, user]);
+  }, [accountReady, assignedGatekeeperSite, gatekeeperAssignments.length, location.hash, location.pathname, location.search, navigate, notify, passwordRecovery, profile, role, sites, sitesLoaded, staffPasswordReset, user]);
 
   useEffect(() => {
     const slug = destinationSlugFromPath(location.pathname);
@@ -491,6 +494,15 @@ export default function App() {
       setAuthMode((current) => current ?? 'login');
     }
   }, [location.pathname, user]);
+
+  useEffect(() => {
+    if (!mobileNav) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileNav(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mobileNav]);
 
   useEffect(() => {
     if (!user) { setSavedSiteIds(readSavedSiteIds(null)); return; }
@@ -603,6 +615,7 @@ export default function App() {
   };
 
   const reserve = async () => {
+    if (reserveLockRef.current) return;
     if (!supabaseConfigured || !supabase) { notify('Add the Supabase project URL and publishable key to .env.local first.'); return; }
     if (!user) { navigate(visitorLoginUrl(location.pathname)); return; }
     if (profile?.account_status !== 'active' || profile.role !== 'visitor') { notify('Only active visitor accounts can make a reservation.'); return; }
@@ -618,6 +631,7 @@ export default function App() {
     if (!accountReady) { notify('Checking your account details. Try again in a moment.'); return; }
     const contactError = bookingContactError(visitor.name, visitor.email, visitor.phone);
     if (contactError) { notify(contactError); return; }
+    reserveLockRef.current = true;
     setBusy(true);
     let createdHold: CreatedHold | null = null;
     let confirmed = false;
@@ -693,7 +707,7 @@ export default function App() {
       const message = error instanceof Error ? error.message : 'Could not create the booking hold.';
       if (confirmed) { setActiveBooking(null); go('Bookings'); }
       notify(message + (createdHold && !confirmed ? ' The reservation hold expires in ten minutes.' : ''));
-    } finally { setBusy(false); }
+    } finally { reserveLockRef.current = false; setBusy(false); }
   };
 
   const signOut = async () => {
@@ -732,7 +746,7 @@ export default function App() {
   const visitorRecoveryPage = passwordRecovery && !staffLoginRoute && !staffRole;
   const authPage = staffLoginRoute || passwordRecovery;
   const authNext = new URLSearchParams(location.search).get('next');
-  const authReturnTo = `${window.location.origin}${location.pathname}${location.search}`;
+  const authReturnTo = buildAuthRedirectUrl(`${location.pathname}${location.search}`);
   const visitorAuthModalOpen = canShowVisitorAuthModal(location.pathname) && !staffRole && !passwordRecovery
     && (authMode !== null || (!user && visitorLoginRoute));
 
@@ -773,7 +787,7 @@ export default function App() {
 
   return <div className={page === 'Landing' ? 'app-shell landing-shell' : authPage ? 'app-shell auth-shell' : 'app-shell'}>
     <header className={`${page === 'Landing' ? 'topbar landing-topbar' : authPage ? 'topbar auth-topbar' : 'topbar'}${!authPage && role === 'visitor' ? ' visitor-topbar' : ''}`}>
-      {!authPage && role === 'visitor' && <button type="button" className="mobile-menu icon-btn" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle navigation">{mobileNav ? <X/> : <Menu/>}</button>}
+      {!authPage && role === 'visitor' && <button type="button" className="mobile-menu icon-btn" onClick={() => setMobileNav(!mobileNav)} aria-expanded={mobileNav} aria-label={mobileNav ? 'Close navigation' : 'Open navigation'}>{mobileNav ? <X/> : <Menu/>}</button>}
       <Link className="brand" to={passwordRecovery ? staffRole ? STAFF_LOGIN_PATH : VISITOR_LOGIN_PATH : authPage ? STAFF_LOGIN_PATH : '/'} onClick={authPage ? undefined : (event) => { event.preventDefault(); go('Discover'); }}>
         <span className="brand-mark"><img src="/iliguide-logo.svg" alt=""/></span><span>Iliguide</span>
       </Link>
@@ -795,13 +809,27 @@ export default function App() {
     <main>{authPage
       ? visitorRecoveryPage
         ? <AuthDialog mode={authMode ?? 'reset'} audience="visitor" presentation="page"
-            onClose={() => {}}
+            onClose={() => {
+              clearPasswordRecoveryUser();
+              setPasswordRecovery(false);
+              setPasswordRecoveryError('');
+              setAuthMode(null);
+              safeNavigateBack(navigate, resolveSafeHomePath(user ? profile?.role : null, assignedGatekeeperSite?.slug, '/discover'));
+            }}
+            onSuccess={() => {
+              clearPasswordRecoveryUser();
+              setPasswordRecovery(false);
+              setPasswordRecoveryError('');
+              setAuthMode('login');
+              navigate(VISITOR_LOGIN_PATH, { replace: true });
+            }}
             onMode={setAuthMode} initialVisitor={visitor} redirectTo={authReturnTo}
             recoveryTokenHash={new URLSearchParams(location.search).get('token_hash')}
             recoverySessionUserId={getPasswordRecoveryUserId()} initialRecoveryError={passwordRecoveryError}
             onRecoverySession={markRecoverySession} onResetComplete={finishVisitorPasswordReset}/>
       : user && !staffPasswordReset && !passwordRecovery
         ? <section className="auth-page auth-page-staff"><section className="auth-page-card" aria-labelledby="staff-access-title">
+            <button type="button" className="modal-close auth-page-close" aria-label="Close" onClick={() => safeNavigateBack(navigate, resolveSafeHomePath(profile?.role ?? null, assignedGatekeeperSite?.slug, '/'))}><X size={18}/></button>
             <span className="eyebrow"><span className="eyebrow-line"/> ILIGUIDE STAFF ACCESS</span>
             <h2 id="staff-access-title">This account has no office access.</h2>
             <p>{profile?.account_status === 'active' ? 'Sign out and use an account assigned by the Tourism Office.' : 'Staff access is inactive. Contact the Tourism Office to confirm your account.'}</p>
@@ -809,6 +837,13 @@ export default function App() {
           </section></section>
         : <AuthDialog mode={authMode ?? (staffPasswordReset ? 'reset' : 'login')} audience="staff" presentation="page"
             onClose={() => {
+              clearPasswordRecoveryUser();
+              setPasswordRecovery(false);
+              setPasswordRecoveryError('');
+              setAuthMode(null);
+              safeNavigateBack(navigate, resolveSafeHomePath(user ? profile?.role : null, assignedGatekeeperSite?.slug, '/'));
+            }}
+            onSuccess={() => {
               clearPasswordRecoveryUser();
               setPasswordRecovery(false);
               setPasswordRecoveryError('');
@@ -895,6 +930,7 @@ export default function App() {
         onPayment={(reference) => { setPage('Payment'); navigate(`/payment/${encodeURIComponent(reference)}`); }}
         onConfirmation={(reference) => { setPage('Booking confirmation'); navigate(`/booking-confirmation/${encodeURIComponent(reference)}`); }}
         onPasswordReset={() => setAuthMode('forgot')}
+        onBrowseAlternatives={() => go('Destination map')}
       />}
     </Suspense>}</main>
     {page !== 'Landing' && !authPage && role === 'visitor' && <MobileTabs page={page} go={go}/>}
@@ -907,7 +943,9 @@ export default function App() {
     {visitorAuthModalOpen && <AuthDialog mode={authMode ?? 'login'} onClose={() => {
       setAuthMode(null);
       setPasswordRecovery(false);
-      if (visitorLoginRoute) navigate(visitorAuthDismissPath(authNext), { replace: true });
+      if (visitorLoginRoute) {
+        navigate(user ? authSuccessPath('visitor', authNext) : visitorAuthDismissPath(authNext), { replace: true });
+      }
     }} onSuccess={() => {
       setAuthMode(null);
       setPasswordRecovery(false);

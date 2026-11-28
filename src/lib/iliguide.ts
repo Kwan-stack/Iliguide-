@@ -133,6 +133,10 @@ export type Booking = {
   manual_payment_status?: string | null;
   manual_payment_mode?: string | null;
   payment_receipt_reference?: string | null;
+  cancellation_category?: string | null;
+  cancellation_reason?: string | null;
+  cancelled_by?: string | null;
+  cancelled_at?: string | null;
   attendance?: BookingAttendance;
 };
 export type CreatedHold = {
@@ -341,14 +345,20 @@ export async function lookupBooking(reference: string, guestAccessToken?: string
 }
 
 export async function loadOwnBookings(): Promise<Booking[]> {
-  const { data, error } = await db().from('bookings')
+  const selectBookings = (includeAdminCancellation: boolean) => db().from('bookings')
     .select(
       'id, booking_reference, visitor_name, visitor_email, visitor_phone, visitor_count,' +
       ' adult_count, child_count, pwd_count, total_amount, currency, payment_status, payment_method, booking_status,' +
       ' booking_source, site_id, site_name_snapshot, cancellation_cutoff_at, hold_expires_at, created_at,' +
+      (includeAdminCancellation ? ' cancellation_category, cancellation_reason, cancelled_by, cancelled_at,' : '') +
       ' tourism_sites(name), site_slots(slot_date, starts_at, ends_at), payments!payments_booking_id_fkey(id,provider,payment_mode,payment_status,payment_deadline,receipt_reference,verified_at,amount,payment_application)',
     )
     .order('created_at', { ascending: false });
+
+  let { data, error } = await selectBookings(true);
+  if (error && ['PGRST204', '42703'].includes(error.code) && /cancellation_category|cancellation_reason|cancelled_by|cancelled_at/i.test(error.message)) {
+    ({ data, error } = await selectBookings(false));
+  }
   if (error) throw error;
   const { data: attendanceRows, error: attendanceError } = await db().rpc('visitor_booking_attendance');
   if (attendanceError) throw attendanceError;
@@ -387,9 +397,65 @@ export async function loadOwnBookings(): Promise<Booking[]> {
     manual_payment_status: manualPayment?.payment_status ?? null,
     manual_payment_mode: (row.payments ?? []).find((payment: Record<string, string>) => payment.payment_mode === 'demo')?.payment_mode ?? null,
     payment_receipt_reference: paidPayment?.receipt_reference ?? null,
+    cancellation_category: row.cancellation_category ?? null,
+    cancellation_reason: row.cancellation_reason ?? null,
+    cancelled_by: row.cancelled_by ?? null,
+    cancelled_at: row.cancelled_at ?? null,
     attendance: attendanceByBooking.get(row.id),
   });
   }) as Booking[];
+}
+
+export type AdminCancelBookingResult = {
+  booking_id: string;
+  booking_reference: string;
+  booking_status: string;
+  cancellation_category: string;
+  cancellation_reason: string | null;
+  cancelled_at: string;
+};
+
+export type AdminBulkCancelResult = {
+  cancelled_count: number;
+  booking_references: string[];
+};
+
+export async function adminCancelBooking(
+  bookingId: string,
+  category: string,
+  reason?: string,
+): Promise<AdminCancelBookingResult> {
+  const { data, error } = await db().rpc('admin_cancel_booking', {
+    p_booking_id: bookingId,
+    p_category: category,
+    p_reason: reason?.trim() || null,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('The booking cancellation did not return a confirmation.');
+  return row as AdminCancelBookingResult;
+}
+
+export async function adminBulkCancelSiteBookings(
+  siteId: string,
+  startsOn: string,
+  endsOn: string,
+  category: string,
+  reason?: string,
+): Promise<AdminBulkCancelResult> {
+  const { data, error } = await db().rpc('admin_bulk_cancel_site_bookings', {
+    p_site_id: siteId,
+    p_starts_on: startsOn,
+    p_ends_on: endsOn,
+    p_category: category,
+    p_reason: reason?.trim() || null,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    cancelled_count: Number(row?.cancelled_count ?? 0),
+    booking_references: Array.isArray(row?.booking_references) ? row.booking_references.map(String) : [],
+  };
 }
 
 export async function createHold(input: {
