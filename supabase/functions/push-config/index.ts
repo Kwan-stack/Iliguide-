@@ -3,7 +3,7 @@ import { authenticatedUser, clients, json, preflight } from '../_shared/http.ts'
 Deno.serve(async (req) => {
   const options = preflight(req);
   if (options) return options;
-  if (req.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
   const publicKey = Deno.env.get('PUSH_VAPID_PUBLIC_KEY');
   if (!publicKey) return json({ error: 'Push notifications are not configured' }, 503);
   try {
